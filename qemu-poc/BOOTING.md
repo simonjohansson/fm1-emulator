@@ -1,4 +1,4 @@
-# Booting the small FM-1 diagnostics in QEMU
+# Booting FM-1 diagnostics in QEMU
 
 This experiment runs unchanged guest binaries using a native pi32v2 QEMU
 target. The maintained source is `overlay/`; the downloaded QEMU tree and
@@ -132,6 +132,173 @@ reference executes 176,292. This is not a speed comparison: QEMU's modeled
 SPI duration causes substantially more guest polling. No claim of equivalent
 peripheral timing or superior host throughput follows from these counts.
 
+## FM-1_980: unchanged diagnostic boot
+
+The unchanged 14,804-byte `build/fm1-diag.bin` now runs from its actual
+application entry, `0x02000120`, through memory initialization and protection
+setup. The explicit clean loader handoff supplies `r0 = 0x01c7fe08`; persistent
+SRAM starts zero. RAM text, initialized data, BSS and the mailbox start filled
+with `0xa5`, so their final contents demonstrate the guest's own copying and
+clearing.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_isa.py
+mise exec python@3.13.15 -- python qemu-poc/validate_diag_startup.py
+mise exec python@3.13.15 -- python qemu-poc/validate_peripherals.py system
+```
+
+The memory-copy checkpoint at `0x02001f3c` takes 9,117 QEMU instructions.
+The protection checkpoint at `0x0200200a` takes 9,232. All general and special
+registers match the separate Rust reference at both checkpoints. Different
+P33 transfer clocks produce different polling counts; these are behavioral
+checks, not a throughput comparison.
+
+Validation checks the exact copied RAM text and data, cleared BSS, restored
+reset reason at `0x01c09684`, and the mailbox's transition from poisoned to
+zero. Eighteen timed P33 bytes form six transactions; the guest arms and feeds
+the watchdog once without expiry. SP is `0x01c79ef0` after its 272-byte frame
+allocation and SSP is `0x01c7c000`. The configured stack, write and PC guards
+are checked at runtime, including cached execution. At this startup checkpoint
+the write-window mask is 3; the later main-loop top-memory lock is separate.
+
+Focused instruction checks cover signed literal boundaries, stack adjustments,
+parallel instructions using incoming register values and conditional blocks.
+Diagnostic mode currently limits each translation block to one guest
+instruction to preserve conditional-block and peripheral timing. No speedup
+claim follows from this implementation.
+
+Guard violations and watchdog expiry terminate explicitly; delivery of the
+corresponding hardware exception or reset is not implemented. The audio model
+currently supports only reading its cold disabled state and writing zero to
+ALNK0 control. Audio generation is not implemented.
+
+The input SHA-256 remains
+`781005cfcc4e0b562291fa747a0fa956204ee97c396c39214df04feaf86cc7e2`.
+Startup records and SRAM snapshots are under `.cache/diag-validation/`.
+
+### RAM flash driver and LCD initialization
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_diag_flash.py
+mise exec python@3.13.15 -- python qemu-poc/validate_peripherals.py
+```
+
+The NOR model starts with 1 MiB of erased `0xff` bytes and the unchanged raw
+application at physical offset `0x4120`. The application is plaintext; this
+does not model boot ROM, SPL, encrypted packages or a complete flash dump.
+The guest disables SFC, executes its copied RAM routines, operates SPI0 and
+chip select, and restores SFC afterward. Runtime checks reject flash fetches
+and data accesses while SFC is disabled, including a previously translated
+target and a warmed data mapping.
+
+The guest receives JEDEC ID `0x856014` and sets `flash_ok` itself. It then
+reads four and eight erased header bytes and skips the flash-modification
+path. The observed totals are three transactions, one JEDEC command, two
+read commands, 26 completed and acknowledged byte transfers, and three SFC
+disable/restore pairs. Status-register reads are exercised by a separate
+protocol test; the clean firmware boot does not issue them. Flash programming
+and erase commands remain unsupported and fail explicitly.
+
+LCD initialization returns at `0x0200218e` after 26,374,949 instructions and
+210,999,600 ns of virtual time. It completes six commands and two DMA
+transfers; it has not drawn pixels at this checkpoint. The JEDEC and erased
+header checkpoints match all general and special registers in the Rust
+reference. At LCD initialization, the timed-SPI polling counter in `r1` is
+16 in QEMU and 0 in Rust; all other registers match. Validation records this
+specific timing difference and checks completed transfers and bounded waits.
+
+The 13 peripheral tests cover positive and negative stack/write guard cases,
+cached flash access, timed NOR transactions, and the disconnected USB
+controller's retained requests and guest polling. They do not establish
+normal USB enumeration or CDC operation. Flash/LCD initialization evidence is
+under `.cache/diag-flash-validation/`.
+
+### Exact status screen and disconnected USB startup
+
+The firmware proceeds through its renderer and USB startup to `0x0200225e`
+after 51,582,487 instructions. At that checkpoint the last LCD transfer has
+completed naturally: the panel is visible and idle, with 124,480 pixel writes,
+1,216 commands, 1,700 DMAs and 2,916 total completed transfers.
+
+The entire 240 by 240 RGB framebuffer matches the independently derived
+status image: a green top bar, `D1A60001`, and a zero run counter. Its pixel
+SHA-256 is
+`cc00d897e166126d034a174776615fcdac85e473892ea3a3a2eef33db25de6b0`.
+It contains 2,880 green, 3,744 white and 50,976 black pixels. These pixels come
+from guest SPI/DMA writes; the harness does not draw the screen or alter guest
+status memory.
+
+The selected USB state is cold power-on with no cable and an unavailable SIE
+clock, a condition explicitly handled by the tracked firmware. Six guest
+requests remain pending without DONE. Each receives 20,000 guest polls, for
+120,000 in total, after which the guest records its own timeouts and continues
+with USB down. This establishes the disconnected startup path, not USB host
+traffic, endpoint packet DMA, enumeration, MIDI or CDC.
+
+### Running foreground, timer interrupts and input scans
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_diag_boot.py
+```
+
+For a direct bounded boot from the worktree root:
+
+```sh
+mkdir -p qemu-poc/.cache/diag-run
+FM1_POC_STATE_DIR="$PWD/qemu-poc/.cache/diag-run" \
+FM1_POC_LOOP_IRQS=640 FM1_POC_MAX_INSTRUCTIONS=100000000 \
+  qemu-poc/.cache/build/qemu-system-pi32v2 \
+  -M fm1-poc -accel tcg,thread=single \
+  -icount shift=3,align=off,sleep=off \
+  -display none -serial none -monitor none -nodefaults \
+  -kernel build/fm1-diag.bin -append diag
+```
+
+This prints the final JSON record and saves an SRAM snapshot and LCD PPM.
+The observer stops at a foreground checkpoint after at least 640 completed
+interrupt returns and three foreground visits; it does not change guest state.
+
+The bounded main-loop gate reaches `0x02002632` after 59,582,859 instructions.
+It observes 640 TIMER5 expirations, acknowledgments, interrupt entries and
+`rti` returns, with no pending interrupt and execution outside the handler.
+The firmware has visited its foreground loop 16,685 times and fed the
+watchdog 16,685 times. Its millisecond counter is 476; both stacks are restored,
+LCD/P33 timeout counters remain zero, and the final write-window mask is 7.
+
+These 640 ticks cover 58 complete eleven-column matrix scans and the
+forty-frame encoder-rest learning interval. The validator checks released
+matrix inputs, debounce and encoder state, the clean boot-guard tuple
+`(0x42475244, 0, 1)`, and the unchanged complete status image. This is a real
+foreground checkpoint after completed interrupts, not a stop at first entry
+to the main loop.
+
+Evidence is under `.cache/diag-boot-validation/`: each checkpoint includes
+`state.json`, raw SRAM, the actual LCD PPM and stderr. The startup, flash and
+small-fixture validators remain separate regression gates.
+
+### Continued execution through the scheduled USB retry
+
+A longer bounded run passes one second of guest time and completes the
+firmware's scheduled disconnected-USB retry; `validate_diag_boot.py` includes
+this stage. For a direct run, use
+`FM1_POC_LOOP_IRQS=6000` and `FM1_POC_MAX_INSTRUCTIONS=200000000` in the command
+above. It returns to the foreground
+checkpoint after 128,755,894 instructions and 1,030,047,160 ns of virtual time.
+All 6,173 timer expirations, interrupt entries, acknowledgments and returns
+balance. The guest records 1,029 milliseconds, 153,163 foreground visits and
+watchdog feeds, and one USB retry. USB has issued twelve requests and performed
+240,000 polls; it remains down with six consecutive timeouts after the retry.
+The LCD remains unchanged, both stacks are restored, and LCD/P33 timeout and
+watchdog-expiry counters remain zero.
+
+This run exposed and fixed a CPU lifetime error: the final call in a selected
+conditional arm must finish that arm before the callee executes its own
+conditional instructions. Direct, short and register calls without an ELSE,
+and final calls in a selected ELSE arm, match the separate reference. A final
+THEN call followed by ELSE has unresolved
+reference semantics and is rejected explicitly; it is not used by this boot.
+General nested conditional blocks remain unsupported.
+
 ## Scope and next target
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
@@ -147,16 +314,16 @@ identical clocks or a performance advantage.
 
 Only the implemented CPU and peripheral subset is supported. Unsupported
 instructions and device operations fail explicitly. Full Felucca, stock
-firmware, USB, audio, dual-core execution and arbitrary firmware loading remain
-outside the verified boot paths. The Rust emulator remains the operational
+firmware, connected USB, audio generation, dual-core execution and arbitrary
+firmware loading remain outside the verified boot paths. The Rust emulator
+remains the operational
 implementation and a separate behavioral reference; it is not linked into
 QEMU or called to execute guest instructions.
 
-The next larger target is the existing `build/fm1-diag.bin` FM-1_980 diagnostic
-(14,804 bytes), which was installed on hardware earlier in development. Its
-real startup needs more instruction forms plus P33/watchdog, protection/IRQ
-configuration, NOR/SFC and USB behavior. Booting it is not established by the
-two smaller fixtures. It is a more bounded next step than full Felucca.
+FM-1_980 was installed on hardware earlier in development. Its unchanged
+application now initializes, identifies flash, renders its status screen and
+runs timer-driven input scans and the foreground loop. Full Felucca and stock
+firmware still require separate bring-up and compatibility validation.
 
 See [LICENSES.md](LICENSES.md) for implementation provenance and
 [README.md](README.md) for the pinned build and original prototype details.
@@ -168,9 +335,18 @@ The milestones are separate signed commits:
 - `33b8b9a`: preserve the existing instruction/timer proof of concept.
 - `e095683`: boot the complete unchanged foundation diagnostic.
 - `2847f0b`: boot the bare display diagnostic and validate three SPI/DMA frames.
+- `9d996b7`: run FM-1_980 from its true entry to the first P33 transaction.
+- `68812d5`: validate startup memory, P33/watchdog and protection setup.
+- `caaa5cc`: execute its RAM flash driver and initialize the LCD.
+- `a531f78`: validate exact status pixels and 640 completed TIMER5 cycles.
+- `0e4149d`: fix conditional-call completion and validate the scheduled USB
+  retry after one second of guest time.
 
-All three signatures were verified. The original tracked fixture binaries and
+All listed signatures were verified. The original tracked fixture binaries and
 recorded results remain unchanged. Current validation records and frame images
-also have a durable ignored copy outside the temporary worktree:
+also have durable ignored copies outside the temporary worktree:
 
-`/Users/simonjohansson/src/fm1-emulator/.deps/qemu-boot-2026-10-05/`
+- Small fixtures:
+  `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-boot-2026-10-05/`
+- FM-1_980, with separate records for each milestone:
+  `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-diag-boot-2026-10-05/`

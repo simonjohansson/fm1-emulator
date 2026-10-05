@@ -6,8 +6,11 @@ The unchanged foundation and bare display diagnostics now boot from their
 application entries. Foundation covers guest RAM initialization and execution,
 GPIO matrix scanning, TIMER4 and a complete TIMER5 interrupt. The display
 fixture continues through three guest-rendered SPI/DMA frames with a simulated
-key press and release. See [BOOTING.md](BOOTING.md) for current commands,
-validation evidence and limitations.
+key press and release. The unchanged FM-1_980 diagnostic also reaches its
+real foreground loop: guest memory initialization, protection and watchdog
+setup, RAM flash identification and reads, an exact status framebuffer,
+disconnected USB startup, and timer-driven matrix/encoder scans are validated.
+See [BOOTING.md](BOOTING.md) for current commands, evidence and limitations.
 
 ## Original probe and timer milestone
 
