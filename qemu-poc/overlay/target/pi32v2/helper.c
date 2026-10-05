@@ -24,6 +24,11 @@ void HELPER(pi32v2_finish)(CPUPi32v2State *env)
     fm1_poc_finish(env);
 }
 
+void HELPER(pi32v2_frame)(CPUPi32v2State *env)
+{
+    fm1_poc_frame(env);
+}
+
 /* Fresh implementation of the four observed condition bits. No Rust code
  * is linked or copied. The probe validates values, not all flag semantics. */
 uint32_t HELPER(pi32v2_alu)(CPUPi32v2State *env, uint32_t a, uint32_t b,

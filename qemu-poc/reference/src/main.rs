@@ -2,14 +2,19 @@
 // Separate executable using existing public Rust interfaces. Never linked into QEMU.
 use fm1_emu::{bus::Bus, cpu::Cpu, firmware::Firmware, SYSTEM_STACK, USER_STACK, XIP};
 use std::{env, fs, path::Path};
+mod display;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     assert!(
         args.len() == 3,
-        "usage: reference probe|timer|direct-probe IMAGE"
+        "usage: reference probe|timer|direct-probe|display IMAGE"
     );
     let firmware = Firmware::load(Path::new(&args[2])).unwrap();
+    if args[1] == "display" {
+        display::run(firmware);
+        return;
+    }
     let timer = args[1] == "timer";
     let mut cpu = Cpu::new(
         Bus::new(firmware.image).unwrap(),

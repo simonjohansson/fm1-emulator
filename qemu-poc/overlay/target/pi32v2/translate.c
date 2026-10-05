@@ -105,6 +105,10 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         db->pc_next = next;
         return;
     }
+    if (PI32V2_CPU(cs)->display_fixture && here == PI32V2_CPU(cs)->frame_pc) {
+        /* Observe a completed guest frame, then execute its real next opcode. */
+        gen_helper_pi32v2_frame(tcg_env);
+    }
     op = fetch(d, here);
     a = op & 7;
     b = (op >> 4) & 7;
@@ -185,6 +189,18 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         unsigned hi = boundary < 4 ? 3 : boundary;
         if (op & 32) { for (int i = hi; i >= (int)lo; i--) { push(gpr[i]); } }
         else { for (unsigned i = lo; i <= hi; i++) { pop(gpr[i]); } }
+    } else if ((op & 0xfff0) == 0x0470 || (op & 0xfff0) == 0x0450) {
+        unsigned hi = op & 15;
+        if (hi < 4) { goto illegal; }
+        if (op & 32) {
+            push(spr[RETS]);
+            for (int i = hi; i >= 4; i--) { push(gpr[i]); }
+        } else {
+            TCGv_i32 dest = tcg_temp_new_i32();
+            for (unsigned i = 4; i <= hi; i++) { pop(gpr[i]); }
+            pop(dest);
+            count(); dynamic_jump(d, dest);
+        }
     } else if (op == 0x04e9) {
         push(spr[PSR]); push(spr[RETS]); push(spr[RETI]);
     } else if (op == 0x04a9) {
@@ -196,6 +212,10 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         count(); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe00c) == 0x8004) {
         int32_t delta = sext(((op & 3) << 10) | (((op >> 4) & 15) << 6) | (((op >> 8) & 31) << 1), 12);
+        count(); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
+    } else if ((op & 0xe08f) == 0x8001) {
+        int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
+        tcg_gen_movi_i32(spr[RETS], next);
         count(); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe008) == 0x4000) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);

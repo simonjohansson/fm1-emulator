@@ -17,8 +17,8 @@ typedef struct CPUArchState {
 struct ArchCPU {
     CPUState parent_obj;
     CPUPi32v2State env;
-    uint32_t boot_pc, stop_pc;
-    bool timer_fixture, foundation_fixture;
+    uint32_t boot_pc, stop_pc, frame_pc;
+    bool timer_fixture, foundation_fixture, display_fixture;
     void *machine;
 };
 struct Pi32v2CPUClass {
@@ -30,6 +30,7 @@ struct Pi32v2CPUClass {
 void pi32v2_translate_init(void);
 void pi32v2_translate_code(CPUState *, TranslationBlock *, int *, vaddr, void *);
 G_NORETURN void fm1_poc_finish(CPUPi32v2State *env);
+void fm1_poc_frame(CPUPi32v2State *env);
 G_NORETURN void pi32v2_fail(CPUPi32v2State *env, const char *reason);
 #include "exec/cpu-all.h"
 
