@@ -82,6 +82,16 @@ static void record_branch(PiDisasContext *d)
 {
     if (d->diagnostic) { gen_helper_pi32v2_branch(tcg_env); }
 }
+static TCGv_i32 bit_operand(TCGv_i32 index, uint16_t op)
+{
+    TCGLabel *valid = gen_new_label();
+    tcg_gen_brcondi_i32(TCG_COND_LTU, index, 32, valid);
+    gen_helper_pi32v2_illegal(tcg_env, tcg_constant_i32(op));
+    gen_set_label(valid);
+    TCGv_i32 mask = tcg_temp_new_i32();
+    tcg_gen_shl_i32(mask, tcg_constant_i32(1), index);
+    return mask;
+}
 static void push(PiDisasContext *d, TCGv_i32 value)
 {
     tcg_gen_subi_i32(spr[SP], spr[SP], 4);
@@ -217,6 +227,14 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xff00) == 0x1800) {
         gen_helper_pi32v2_alu(gpr[op & 15], tcg_env, read_gpr(d, op & 15),
                               read_gpr(d, (op >> 4) & 15), tcg_constant_i32(0));
+    } else if ((op & 0xff88) == 0x1a00 || (op & 0xff88) == 0x1a80) {
+        TCGv_i32 amount = read_gpr(d, b), result = tcg_temp_new_i32();
+        TCGLabel *large = gen_new_label(), *end = gen_new_label();
+        tcg_gen_brcondi_i32(TCG_COND_GEU, amount, 32, large);
+        if (op & 128) { tcg_gen_shr_i32(result, read_gpr(d, a), amount); }
+        else { tcg_gen_shl_i32(result, read_gpr(d, a), amount); }
+        tcg_gen_br(end); gen_set_label(large); tcg_gen_movi_i32(result, 0);
+        gen_set_label(end); tcg_gen_mov_i32(gpr[a], result);
     } else if ((op & 0xff00) == 0x1b00) {
         tcg_gen_mul_i32(gpr[op & 15], read_gpr(d, op & 15), read_gpr(d, (op >> 4) & 15));
     } else if ((op & 0xfe00) == 0x1c00 || (op & 0xfe00) == 0x1e00) {
@@ -247,9 +265,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (op & 16) { tcg_gen_xori_i32(gpr[op & 15], read_gpr(d, x >> 12), packed_mask(x)); }
         else { tcg_gen_ori_i32(gpr[op & 15], read_gpr(d, x >> 12), packed_mask(x)); }
         next = here + 4;
-    } else if (op == 0xe190) {
+    } else if (op == 0xe190 || op == 0xe194) {
         uint16_t x = fetch(d, here + 2);
         TCGv_i32 left = read_gpr(d, (x >> 4) & 15), right = read_gpr(d, (x >> 8) & 15);
+        if (op == 0xe194) { right = bit_operand(right, op); }
         switch (x & 15) {
         case 0: tcg_gen_or_i32(gpr[x >> 12], left, right); break;
         case 1: tcg_gen_xor_i32(gpr[x >> 12], left, right); break;
@@ -268,6 +287,28 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if ((x & 15) != 0 && (x & 15) != 2) { goto illegal; }
         gen_helper_pi32v2_alu(gpr[x >> 12], tcg_env, read_gpr(d, (x >> 4) & 15),
                               read_gpr(d, (x >> 8) & 15), tcg_constant_i32((x & 15) == 2));
+        next = here + 4;
+    } else if ((op & 0xfff0) == 0xe0a0) {
+        uint16_t x = fetch(d, here + 2);
+        gen_helper_pi32v2_alu(gpr[op & 15], tcg_env, tcg_constant_i32(packed_mask(x)),
+                              read_gpr(d, x >> 12), tcg_constant_i32(1));
+        next = here + 4;
+    } else if ((op & 0xfff0) == 0xe0e0) {
+        uint16_t x = fetch(d, here + 2);
+        gen_helper_pi32v2_alu(gpr[op & 15], tcg_env, read_gpr(d, x >> 12),
+                              tcg_constant_i32(packed_mask(x)), tcg_constant_i32(0));
+        next = here + 4;
+    } else if ((op & 0xfff0) == 0xe1e0) {
+        uint16_t x = fetch(d, here + 2);
+        tcg_gen_muli_i32(gpr[op & 15], read_gpr(d, x >> 12), packed_mask(x));
+        next = here + 4;
+    } else if (op == 0xe1f0 || op == 0xe1f4 || op == 0xe435) {
+        uint16_t x = fetch(d, here + 2);
+        if (x & 15) { goto illegal; }
+        TCGv_i32 left = read_gpr(d, (x >> 4) & 15), right = read_gpr(d, (x >> 8) & 15);
+        if (op == 0xe1f0) { tcg_gen_mul_i32(gpr[x >> 12], left, right); }
+        else if (op == 0xe1f4) { gen_helper_pi32v2_div(gpr[x >> 12], tcg_env, left, right); }
+        else { tcg_gen_umin_i32(gpr[x >> 12], left, right); }
         next = here + 4;
     } else if (op == 0xe1c0) {
         uint16_t x = fetch(d, here + 2);
@@ -315,22 +356,35 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         }
         next = here + 4;
     } else if ((op & 0xfff0) == 0xea20 || (op & 0xfff0) == 0xea30 ||
+               (op & 0xfff0) == 0xea10 ||
                (op & 0xfff0) == 0xe830 || (op & 0xfff0) == 0xe8b0 ||
                (op & 0xfff0) == 0xe810 || (op & 0xfff0) == 0xe890 ||
-               (op & 0xfff0) == 0xe930 || (op & 0xfff0) == 0xec10) {
+               (op & 0xfff0) == 0xe910 ||
+               (op & 0xfff0) == 0xe930 || (op & 0xfff0) == 0xec10 ||
+               (op & 0xfff0) == 0xecb0) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = (op >> 4) & 255;
         TCGv_i32 left = read_gpr(d, op & 15), right, result = tcg_temp_new_i32();
         TCGCond cond;
-        if (kind == 0xa2 || kind == 0xa3) {
+        if (kind == 0xa1) {
+            if (x & 255) { goto illegal; }
+            TCGv_i32 masked = tcg_temp_new_i32();
+            tcg_gen_and_i32(masked, left, read_gpr(d, (x >> 8) & 15));
+            left = masked; right = tcg_constant_i32(0); cond = TCG_COND_EQ;
+        } else if (kind == 0xa2 || kind == 0xa3) {
             TCGv_i32 masked = tcg_temp_new_i32();
             tcg_gen_andi_i32(masked, left, packed_mask(x));
             left = masked; right = tcg_constant_i32(0);
             cond = kind == 0xa2 ? TCG_COND_EQ : TCG_COND_NE;
-        } else if (kind == 0x81 || kind == 0x89 || kind == 0xc1) {
+        } else if (kind == 0x81 || kind == 0x89 || kind == 0x91 || kind == 0xc1) {
             if (x & 255) { goto illegal; }
             right = read_gpr(d, (x >> 8) & 15);
-            cond = kind == 0x81 ? TCG_COND_EQ : kind == 0x89 ? TCG_COND_NE : TCG_COND_GTU;
+            cond = kind == 0x81 ? TCG_COND_EQ : kind == 0x89 ? TCG_COND_NE :
+                   kind == 0x91 ? TCG_COND_GEU : TCG_COND_GTU;
+        } else if (kind == 0xcb) {
+            /* Vendor-backed unsigned literals disagree with SLEIGH's packed
+             * label (ECB0 0208 means 520). Keep all twelve literal bits. */
+            right = tcg_constant_i32(x & 4095); cond = TCG_COND_LEU;
         } else {
             right = tcg_constant_i32(kind == 0x83 || kind == 0x8b ? sext(x & 4095, 12) : x & 4095);
             cond = kind == 0x83 ? TCG_COND_EQ : kind == 0x8b ? TCG_COND_NE : TCG_COND_GEU;
@@ -352,21 +406,26 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), (op & 63) * 4);
         store(d, tcg_constant_i32(packed_mask(x)), addr, MO_LEUL | MO_ALIGN);
         next = here + 4;
-    } else if ((op & 0xfff0) == 0xef00 || (op & 0xffe0) == 0xefc0 || op == 0xe864) {
+    } else if ((op & 0xffe0) == 0xef00 || (op & 0xffe0) == 0xefc0 || op == 0xe864 || op == 0xe866) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 3;
         TCGv_i32 addr = tcg_temp_new_i32(), value = tcg_temp_new_i32();
-        tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), op == 0xe864 ? x & 252 :
-                          (op & 0xffe0) == 0xefc0 ? (op & 31) * 4 : (op & 15) * 4);
+        tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), op == 0xe864 || op == 0xe866 ? x & 252 :
+                          (op & 31) * 4);
         load(d, value, addr, MO_LEUL | MO_ALIGN);
         if ((op & 0xffe0) == 0xefc0) { tcg_gen_andi_i32(value, value, ~packed_mask(x)); }
-        else if (op != 0xe864) { tcg_gen_ori_i32(value, value, packed_mask(x)); }
-        else if (kind == 0) { tcg_gen_or_i32(value, value, read_gpr(d, (x >> 8) & 15)); }
-        else if (kind == 2) { tcg_gen_and_i32(value, value, read_gpr(d, (x >> 8) & 15)); }
-        else if (kind == 3) {
-            TCGv_i32 mask = tcg_temp_new_i32();
-            tcg_gen_not_i32(mask, read_gpr(d, (x >> 8) & 15)); tcg_gen_and_i32(value, value, mask);
-        } else { goto illegal; }
+        else if (op != 0xe864 && op != 0xe866) { tcg_gen_ori_i32(value, value, packed_mask(x)); }
+        else {
+            TCGv_i32 operand = read_gpr(d, (x >> 8) & 15);
+            if (op == 0xe866) {
+                operand = bit_operand(operand, op);
+            }
+            if (kind == 0) { tcg_gen_or_i32(value, value, operand); }
+            else if (kind == 1 && op == 0xe866) { tcg_gen_xor_i32(value, value, operand); }
+            else if (kind == 2) { tcg_gen_and_i32(value, value, operand); }
+            else if (kind == 3) { tcg_gen_andc_i32(value, value, operand); }
+            else { goto illegal; }
+        }
         store(d, value, addr, MO_LEUL | MO_ALIGN);
         next = here + 4;
     } else if ((op & 0xffe0) == 0xebc0) {
@@ -405,14 +464,27 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (op & 128) { store(d, read_gpr(d, a), read_gpr(d, b), MO_LEUL | MO_ALIGN); }
         else { load(d, gpr[a], read_gpr(d, b), MO_LEUL | MO_ALIGN); }
         tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 4);
+    } else if ((op & 0xff88) == 0x0680) {
+        store(d, read_gpr(d, a), read_gpr(d, b), MO_LEUW | MO_ALIGN);
+        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 2);
     } else if ((op & 0xfff0) == 0xee50) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = op & 15;
-        if (kind != 0 && kind != 2) { goto illegal; }
+        if (kind != 0 && kind != 2 && kind != 8 && kind != 10) { goto illegal; }
+        unsigned base = (x >> 4) & 15, reg = x >> 12;
+        if ((kind == 8 || kind == 10) && base == reg) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
-        tcg_gen_addi_i32(addr, read_gpr(d, (x >> 4) & 15), (x & 15) | ((x >> 8) & 15) * 16);
-        if (kind == 2) { store(d, read_gpr(d, x >> 12), addr, MO_UB); }
+        tcg_gen_addi_i32(addr, read_gpr(d, base), (x & 15) | ((x >> 8) & 15) * 16);
+        if (kind == 2 || kind == 10) { store(d, read_gpr(d, x >> 12), addr, MO_UB); }
         else { load(d, gpr[x >> 12], addr, MO_UB); }
+        if (kind == 8 || kind == 10) { tcg_gen_mov_i32(gpr[base], addr); }
+        next = here + 4;
+    } else if (op == 0xeed4) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, dest = x >> 12;
+        if (base == dest) { goto illegal; }
+        load(d, gpr[dest], read_gpr(d, base), MO_SB);
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 15) | ((x >> 8) & 15) * 16);
         next = here + 4;
     } else if (op == 0xeed8) {
         uint16_t x = fetch(d, here + 2);
@@ -465,14 +537,23 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         gen_helper_pi32v2_alu(gpr[op & 15], tcg_env, read_gpr(d, x >> 12),
                               tcg_constant_i32(imm), tcg_constant_i32(0));
         next = here + 4;
-    } else if (op == 0xe9d4) {
+    } else if (op == 0xe9d4 || op == 0xe9d0) {
         uint16_t x = fetch(d, here + 2);
-        if (x & 2) { goto illegal; }
+        if ((x & 2) || (op == 0xe9d0 && ((x >> 12) & 1))) { goto illegal; }
         unsigned offset = x & 4092;
         TCGv_i32 addr = tcg_temp_new_i32();
         tcg_gen_addi_i32(addr, spr[SP], offset);
         if (x & 1) { store(d, read_gpr(d, x >> 12), addr, MO_LEUL | MO_ALIGN); }
         else { load(d, gpr[x >> 12], addr, MO_LEUL | MO_ALIGN); }
+        if (op == 0xe9d0) {
+            tcg_gen_addi_i32(addr, addr, 4);
+            if (x & 1) { store(d, read_gpr(d, (x >> 12) + 1), addr, MO_LEUL | MO_ALIGN); }
+            else { load(d, gpr[(x >> 12) + 1], addr, MO_LEUL | MO_ALIGN); }
+        }
+        next = here + 4;
+    } else if (op == 0xe8f8) {
+        uint16_t x = fetch(d, here + 2);
+        tcg_gen_addi_i32(gpr[x >> 12], spr[SP], x & 4095);
         next = here + 4;
     } else if (op == 0xe8d8 || op == 0xe8d4) {
         uint16_t mask = fetch(d, here + 2);
@@ -504,6 +585,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         push(d, spr[PSR]); push(d, spr[RETS]); push(d, spr[RETI]);
     } else if (op == 0x04a9) {
         pop(d, spr[RETI]); pop(d, spr[RETS]); pop(d, spr[PSR]);
+    } else if ((op & 0xfff0) == 0xea00) {
+        int32_t delta = (int16_t)fetch(d, here + 2) * 2;
+        next = here + 4;
+        tcg_gen_subi_i32(gpr[op & 15], read_gpr(d, op & 15), 1);
+        count(d); branch(d, next + delta, next, gpr[op & 15], true);
     } else if ((op & 0xffc0) == 0xea80) {
         int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
         next = here + 4;
@@ -526,6 +612,18 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_andi_i32(masked, read_gpr(d, op & 15), 1u << (x >> 11));
         next = here + 4;
         count(d); branch(d, next + sext(x & 511, 9) * 2, next, masked, x & 512);
+    } else if ((op & 0xff00) == 0xfb00) {
+        int32_t delta = (int16_t)fetch(d, here + 2) * 2;
+        TCGv_i32 masked = tcg_temp_new_i32();
+        tcg_gen_and_i32(masked, read_gpr(d, op & 15), read_gpr(d, (op >> 4) & 15));
+        next = here + 4;
+        count(d); branch(d, next + delta, next, masked, true);
+    } else if (op == 0xff60 || op == 0xff61) {
+        uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
+        TCGv_i32 masked = tcg_temp_new_i32();
+        tcg_gen_andi_i32(masked, read_gpr(d, x >> 12), packed_mask(x));
+        next = here + 6;
+        count(d); branch(d, next + (int16_t)displacement * 2, next, masked, op & 1);
     } else if (op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09) {
         uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
         TCGCond cond;
@@ -607,6 +705,7 @@ illegal:
 }
 static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
 {
+    if ((op & 0xff88) == 0x1a00 || (op & 0xff88) == 0x1a80) { return 1u << (op & 7); }
     if ((op & 0xe008) == 0x4008) { return op & 128 ? 0 : 1u << (op & 7); }
     if ((op & 0xff80) == 0x0500 || (op & 0xff80) == 0x0580) {
         if (op & 8) { return -1; }
@@ -639,7 +738,8 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
 static unsigned operation_size(uint16_t op)
 {
     if ((op & 0xffc0) == 0xffc0 || (op & 0xfff0) == 0xffe0 || op == 0xff80 ||
-        op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09) { return 6; }
+        op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09 ||
+        op == 0xff60 || op == 0xff61) { return 6; }
     return op >> 13 == 7 ? 4 : 2;
 }
 static uint32_t instruction_end(PiDisasContext *d, uint32_t here)
@@ -675,6 +775,10 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
     if (PI32V2_CPU(cs)->display_fixture && here == PI32V2_CPU(cs)->frame_pc) {
         /* Observe a completed guest frame, then execute its real next opcode. */
         gen_helper_pi32v2_frame(tcg_env);
+    }
+    if (PI32V2_CPU(cs)->diag_loop_checkpoint && here == 0x02002632) {
+        translator_io_start(db);
+        gen_helper_pi32v2_diag_loop(tcg_env);
     }
     op = fetch(d, here);
     bool parallel = op >> 13 == 6 || (op & 0xf800) == 0xf000;

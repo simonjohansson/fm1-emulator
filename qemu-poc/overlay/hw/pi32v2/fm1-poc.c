@@ -36,7 +36,7 @@ struct FM1PocState {
     FM1TimerState timers[2];
     qemu_irq irq;
     uint32_t irq_configs[32];
-    uint32_t gpio[4][8], iomap_con0, iomap_con1;
+    uint32_t gpio[8][8], iomap_con0, iomap_con1;
     FM1PocLCD lcd;
     FM1PocSystem system;
     FM1PocNOR nor;
@@ -46,6 +46,7 @@ struct FM1PocState {
     uint16_t shift, latched;
     uint8_t matrix[11];
     uint64_t shift_edges, latch_edges;
+    uint64_t loop_visits, loop_target_irqs;
 };
 
 void fm1_poc_check_access(CPUPi32v2State *e, uint32_t address, unsigned size, unsigned flags)
@@ -64,6 +65,17 @@ void fm1_poc_note_branch(CPUPi32v2State *e)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
     if (m->cpu->diag_fixture) { fm1_system_note_branch(&m->system, e->pc); }
+}
+
+/* A private observation at the real foreground-loop boundary. The guest
+ * performs all initialization, drawing, watchdog feeds and IRQ work. */
+void fm1_poc_diag_loop(CPUPi32v2State *e)
+{
+    FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
+    m->loop_visits++;
+    if (m->loop_visits >= 3 && e->rti_count >= m->loop_target_irqs) {
+        fm1_poc_finish(e);
+    }
 }
 
 static unsigned divider(FM1TimerState *t) { return t->control & 16 ? 4 : 1; }
@@ -160,43 +172,49 @@ static uint64_t gpio_read(void *opaque, hwaddr offset, unsigned size)
     FM1PocState *m = opaque;
     unsigned port = offset / 0x40;
     offset %= 0x40;
-    if ((port != 0 && port != 2 && !(port == 3 && m->cpu->diag_fixture)) || offset >= sizeof(m->gpio[0])) {
+    if ((port != 0 && port != 2 && !(m->cpu->diag_fixture && (port == 1 || port == 3 || port == 7))) ||
+        offset >= sizeof(m->gpio[0])) {
         pi32v2_fail(&m->cpu->env, "unsupported GPIO register");
     }
-    if (port == 2 || port == 3) {
+    if (port == 2 || port == 3 || port == 7) {
         if ((!m->cpu->display_fixture && !m->cpu->diag_fixture) || offset == 4) {
             pi32v2_fail(&m->cpu->env, "unsupported PC GPIO read");
         }
         return m->gpio[port][offset / 4];
     }
     if (offset == 4) {
-        uint32_t inputs = m->gpio[0][4] & ~m->gpio[0][5] & m->gpio[0][2] & m->gpio[0][3];
+        uint32_t inputs = m->gpio[port][4] & ~m->gpio[port][5] & m->gpio[port][2] & m->gpio[port][3];
         for (unsigned col = 0; col < 11; col++) {
             if (!(m->latched & (1u << col))) {
-                if (m->matrix[col] & 1) { inputs &= ~1u; }
-                for (unsigned row = 1; row < 5; row++) {
-                    if (m->matrix[col] & (1u << row)) { inputs &= ~(1u << (row + 4)); }
+                if (port == 1) {
+                    if (m->matrix[col] & 32) { inputs &= ~(1u << 7); }
+                } else {
+                    if (m->matrix[col] & 1) { inputs &= ~1u; }
+                    for (unsigned row = 1; row < 5; row++) {
+                        if (m->matrix[col] & (1u << row)) { inputs &= ~(1u << (row + 4)); }
+                    }
                 }
             }
         }
-        return gpio_pins(m) | inputs;
+        return (m->gpio[port][0] & ~m->gpio[port][2] & m->gpio[port][3]) | inputs;
     }
     if (offset >= sizeof(m->gpio[0])) { pi32v2_fail(&m->cpu->env, "unsupported PA GPIO register"); }
-    return m->gpio[0][offset / 4];
+    return m->gpio[port][offset / 4];
 }
 static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     FM1PocState *m = opaque;
     unsigned port = offset / 0x40;
     offset %= 0x40;
-    if ((port != 0 && port != 2 && !(port == 3 && m->cpu->diag_fixture)) || offset == 4 || offset >= sizeof(m->gpio[0])) {
+    if ((port != 0 && port != 2 && !(m->cpu->diag_fixture && (port == 1 || port == 3 || port == 7))) ||
+        offset == 4 || offset >= sizeof(m->gpio[0])) {
         pi32v2_fail(&m->cpu->env, "unsupported PA GPIO write");
     }
-    if (port == 2 || port == 3) {
+    if (port != 0) {
         if (!m->cpu->display_fixture && !m->cpu->diag_fixture) { pi32v2_fail(&m->cpu->env, "unsupported PC GPIO write"); }
         m->gpio[port][offset / 4] = value;
         if (port == 2) { fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]); }
-        else { fm1_nor_set_pins(&m->nor, m->gpio[3][0], m->iomap_con0); }
+        else if (port == 3) { fm1_nor_set_pins(&m->nor, m->gpio[3][0], m->iomap_con0); }
         return;
     }
     uint32_t before = gpio_pins(m);
@@ -290,6 +308,26 @@ static const MemoryRegionOps irq_ops = {
     .impl = {.min_access_size = 4, .max_access_size = 4},
 };
 
+static void save_lcd_ppm(FM1PocState *m, const char *path)
+{
+    FILE *f = fopen(path, "wb");
+    if (!f) { pi32v2_fail(&m->cpu->env, "cannot create display frame PPM"); }
+    fprintf(f, "P6\n%u %u\n255\n", FM1_LCD_WIDTH, FM1_LCD_HEIGHT);
+    uint8_t row[FM1_LCD_WIDTH * 3];
+    for (unsigned y = 0; y < FM1_LCD_HEIGHT; y++) {
+        for (unsigned x = 0; x < FM1_LCD_WIDTH; x++) {
+            uint32_t rgb = fm1_lcd_rgb(&m->lcd, x, y);
+            row[x * 3] = rgb >> 16;
+            row[x * 3 + 1] = rgb >> 8;
+            row[x * 3 + 2] = rgb;
+        }
+        if (fwrite(row, sizeof(row), 1, f) != 1) {
+            pi32v2_fail(&m->cpu->env, "cannot write display frame PPM");
+        }
+    }
+    if (fclose(f)) { pi32v2_fail(&m->cpu->env, "cannot close display frame PPM"); }
+}
+
 /* Private checkpoint instrumentation observes framebuffer and guest state.
  * It changes only the fixture's physical key closure between frames. The
  * guest still executes its goto, timer reads, scans and all drawing routines. */
@@ -302,24 +340,9 @@ void fm1_poc_frame(CPUPi32v2State *e)
     }
     m->frames++;
     g_autofree char *path = g_strdup_printf("%s/frame-%u.ppm", m->frame_dir, m->frames);
-    FILE *f = fopen(path, "wb");
-    if (!f) { pi32v2_fail(e, "cannot create display frame PPM"); }
-    fprintf(f, "P6\n%u %u\n255\n", FM1_LCD_WIDTH, FM1_LCD_HEIGHT);
-    uint8_t row[FM1_LCD_WIDTH * 3];
-    for (unsigned y = 0; y < FM1_LCD_HEIGHT; y++) {
-        for (unsigned x = 0; x < FM1_LCD_WIDTH; x++) {
-            uint32_t rgb = fm1_lcd_rgb(&m->lcd, x, y);
-            row[x * 3] = rgb >> 16;
-            row[x * 3 + 1] = rgb >> 8;
-            row[x * 3 + 2] = rgb;
-        }
-        if (fwrite(row, sizeof(row), 1, f) != 1) {
-            pi32v2_fail(e, "cannot write display frame PPM");
-        }
-    }
-    if (fclose(f)) { pi32v2_fail(e, "cannot close display frame PPM"); }
+    save_lcd_ppm(m, path);
     g_autofree char *record = g_strdup_printf("%s/frame-%u.json", m->frame_dir, m->frames);
-    f = fopen(record, "w");
+    FILE *f = fopen(record, "w");
     if (!f) { pi32v2_fail(e, "cannot create display frame record"); }
     fprintf(f, "{\"frame\":%u,\"pc\":%u,\"instructions\":%" PRIu64
             ",\"virtual_ns\":%" PRId64 ",\"display_ticks\":%u,\"sp\":%u,\"ssp\":%u,"
@@ -400,6 +423,14 @@ void fm1_poc_finish(CPUPi32v2State *e)
                s->p33_transfers, s->p33_transactions, s->watchdog_arms, s->watchdog_feeds,
                s->watchdog_expirations, s->guard_checks, s->branches, s->emu_control,
                s->debug_enable, s->write_enable);
+        printf(",\"loop_visits\":%" PRIu64 ",\"milliseconds\":%u,\"lcd_timeouts\":%u,"
+               "\"p33_timeouts\":%u,\"usb_up\":%u,\"usb_timeouts\":%u,\"usb_retries\":%u",
+               m->loop_visits, ldl_le_phys(&address_space_memory, 0x01c096a4),
+               ldl_le_phys(&address_space_memory, 0x01c08028),
+               ldl_le_phys(&address_space_memory, 0x01c0802c),
+               ldub_phys(&address_space_memory, 0x01c097d0),
+               ldl_le_phys(&address_space_memory, 0x01c097f4),
+               ldl_le_phys(&address_space_memory, 0x01c09804));
         FM1PocNOR *n = &m->nor;
         printf(",\"nor\":{\"xip_enabled\":%s,\"busy\":%s,\"selected\":%s,"
                "\"transactions\":%" PRIu64 ",\"jedec_commands\":%" PRIu64
@@ -438,6 +469,8 @@ void fm1_poc_finish(CPUPi32v2State *e)
                                      MACHINE(m)->ram_size, &error)) {
                 error_report("cannot save diagnostic SRAM: %s", error->message); exit(EXIT_FAILURE);
             }
+            g_autofree char *image = g_strdup_printf("%s/state-%08x.ppm", state_dir, e->pc);
+            save_lcd_ppm(m, image);
         }
     }
     puts("}");
@@ -470,6 +503,7 @@ static void machine_init(MachineState *ms)
     if (diag) {
         const char *limit = getenv("FM1_POC_MAX_INSTRUCTIONS");
         const char *stop = getenv("FM1_POC_STOP_PC");
+        const char *loop_irqs = getenv("FM1_POC_LOOP_IRQS");
         char *end = NULL;
         uint64_t parsed;
         m->cpu->instruction_limit = 100000000;
@@ -489,6 +523,15 @@ static void machine_init(MachineState *ms)
                 error_report("FM1_POC_STOP_PC must be an aligned 32-bit address"); exit(EXIT_FAILURE);
             }
             m->cpu->stop_pc = parsed;
+        }
+        if (loop_irqs) {
+            errno = 0;
+            parsed = g_ascii_strtoull(loop_irqs, &end, 0);
+            if (errno || !*loop_irqs || *loop_irqs == '-' || *end || !parsed) {
+                error_report("FM1_POC_LOOP_IRQS must be a positive integer"); exit(EXIT_FAILURE);
+            }
+            m->loop_target_irqs = parsed;
+            m->cpu->diag_loop_checkpoint = true;
         }
     }
     cpu_reset(CPU(m->cpu));
@@ -530,7 +573,7 @@ static void machine_init(MachineState *ms)
                               i ? "fm1.timer5" : "fm1.timer4", 12);
         memory_region_add_subregion(get_system_memory(), 0x10800 + i * 0x100, &t->mmio);
     }
-    memory_region_init_io(&m->gpio_mmio, OBJECT(m), &gpio_ops, m, "fm1.gpio", diag ? 0xe0 : display ? 0xa0 : sizeof(m->gpio[0]));
+    memory_region_init_io(&m->gpio_mmio, OBJECT(m), &gpio_ops, m, "fm1.gpio", diag ? 0x1e0 : display ? 0xa0 : sizeof(m->gpio[0]));
     memory_region_add_subregion(get_system_memory(), 0x50000, &m->gpio_mmio);
     memory_region_init_io(&m->irq_mmio, OBJECT(m), &irq_ops, m, "fm1.irq63", 0xac);
     memory_region_add_subregion(get_system_memory(), 0x01eef100, &m->irq_mmio);

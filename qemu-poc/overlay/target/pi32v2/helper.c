@@ -29,6 +29,11 @@ void HELPER(pi32v2_frame)(CPUPi32v2State *env)
     fm1_poc_frame(env);
 }
 
+void HELPER(pi32v2_diag_loop)(CPUPi32v2State *env)
+{
+    fm1_poc_diag_loop(env);
+}
+
 void HELPER(pi32v2_budget)(CPUPi32v2State *env)
 {
     pi32v2_fail(env, "diagnostic instruction limit reached");
@@ -84,6 +89,12 @@ uint32_t HELPER(pi32v2_alu)(CPUPi32v2State *env, uint32_t a, uint32_t b,
     uint32_t flags = (ov >> 31) | (carry << 1) | ((r == 0) << 2) | ((r >> 31) << 3);
     env->spr[PSR] = (env->spr[PSR] & ~15u) | flags;
     return r;
+}
+
+uint32_t HELPER(pi32v2_div)(CPUPi32v2State *env, uint32_t numerator, uint32_t denominator)
+{
+    if (!denominator) { pi32v2_fail(env, "divide-by-zero behavior is unsupported"); }
+    return numerator / denominator;
 }
 
 void HELPER(pi32v2_rti)(CPUPi32v2State *env)

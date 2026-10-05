@@ -122,6 +122,52 @@ def main():
                      ("lt", 0xff03), ("gt", 0xff08), ("le", 0xff09)]:
         for value in [0, 1, 0xffffffff]:
             fixture(f"long-branch-{name}-{value:08x}", [*literal(0, value), op, 1, 1, 0x2241])
+    fixture("lcd-packed-sub", [*literal(0, 240), 0xe0a2, 0x00f0])
+    fixture("lcd-multiply-flags-alias", [*literal(0, 11), 0xe064, 0x0580,
+            *literal(0, 0x81234567), *literal(1, 0x7fffffff),
+            0xe1e0, 0x0005, 0xe1f0, 0x1100])
+    fixture("lcd-unsigned-div-min", [*literal(0, 0x80000000), *literal(1, 7),
+            0xe1f4, 0x2100, 0xe435, 0x3020])
+    fixture("lcd-post-half-store", [*literal(0, 0x01c08000), *literal(1, 0x12345678), 0x0681])
+    fixture("lcd-pre-byte-store", [*literal(0, 0x01c08000), *literal(1, 0x12345678), 0xee5a, 0x1002])
+    for value in [239, 240, 241, 0xffffffff, 520, 1099, 4095]:
+        # Vendor literal forms ECB* differ from the pinned SLEIGH packed label.
+        threshold = value if value in [520, 1099, 4095] else 240
+        fixture(f"conditional-unsigned-le-{value:08x}", [*literal(0, value),
+                0xecb0, threshold, 0xe041, 7])
+    for value in [0, 1, 0x80000000]:
+        fixture(f"conditional-register-mask-{value:08x}", [*literal(0, value), *literal(1, 1),
+                0xea10, 0x0100, 0xe042, 7])
+        fixture(f"conditional-register-ge-{value:08x}", [*literal(0, value), *literal(1, 1),
+                0xe910, 0x0100, 0xe042, 7])
+        for op in [0xff60, 0xff61]:
+            fixture(f"long-mask-{op:04x}-{value:08x}", [*literal(0, value), op, 1, 1, 0x2241])
+    state = fixture("gpio-mask-register", [*literal(3, 11), 0xe064, 0x3580,
+            *literal(0, 0x01c08000), *literal(1, 9), *literal(2, 0xffffffff), 0x6282,
+            0xe866, 0x0100, 0xe866, 0x0105, 0xe866, 0x010b])
+    validate.check(state["inspection"][:3] == [0xa5a5a7a5, 0xa5a5a7a5, 0xfffffdff] and
+                   state["specials"][5] == 11, "register-bit RMW effects/PSR differ")
+    fixture("gpio-extended-mask-offset", [*literal(0, 0x01c08000), 0xef13, 0x0001])
+    for value in [1, 2]:
+        fixture(f"decrement-branch-{value}", [*literal(0, value), 0xea00, 1, 0x2241])
+    for offset in [232, 2048, 4095]:
+        fixture(f"stack-wide-address-{offset}", [0xffee, 0x9ef0, 0x01c7, 0xe8f8, offset])
+    fixture("stack-double-word", [0xffee, 0x8000, 0x01c0, *literal(0, 0x12345678),
+            *literal(1, 0x87654321), 0xe9d0, 0x0029, 0xe9d0, 0x2028])
+    fixture("packed-add", [*literal(0, 0xffffffff), 0xe0e1, 0x0001])
+    for index in [0, 31]:
+        fixture(f"bit-register-{index}", [*literal(0, 0x81234567), *literal(1, index),
+                0xe194, 0x2100, 0xe194, 0x3101, 0xe194, 0x4102, 0xe194, 0x5103])
+    for op in [0x1a10, 0x1a90]:
+        for count in [0, 31, 32, 0xffffffff]:
+            fixture(f"low-shift-{op:04x}-{count:08x}", [*literal(0, 0x81234567), *literal(1, count), op])
+    fixture("byte-post-signed", [*literal(0, 0x01c08000), 0xe041, 0x12,
+            0xee52, 0x100b, 0xeed4, 0x200b])
+    fixture("byte-pre-unsigned", [*literal(0, 0x01c08000), 0xe041, 0x12,
+            0xee52, 0x100b, 0xee58, 0x200b])
+    for value in [0, 1, 0x80000000]:
+        fixture(f"register-mask-branch-{value:08x}", [*literal(0, value), *literal(1, 1),
+                0xfb10, 1, 0x2242])
     diag = validate.ROOT / "build/fm1-diag.bin"
     validate.check(hashlib.sha256(diag.read_bytes()).hexdigest() == DIAG_SHA, "diagnostic binary differs")
     compare("diagnostic-before-p33", diag, 0x020015f8)
