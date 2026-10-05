@@ -26,8 +26,9 @@ instructions.
 Encoding facts and register numbering were checked against the Apache-2.0
 [Quarkslab pi32v2 SLEIGH reference](https://github.com/quarkslab/ghidra-jieli/tree/e1bd0707874b77b759401555d24839ad43af1267),
 pinned to commit `e1bd0707874b77b759401555d24839ad43af1267`, particularly
-`pi32v2.slaspec`, `stack.sinc` and `arithops.sinc`. The implementation is newly
-written from those encoding facts and the saved vendor disassemblies; SLEIGH
+`pi32v2.slaspec`, `stack.sinc`, `arithops.sinc` and `progflow.sinc`. The
+implementation is newly written from those encoding facts and the saved
+vendor disassemblies; SLEIGH
 implementation text is not transplanted into the target.
 
 Guest-visible register addresses, expected behavior and fixture entry points

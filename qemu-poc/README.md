@@ -1,5 +1,21 @@
 # FM-1 QEMU proof of concept
 
+## Current boot progress
+
+The unchanged foundation and bare display diagnostics now boot from their
+application entries. Foundation covers guest RAM initialization and execution,
+GPIO matrix scanning, TIMER4 and a complete TIMER5 interrupt. The display
+fixture continues through three guest-rendered SPI/DMA frames with a simulated
+key press and release. See [BOOTING.md](BOOTING.md) for current commands,
+validation evidence and limitations.
+
+## Original probe and timer milestone
+
+The remainder of this document records the original proof of concept before
+full foundation startup was implemented. Its missing-feature and uncommitted
+work statements describe that historical milestone; current status is in
+[BOOTING.md](BOOTING.md).
+
 This worktree contains a working, deliberately small pi32v2 QEMU system target.
 It executes the existing instruction probe and the TIMER5 interrupt portion of
 the existing foundation firmware without changing either guest binary.
