@@ -78,6 +78,17 @@ uint32_t HELPER(pi32v2_advance)(CPUPi32v2State *env, uint32_t next)
     return next;
 }
 
+uint32_t HELPER(pi32v2_call_return)(CPUPi32v2State *env, uint32_t next)
+{
+    /* Close a final selected CALL before its callee starts another block.
+     * THEN+ELSE return handling disagrees with the separate reference; keep
+     * that form explicit until the hardware contract is established. */
+    if (next == env->predicate_end && env->predicate_from) {
+        pi32v2_fail(env, "final THEN call with ELSE is unsupported");
+    }
+    return HELPER(pi32v2_advance)(env, next);
+}
+
 /* Fresh implementation of the four observed condition bits. No Rust code
  * is linked or copied. The probe validates values, not all flag semantics. */
 uint32_t HELPER(pi32v2_alu)(CPUPi32v2State *env, uint32_t a, uint32_t b,

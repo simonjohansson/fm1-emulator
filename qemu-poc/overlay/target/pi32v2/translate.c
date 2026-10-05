@@ -58,6 +58,14 @@ static void count(PiDisasContext *d)
 {
     if (d->count_enabled) { tcg_gen_addi_i64(instructions, instructions, 1); }
 }
+static void set_call_return(PiDisasContext *d, uint32_t next)
+{
+    /* Retire the call at its sequential boundary before entering its callee;
+     * the outgoing control-transfer target is separate. */
+    if (d->diagnostic) {
+        gen_helper_pi32v2_call_return(spr[RETS], tcg_env, tcg_constant_i32(next));
+    } else { tcg_gen_movi_i32(spr[RETS], next); }
+}
 static TCGv_i32 read_gpr(PiDisasContext *d, unsigned reg)
 {
     return d->inputs[reg] ? d->inputs[reg] : gpr[reg];
@@ -593,14 +601,14 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xffc0) == 0xea80) {
         int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
         next = here + 4;
-        tcg_gen_movi_i32(spr[RETS], next);
+        set_call_return(d, next);
         count(d); record_branch(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe00c) == 0x8004) {
         int32_t delta = sext(((op & 3) << 10) | (((op >> 4) & 15) << 6) | (((op >> 8) & 31) << 1), 12);
         count(d); record_branch(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe08f) == 0x8001) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
-        tcg_gen_movi_i32(spr[RETS], next);
+        set_call_return(d, next);
         count(d); record_branch(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe008) == 0x4000) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
@@ -678,7 +686,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         count(d); compare_branch(d, next + sext(x & 511, 9) * 2, next, cond,
                                  read_gpr(d, op & 15), tcg_constant_i32(immediate));
     } else if ((op & 0xfff0) == 0x00c0) {
-        tcg_gen_movi_i32(spr[RETS], next);
+        set_call_return(d, next);
         count(d); dynamic_jump(d, read_gpr(d, op & 15));
     } else if ((op & 0xfff0) == 0x0230) {
         gen_helper_pi32v2_flush(tcg_env, read_gpr(d, op & 15));

@@ -53,6 +53,57 @@ def literal(register, value):
     return [0xffc0 | register, value & 0xffff, value >> 16]
 
 
+def conditional_call(kind, arm, condition, has_else=True):
+    # The selected arm ends in CALL, whose callee starts a separate IF. The
+    # actual retry uses no ELSE; selected ELSE calls also match the reference.
+    # A final THEN call with ELSE has an unresolved reference discrepancy
+    # (the reference returns into ELSE), so QEMU explicitly rejects that form.
+    width = 2 if kind == "direct" else 1
+    header = [0xffee, 0x9ef0, 0x01c7, *literal(0, condition), *literal(2, 0), *literal(3, 0)]
+    selected = [0] * width
+    other = [0xe042, 0x1111]
+    then = selected if arm == "then" else other
+    otherwise = (other if arm == "then" else selected) if has_else else []
+    main = [*header, 0xea20, 0x1001 if has_else else 1, *then, *otherwise, 0xe044, 0x4444]
+    stop = ENTRY + len(main) * 2
+    callee = stop + 2
+    header[-3:] = literal(3, callee)
+    call_index = len(header) + 2 + (len(then) if arm == "else" else 0)
+    next_pc = ENTRY + (call_index + width) * 2
+    if kind == "direct":
+        delta = (callee - next_pc) // 2
+        selected[:] = [0xea80 | ((delta >> 16) & 63), delta & 0xffff]
+    elif kind == "short":
+        delta = callee - next_pc
+        selected[:] = [0x8001 | (((delta >> 6) & 7) << 4) | (((delta >> 1) & 31) << 8)]
+    else:
+        selected[:] = [0x00c3]
+    main = [*header, 0xea20, 0x1001 if has_else else 1, *then, *otherwise, 0xe044, 0x4444]
+    body = [0xe045, 0x55, 0xea25, 2, 0xe046, 0x66, 0x0080]
+    image = CACHE / f"conditional-call-{kind}-{arm}-{condition}-{has_else}.bin"
+    words = [*main, 0x0000, *body]
+    image.write_bytes(struct.pack("<" + "H" * len(words), *words) + b"\0" * 16)
+    if arm == "then" and has_else and condition == 0:
+        env = dict(os.environ, FM1_POC_STOP_PC=hex(stop), FM1_POC_MAX_INSTRUCTIONS="1000000")
+        result = subprocess.run([*validate.COMMAND, "-kernel", str(image), "-append", "diag"],
+                                cwd=validate.ROOT, env=env, capture_output=True, text=True, timeout=15)
+        call_pc = ENTRY + call_index * 2
+        validate.check(result.returncode != 0 and "final THEN call with ELSE is unsupported" in result.stderr and
+                       f"PC 0x{call_pc:08x}" in result.stderr,
+                       "unresolved final THEN call with ELSE did not fault at its call")
+        (CACHE / f"{image.stem}-negative.json").write_text(json.dumps(
+            {"call_pc": call_pc, "returncode": result.returncode, "stderr": result.stderr}, indent=2) + "\n")
+        print(f"PASS {image.stem}: explicit unsupported final THEN+ELSE call")
+        return
+    state = compare(image.stem, image, stop)
+    called = condition == (0 if arm == "then" else 1)
+    validate.check(state["registers"][6] == (0x66 if called else 0x16263646),
+                   "conditional call chose the wrong arm/callee")
+    if arm == "then":
+        validate.check(state["registers"][2] == (0 if called or not has_else else 0x1111),
+                       "final THEN call returned into skipped ELSE")
+
+
 def main():
     CACHE.mkdir(parents=True, exist_ok=True)
     # Vendor E04A FFFF is rendered as r10=-1 at diagnostic PC 0x02001b50.
@@ -168,6 +219,11 @@ def main():
     for value in [0, 1, 0x80000000]:
         fixture(f"register-mask-branch-{value:08x}", [*literal(0, value), *literal(1, 1),
                 0xfb10, 1, 0x2242])
+    for kind in ["direct", "short", "register"]:
+        for arm in ["then", "else"]:
+            for condition in [0, 1]:
+                conditional_call(kind, arm, condition)
+        conditional_call(kind, "then", 0, has_else=False)
     diag = validate.ROOT / "build/fm1-diag.bin"
     validate.check(hashlib.sha256(diag.read_bytes()).hexdigest() == DIAG_SHA, "diagnostic binary differs")
     compare("diagnostic-before-p33", diag, 0x020015f8)
