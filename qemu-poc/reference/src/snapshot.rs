@@ -13,7 +13,8 @@ pub fn run(firmware: Firmware) {
         for address in (start..end).step_by(4) { cpu.bus.write(address, 0xa5a5a5a5, 4).unwrap(); }
     }
     let stop = u32::from_str_radix(env::var("FM1_POC_STOP_PC").unwrap().trim_start_matches("0x"), 16).unwrap();
-    cpu.run(Some(stop), 1_000_000, None).unwrap();
+    let limit = env::var("FM1_POC_MAX_INSTRUCTIONS").unwrap().parse().unwrap();
+    cpu.run(Some(stop), limit, None).unwrap();
     let results: Vec<_> = (0..12).map(|i| cpu.bus.read(0x01c08000 + i * 4, 4).unwrap()).collect();
     println!("{{\"pc\":{},\"instructions\":{},\"inspection\":{:?},\"registers\":{:?},\"specials\":{:?}}}",
              cpu.pc, cpu.steps, results, cpu.r, cpu.sr);

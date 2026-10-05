@@ -13,6 +13,8 @@
 #include "cpu.h"
 #include "fm1-lcd.h"
 #include "fm1-system.h"
+#include "fm1-nor.h"
+#include "fm1-usb.h"
 
 #define TYPE_FM1_POC_MACHINE MACHINE_TYPE_NAME("fm1-poc")
 OBJECT_DECLARE_SIMPLE_TYPE(FM1PocState, FM1_POC_MACHINE)
@@ -34,9 +36,11 @@ struct FM1PocState {
     FM1TimerState timers[2];
     qemu_irq irq;
     uint32_t irq_configs[32];
-    uint32_t gpio[3][8], iomap_con1;
+    uint32_t gpio[4][8], iomap_con0, iomap_con1;
     FM1PocLCD lcd;
     FM1PocSystem system;
+    FM1PocNOR nor;
+    FM1PocUSB usb;
     unsigned frames;
     const char *frame_dir;
     uint16_t shift, latched;
@@ -51,6 +55,7 @@ void fm1_poc_check_access(CPUPi32v2State *e, uint32_t address, unsigned size, un
         fm1_system_check_stack(&m->system);
         if (!(flags & 4)) {
             fm1_system_check_access(&m->system, address, size, flags & 1, flags & 2);
+            fm1_nor_check_access(&m->nor, address, size, flags & 1);
         }
     }
 }
@@ -155,14 +160,14 @@ static uint64_t gpio_read(void *opaque, hwaddr offset, unsigned size)
     FM1PocState *m = opaque;
     unsigned port = offset / 0x40;
     offset %= 0x40;
-    if ((port != 0 && port != 2) || offset >= sizeof(m->gpio[0])) {
+    if ((port != 0 && port != 2 && !(port == 3 && m->cpu->diag_fixture)) || offset >= sizeof(m->gpio[0])) {
         pi32v2_fail(&m->cpu->env, "unsupported GPIO register");
     }
-    if (port == 2) {
-        if (!m->cpu->display_fixture || offset == 4) {
+    if (port == 2 || port == 3) {
+        if ((!m->cpu->display_fixture && !m->cpu->diag_fixture) || offset == 4) {
             pi32v2_fail(&m->cpu->env, "unsupported PC GPIO read");
         }
-        return m->gpio[2][offset / 4];
+        return m->gpio[port][offset / 4];
     }
     if (offset == 4) {
         uint32_t inputs = m->gpio[0][4] & ~m->gpio[0][5] & m->gpio[0][2] & m->gpio[0][3];
@@ -184,13 +189,14 @@ static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
     FM1PocState *m = opaque;
     unsigned port = offset / 0x40;
     offset %= 0x40;
-    if ((port != 0 && port != 2) || offset == 4 || offset >= sizeof(m->gpio[0])) {
+    if ((port != 0 && port != 2 && !(port == 3 && m->cpu->diag_fixture)) || offset == 4 || offset >= sizeof(m->gpio[0])) {
         pi32v2_fail(&m->cpu->env, "unsupported PA GPIO write");
     }
-    if (port == 2) {
-        if (!m->cpu->display_fixture) { pi32v2_fail(&m->cpu->env, "unsupported PC GPIO write"); }
-        m->gpio[2][offset / 4] = value;
-        fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
+    if (port == 2 || port == 3) {
+        if (!m->cpu->display_fixture && !m->cpu->diag_fixture) { pi32v2_fail(&m->cpu->env, "unsupported PC GPIO write"); }
+        m->gpio[port][offset / 4] = value;
+        if (port == 2) { fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]); }
+        else { fm1_nor_set_pins(&m->nor, m->gpio[3][0], m->iomap_con0); }
         return;
     }
     uint32_t before = gpio_pins(m);
@@ -204,17 +210,24 @@ static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
         m->latched = m->shift;
         m->latch_edges++;
     }
-    if (m->cpu->display_fixture) {
+    if (m->cpu->display_fixture || m->cpu->diag_fixture) {
         fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
     }
 }
 static uint64_t iomap_read(void *opaque, hwaddr offset, unsigned size)
 {
-    return ((FM1PocState *)opaque)->iomap_con1;
+    FM1PocState *m = opaque;
+    return m->cpu->diag_fixture && !offset ? m->iomap_con0 : m->iomap_con1;
 }
 static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     FM1PocState *m = opaque;
+    if (m->cpu->diag_fixture && !offset) {
+        if (value & ~0x20ull) { pi32v2_fail(&m->cpu->env, "unsupported IOMAP_CON0 routing"); }
+        m->iomap_con0 = value;
+        fm1_nor_set_pins(&m->nor, m->gpio[3][0], m->iomap_con0);
+        return;
+    }
     if (value & ~0x10ull) { pi32v2_fail(&m->cpu->env, "unsupported IOMAP_CON1 routing"); }
     m->iomap_con1 = value;
     fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
@@ -387,6 +400,36 @@ void fm1_poc_finish(CPUPi32v2State *e)
                s->p33_transfers, s->p33_transactions, s->watchdog_arms, s->watchdog_feeds,
                s->watchdog_expirations, s->guard_checks, s->branches, s->emu_control,
                s->debug_enable, s->write_enable);
+        FM1PocNOR *n = &m->nor;
+        printf(",\"nor\":{\"xip_enabled\":%s,\"busy\":%s,\"selected\":%s,"
+               "\"transactions\":%" PRIu64 ",\"jedec_commands\":%" PRIu64
+               ",\"status_commands\":%" PRIu64 ",\"read_commands\":%" PRIu64
+               ",\"transfers\":%" PRIu64 ",\"completed_transfers\":%" PRIu64
+               ",\"acknowledgments\":%" PRIu64 ",\"received_bytes\":%" PRIu64
+               ",\"read_bytes\":%" PRIu64 ",\"sfc_disables\":%" PRIu64
+               ",\"sfc_restores\":%" PRIu64 "}",
+               fm1_nor_xip_enabled(n) ? "true" : "false", n->busy ? "true" : "false",
+               n->selected ? "true" : "false", n->transactions, n->jedec_commands,
+               n->status_commands, n->read_commands, n->transfers, n->completed_transfers,
+               n->acknowledgments, n->received_bytes, n->read_bytes, n->sfc_disables,
+               n->sfc_restores);
+        FM1PocUSB *u = &m->usb;
+        printf(",\"usb\":{\"host_connected\":%s,\"sie_clock_available\":%s,"
+               "\"control\":%u,\"pads\":%u,\"requests\":%" PRIu64
+               ",\"poll_reads\":%" PRIu64 ",\"abandoned_requests\":%" PRIu64
+               ",\"dma_packets\":%" PRIu64 ",\"recent_requests\":[",
+               u->host_connected ? "true" : "false", u->sie_clock_available ? "true" : "false",
+               u->control, u->pads, u->requests, u->bridge_poll_reads,
+               u->abandoned_requests, u->dma_packets);
+        for (unsigned i = 0; i < 6; i++) { printf("%s%u", i ? "," : "", u->recent_requests[i]); }
+        printf("],\"recent_polls\":[");
+        for (unsigned i = 0; i < 6; i++) { printf("%s%" PRIu64, i ? "," : "", u->recent_polls[i]); }
+        printf("]},\"lcd\":{\"visible\":%s,\"busy\":%s,\"pixels_written\":%" PRIu64
+               ",\"commands\":%" PRIu64 ",\"dma_transfers\":%" PRIu64
+               ",\"completed_transfers\":%" PRIu64 "}",
+               fm1_lcd_visible(&m->lcd) ? "true" : "false", m->lcd.busy ? "true" : "false",
+               m->lcd.pixels_written, m->lcd.commands, m->lcd.dma_transfers,
+               m->lcd.completed_transfers);
         const char *state_dir = getenv("FM1_POC_STATE_DIR");
         if (state_dir) {
             g_autofree char *path = g_strdup_printf("%s/state-%08x.sram", state_dir, e->pc);
@@ -466,10 +509,17 @@ static void machine_init(MachineState *ms)
         if (!strcmp(ms->kernel_cmdline, "foundation")) { m->matrix[0] = 1u << 4; }
     }
     m->latched = UINT16_MAX;
-    memory_region_init_rom(&m->xip, NULL, "fm1.xip", 0x100000, &error_fatal);
-    memory_region_add_subregion(get_system_memory(), 0x02000000, &m->xip);
-    if (load_image_targphys(ms->kernel_filename, 0x02000120, 0xffee0) <= 0) {
-        error_report("cannot load raw fixture"); exit(EXIT_FAILURE);
+    if (diag) {
+        m->gpio[3][0] = 1;
+        m->iomap_con0 = 0x20;
+        fm1_nor_init(&m->nor, OBJECT(m), m->cpu, ms->kernel_filename);
+        fm1_nor_set_pins(&m->nor, m->gpio[3][0], m->iomap_con0);
+    } else {
+        memory_region_init_rom(&m->xip, NULL, "fm1.xip", 0x100000, &error_fatal);
+        memory_region_add_subregion(get_system_memory(), 0x02000000, &m->xip);
+        if (load_image_targphys(ms->kernel_filename, 0x02000120, 0xffee0) <= 0) {
+            error_report("cannot load raw fixture"); exit(EXIT_FAILURE);
+        }
     }
     for (unsigned i = 0; i < 2; i++) {
         FM1TimerState *t = &m->timers[i];
@@ -480,16 +530,19 @@ static void machine_init(MachineState *ms)
                               i ? "fm1.timer5" : "fm1.timer4", 12);
         memory_region_add_subregion(get_system_memory(), 0x10800 + i * 0x100, &t->mmio);
     }
-    memory_region_init_io(&m->gpio_mmio, OBJECT(m), &gpio_ops, m, "fm1.gpio", display ? 0xa0 : sizeof(m->gpio[0]));
+    memory_region_init_io(&m->gpio_mmio, OBJECT(m), &gpio_ops, m, "fm1.gpio", diag ? 0xe0 : display ? 0xa0 : sizeof(m->gpio[0]));
     memory_region_add_subregion(get_system_memory(), 0x50000, &m->gpio_mmio);
     memory_region_init_io(&m->irq_mmio, OBJECT(m), &irq_ops, m, "fm1.irq63", 0xac);
     memory_region_add_subregion(get_system_memory(), 0x01eef100, &m->irq_mmio);
     m->irq = qdev_get_gpio_in(DEVICE(m->cpu), 0);
-    if (diag) { fm1_system_init(&m->system, OBJECT(m), m->cpu); }
-    if (display) {
+    if (diag) {
+        fm1_system_init(&m->system, OBJECT(m), m->cpu);
+        fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
+    }
+    if (display || diag) {
         fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
-        memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap-con1", 4);
-        memory_region_add_subregion(get_system_memory(), 0x51020, &m->iomap_mmio);
+        memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", diag ? 8 : 4);
+        memory_region_add_subregion(get_system_memory(), diag ? 0x5101c : 0x51020, &m->iomap_mmio);
         fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
     }
 }

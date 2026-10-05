@@ -44,6 +44,13 @@ void HELPER(pi32v2_branch)(CPUPi32v2State *env)
     fm1_poc_note_branch(env);
 }
 
+void HELPER(pi32v2_flush)(CPUPi32v2State *env, uint32_t address)
+{
+    /* Guest data stores already invalidate affected TCG code. The bounded
+     * machine has synchronous coherent memory, so no cache queue remains. */
+    fm1_poc_check_access(env, address & ~31u, 32, 0);
+}
+
 uint32_t HELPER(pi32v2_if)(CPUPi32v2State *env, uint32_t result,
                           uint32_t then_end, uint32_t else_end)
 {

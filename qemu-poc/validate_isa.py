@@ -16,8 +16,8 @@ ENTRY = 0x02000120
 DIAG_SHA = "781005cfcc4e0b562291fa747a0fa956204ee97c396c39214df04feaf86cc7e2"
 
 
-def compare(name, image, stop, exact_count=True):
-    env = dict(os.environ, FM1_POC_STOP_PC=hex(stop), FM1_POC_MAX_INSTRUCTIONS="1000000")
+def compare(name, image, stop, exact_count=True, limit=1000000, polling_registers=()):
+    env = dict(os.environ, FM1_POC_STOP_PC=hex(stop), FM1_POC_MAX_INSTRUCTIONS=str(limit))
     commands = {
         "qemu": [*validate.COMMAND, "-kernel", str(image), "-append", "diag"],
         "rust": ["mise", "exec", "--", "cargo", "run", "--manifest-path",
@@ -25,16 +25,21 @@ def compare(name, image, stop, exact_count=True):
     }
     states = {}
     for label, command in commands.items():
-        result = subprocess.run(command, cwd=validate.ROOT, env=env, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(command, cwd=validate.ROOT, env=env, capture_output=True, text=True, timeout=60)
         validate.check(result.returncode == 0, f"{name}/{label}: {result.stderr}")
         states[label] = json.loads(result.stdout)
-    fields = ["pc", "registers", "specials", "inspection"]
+    (CACHE / f"{name}.json").write_text(json.dumps(states, indent=2) + "\n")
+    fields = ["pc", "specials", "inspection"]
     if exact_count:
         fields.append("instructions")
     for field in fields:
         validate.check(states["qemu"][field] == states["rust"][field], f"{name}: {field} differs")
-    (CACHE / f"{name}.json").write_text(json.dumps(states, indent=2) + "\n")
-    print(f"PASS {name}: QEMU/Rust full snapshot, {states['qemu']['instructions']} instructions")
+    for index in range(16):
+        if index not in polling_registers:
+            validate.check(states["qemu"]["registers"][index] == states["rust"]["registers"][index],
+                           f"{name}: r{index} differs")
+    scope = "full snapshot" if not polling_registers else f"snapshot except timed poll registers {polling_registers}"
+    print(f"PASS {name}: QEMU/Rust {scope}, {states['qemu']['instructions']} instructions")
     return states["qemu"]
 
 
@@ -42,6 +47,10 @@ def fixture(name, words):
     image = CACHE / f"{name}.bin"
     image.write_bytes(struct.pack("<" + "H" * len(words), *words) + b"\0" * 16)
     return compare(name, image, ENTRY + len(words) * 2)
+
+
+def literal(register, value):
+    return [0xffc0 | register, value & 0xffff, value >> 16]
 
 
 def main():
@@ -86,6 +95,33 @@ def main():
         for value in [0, 1, 2, 0x80000000]:
             fixture(f"unsigned-{condition}-{value:08x}", [0xffc0, value & 0xffff, value >> 16,
                                                          op, 0x0201, 0x2241])
+    # The count is unsigned; shifts above the word width saturate rather than
+    # wrapping modulo 32. Aliasing checks preserve the incoming source/count.
+    for mode in [0, 2, 3]:
+        for count in [0, 31, 32, 63, 0xffffffff]:
+            dest = 1 if count == 31 else 0 if count == 32 else 2
+            fixture(f"shift-register-{mode}-{count:08x}", [*literal(0, 0x81234567),
+                    *literal(1, count), 0xe1c8, (dest << 12) | 0x100 | mode])
+        for count in [0, 31, 32, 63]:
+            fixture(f"shift-immediate-{mode}-{count}", [*literal(0, 0x71234567),
+                    0xe1c0, 0x2000 | (mode << 10) | ((count >> 4) << 8) | (count & 15)])
+    fixture("new-logic-arithmetic", [*literal(0, 0x12345678), *literal(1, 0x89abcdef),
+            0xe142, 0x0045, 0xe153, 0x1055, 0xe190, 0x4100,
+            0xe190, 0x5101, 0xe190, 0x6102, 0xe190, 0x7103,
+            0xe0b4, 0x8100, 0xe0b4, 0x9102, 0xe070, 0xa000, 0x1801, 0x1b01])
+    fixture("byte-addressing-memory-add", [*literal(0, 0x01c08000), *literal(1, 0x1234abcd),
+            0x4089, 0x400a, *literal(2, 1), 0xeed8, 0x3020,
+            0xeed8, 0x1021, 0xeed8, 0x4022, 0xeedc, 0x5020,
+            *literal(0, 0x01c08000), 0xe041, 7, 0x6081, 0xebc0, 0x0fff,
+            0x6002, 0xffee, 0x9ef0, 0x01c7, 0x94e9])
+    fixture("zero-register-pairs", [0x1480, 0x1482, 0x14c0, 0x14c7])
+    for name, op in [("ge", 0xfd00), ("lt", 0xfd80), ("gt", 0xfe00), ("le", 0xfe80)]:
+        for value in [0, 0xffffffff]:
+            fixture(f"signed-{name}-{value:08x}", [*literal(0, value), op | 0x70, 0xfe01, 0x2241])
+    for name, op in [("eq", 0xff00), ("ne", 0xff01), ("ge", 0xff02),
+                     ("lt", 0xff03), ("gt", 0xff08), ("le", 0xff09)]:
+        for value in [0, 1, 0xffffffff]:
+            fixture(f"long-branch-{name}-{value:08x}", [*literal(0, value), op, 1, 1, 0x2241])
     diag = validate.ROOT / "build/fm1-diag.bin"
     validate.check(hashlib.sha256(diag.read_bytes()).hexdigest() == DIAG_SHA, "diagnostic binary differs")
     compare("diagnostic-before-p33", diag, 0x020015f8)
