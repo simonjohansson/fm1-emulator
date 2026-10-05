@@ -99,6 +99,7 @@ static void reset(Object *obj, ResetType type)
     memset(&cpu->env, 0, sizeof(cpu->env));
     cpu->env.pc = cpu->boot_pc;
     for (int i = 0; i < 16; i++) { cpu->env.gpr[i] = 0x10203040u + i * 0x01010101u; }
+    if (cpu->diag_fixture) { cpu->env.gpr[0] = 0x01c7fe08; }
     if (cpu->timer_fixture) {
         cpu->env.spr[SP] = 0x01c7a000;
         cpu->env.spr[SSP] = 0x01c7c000;

@@ -3,14 +3,19 @@
 use fm1_emu::{bus::Bus, cpu::Cpu, firmware::Firmware, SYSTEM_STACK, USER_STACK, XIP};
 use std::{env, fs, path::Path};
 mod display;
+mod snapshot;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     assert!(
         args.len() == 3,
-        "usage: reference probe|timer|direct-probe|display IMAGE"
+        "usage: reference probe|timer|direct-probe|display|snapshot IMAGE"
     );
     let firmware = Firmware::load(Path::new(&args[2])).unwrap();
+    if args[1] == "snapshot" {
+        snapshot::run(firmware);
+        return;
+    }
     if args[1] == "display" {
         display::run(firmware);
         return;

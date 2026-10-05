@@ -352,10 +352,11 @@ static void machine_init(MachineState *ms)
     FM1PocState *m = FM1_POC_MACHINE(ms);
     bool timer = !strcmp(ms->kernel_cmdline, "timer");
     bool display = !strcmp(ms->kernel_cmdline, "display");
+    bool diag = !strcmp(ms->kernel_cmdline, "diag");
     bool foundation = display || !strcmp(ms->kernel_cmdline, "foundation") ||
                       !strcmp(ms->kernel_cmdline, "foundation-released");
-    if (strcmp(ms->kernel_cmdline, "probe") && !timer && !foundation) {
-        error_report("select -append probe, timer, foundation, foundation-released or display"); exit(EXIT_FAILURE);
+    if (strcmp(ms->kernel_cmdline, "probe") && !timer && !foundation && !diag) {
+        error_report("select -append probe, timer, foundation, foundation-released, display or diag"); exit(EXIT_FAILURE);
     }
     if (!ms->kernel_filename) { error_report("a raw fixture must be supplied with -kernel"); exit(EXIT_FAILURE); }
     m->cpu = PI32V2_CPU(cpu_create(TYPE_PI32V2_CPU));
@@ -363,11 +364,36 @@ static void machine_init(MachineState *ms)
     m->cpu->timer_fixture = timer;
     m->cpu->foundation_fixture = foundation;
     m->cpu->display_fixture = display;
+    m->cpu->diag_fixture = diag;
     m->cpu->frame_pc = display ? 0x020004fa : 0;
     m->frame_dir = getenv("FM1_POC_FRAME_DIR");
     if (!m->frame_dir) { m->frame_dir = "."; }
     m->cpu->boot_pc = timer ? 0x02000238 : 0x02000120;
     m->cpu->stop_pc = display ? 0x020002be : timer || foundation ? 0x020002ba : 0x0200013a;
+    if (diag) {
+        const char *limit = getenv("FM1_POC_MAX_INSTRUCTIONS");
+        const char *stop = getenv("FM1_POC_STOP_PC");
+        char *end = NULL;
+        uint64_t parsed;
+        m->cpu->instruction_limit = 100000000;
+        m->cpu->stop_pc = UINT32_MAX;
+        if (limit) {
+            errno = 0;
+            parsed = g_ascii_strtoull(limit, &end, 0);
+            if (errno || !*limit || *limit == '-' || *end || !parsed) {
+                error_report("FM1_POC_MAX_INSTRUCTIONS must be a positive integer"); exit(EXIT_FAILURE);
+            }
+            m->cpu->instruction_limit = parsed;
+        }
+        if (stop) {
+            errno = 0;
+            parsed = g_ascii_strtoull(stop, &end, 0);
+            if (errno || !*stop || *stop == '-' || *end || parsed > UINT32_MAX || (parsed & 1)) {
+                error_report("FM1_POC_STOP_PC must be an aligned 32-bit address"); exit(EXIT_FAILURE);
+            }
+            m->cpu->stop_pc = parsed;
+        }
+    }
     cpu_reset(CPU(m->cpu));
     memory_region_add_subregion(get_system_memory(), 0x01c00000, ms->ram);
     if (foundation) {

@@ -13,6 +13,8 @@ typedef struct PiDisasContext {
     DisasContextBase base;
     CPUPi32v2State *env;
     uint32_t stop;
+    bool count_enabled;
+    TCGv_i32 inputs[16];
 } PiDisasContext;
 static TCGv_i32 gpr[16], spr[16], pc;
 static TCGv_i64 instructions;
@@ -38,11 +40,27 @@ static int32_t sext(uint32_t n, unsigned bits)
 {
     return (int32_t)(n << (32 - bits)) >> (32 - bits);
 }
+static uint32_t packed_mask(uint16_t x)
+{
+    unsigned mode = (x >> 10) & 3;
+    if (!mode) {
+        static const uint32_t repeat[] = {1, 0x00010001, 0x01000100, 0x01010101};
+        return (x & 255) * repeat[(x >> 8) & 3];
+    }
+    return ((uint32_t)(0x80 | (x & 127)) << (32 - mode * 8)) >> ((x >> 7) & 7);
+}
 static uint16_t fetch(PiDisasContext *d, uint32_t addr)
 {
     return translator_lduw(d->env, &d->base, addr);
 }
-static void count(void) { tcg_gen_addi_i64(instructions, instructions, 1); }
+static void count(PiDisasContext *d)
+{
+    if (d->count_enabled) { tcg_gen_addi_i64(instructions, instructions, 1); }
+}
+static TCGv_i32 read_gpr(PiDisasContext *d, unsigned reg)
+{
+    return d->inputs[reg] ? d->inputs[reg] : gpr[reg];
+}
 static void push(TCGv_i32 value)
 {
     tcg_gen_subi_i32(spr[SP], spr[SP], 4);
@@ -80,11 +98,22 @@ static void branch(PiDisasContext *d, uint32_t dest, uint32_t next,
     jump(d, dest, 1);
     d->base.is_jmp = DISAS_NORETURN;
 }
+static void compare_branch(PiDisasContext *d, uint32_t dest, uint32_t next,
+                           TCGCond cond, TCGv_i32 left, TCGv_i32 right)
+{
+    TCGLabel *taken = gen_new_label();
+    tcg_gen_brcond_i32(cond, left, right, taken);
+    jump(d, next, 0);
+    gen_set_label(taken);
+    jump(d, dest, 1);
+    d->base.is_jmp = DISAS_NORETURN;
+}
 static void init_disas(DisasContextBase *db, CPUState *cs)
 {
     PiDisasContext *d = container_of(db, PiDisasContext, base);
     d->env = cpu_env(cs);
     d->stop = PI32V2_CPU(cs)->stop_pc;
+    d->count_enabled = true;
 }
 static void tb_start(DisasContextBase *db, CPUState *cs) {}
 static void insn_start(DisasContextBase *db, CPUState *cs)
@@ -92,13 +121,202 @@ static void insn_start(DisasContextBase *db, CPUState *cs)
     tcg_gen_insn_start(db->pc_next);
 }
 
+static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
+{
+    DisasContextBase *db = &d->base;
+    uint32_t next = here + 2;
+    unsigned a = op & 7, b = (op >> 4) & 7;
+    if ((op & 0xfff0) == 0xffc0 || (op & 0xfff0) == 0xffe0) {
+        uint32_t value = fetch(d, here + 2) | ((uint32_t)fetch(d, here + 4) << 16);
+        unsigned reg = op & 15;
+        if ((op & 0xfff0) == 0xffe0 && reg != SP && reg != SSP && reg != USP && reg != RETI) {
+            goto illegal;
+        }
+        tcg_gen_movi_i32((op & 0x20) ? spr[reg] : gpr[reg], value);
+        next = here + 6;
+    } else if (op == 0xe040 || (op & 0xfff0) == 0xe040) {
+        /* Vendor disassembly (E04A FFFF -> r10 = -1) and the external
+         * oracle agree on sign extension; SLEIGH's movz label conflicts. */
+        tcg_gen_movi_i32(gpr[op & 15], (int16_t)fetch(d, here + 2));
+        next = here + 4;
+    } else if (op == 0xe060) {
+        uint16_t x = fetch(d, here + 2);
+        tcg_gen_movi_i32(gpr[x >> 12], packed_mask(x));
+        next = here + 4;
+    } else if (op == 0xe064) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned reg = x >> 12, special = (x >> 8) & 15;
+        if (special == 15 || ((x & 255) != 0 && (x & 255) != 128)) { goto illegal; }
+        tcg_gen_mov_i32((x & 128) ? spr[special] : gpr[reg],
+                       (x & 128) ? read_gpr(d, reg) : spr[special]);
+        next = here + 4;
+        /* Writing ICFG can make an already asserted IRQ deliverable. */
+        if (special == ICFG && (x & 128)) { db->is_jmp = DISAS_EXIT; }
+    } else if ((op & 0xe0c0) == 0x2040) {
+        tcg_gen_movi_i32(gpr[a], ((op >> 8) & 31) | (((op >> 3) & 7) << 5));
+    } else if ((op & 0xe0f8) == 0x2010) {
+        tcg_gen_movi_i32(gpr[a], 0xffffffe0u | ((op >> 8) & 31));
+    } else if ((op & 0xff00) == 0x1600) {
+        tcg_gen_mov_i32(gpr[op & 15], read_gpr(d, (op >> 4) & 15));
+    } else if ((op & 0xfe00) == 0x1c00 || (op & 0xfe00) == 0x1e00) {
+        unsigned c = ((op >> 7) & 3) * 2 + ((op >> 3) & 1);
+        gen_helper_pi32v2_alu(gpr[a], tcg_env, read_gpr(d, b), read_gpr(d, c), tcg_constant_i32((op & 0x200) != 0));
+    } else if ((op & 0xe0c0) == 0x20c0) {
+        int imm = sext(((op >> 8) & 31) | (((op >> 3) & 7) << 5), 8);
+        gen_helper_pi32v2_alu(gpr[a], tcg_env, read_gpr(d, a), tcg_constant_i32(imm), tcg_constant_i32(0));
+    } else if ((op & 0xe088) == 0x8008) {
+        gen_helper_pi32v2_alu(gpr[a], tcg_env, read_gpr(d, b), tcg_constant_i32((op >> 8) & 31), tcg_constant_i32(0));
+    } else if ((op & 0xe01f) == 0x8002) {
+        int32_t imm = sext((op >> 5) & 7, 3) * 128 + ((op >> 8) & 31) * 4;
+        tcg_gen_addi_i32(spr[SP], spr[SP], imm);
+    } else if ((op & 0xfff0) == 0xe160) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned mode = (x >> 10) & 3;
+        uint32_t mask = mode ? packed_mask(x) : x & 1023;
+        tcg_gen_andi_i32(gpr[op & 15], read_gpr(d, x >> 12), mask);
+        next = here + 4;
+    } else if ((op & 0xffc0) == 0xea40) {
+        uint16_t x = fetch(d, here + 2);
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), (op & 63) * 4);
+        tcg_gen_qemu_st_i32(tcg_constant_i32(packed_mask(x)), addr, 0, MO_LEUL | MO_ALIGN);
+        next = here + 4;
+    } else if ((op & 0xff88) == 0x1900) {
+        tcg_gen_or_i32(gpr[a], read_gpr(d, a), read_gpr(d, b));
+    } else if ((op & 0xff88) == 0x1908) {
+        tcg_gen_xor_i32(gpr[a], read_gpr(d, a), read_gpr(d, b));
+    } else if ((op & 0xff88) == 0x1980) {
+        tcg_gen_and_i32(gpr[a], read_gpr(d, a), read_gpr(d, b));
+    } else if ((op & 0xff88) == 0x1988) {
+        tcg_gen_not_i32(gpr[a], read_gpr(d, b));
+    } else if ((op & 0xe008) == 0xa000) {
+        if (op & 128) { tcg_gen_shri_i32(gpr[a], read_gpr(d, b), (op >> 8) & 31); }
+        else { tcg_gen_shli_i32(gpr[a], read_gpr(d, b), (op >> 8) & 31); }
+    } else if ((op & 0xe008) == 0x6000) {
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, read_gpr(d, b), sext((op >> 8) & 31, 5) * 4);
+        if (op & 128) { tcg_gen_qemu_st_i32(read_gpr(d, a), addr, 0, MO_LEUL | MO_ALIGN); }
+        else { tcg_gen_qemu_ld_i32(gpr[a], addr, 0, MO_LEUL | MO_ALIGN); }
+    } else if (op == 0xe8d8 || op == 0xe8d4) {
+        uint16_t mask = fetch(d, here + 2);
+        if (op == 0xe8d8) {
+            for (int i = 15; i >= 0; i--) { if (mask & (1 << i)) { push(read_gpr(d, i)); } }
+        } else {
+            for (int i = 0; i < 16; i++) { if (mask & (1 << i)) { pop(gpr[i]); } }
+        }
+        next = here + 4;
+    } else if ((op & 0xfff0) == 0x0460 || (op & 0xfff0) == 0x0440) {
+        unsigned boundary = op & 15;
+        unsigned lo = boundary < 4 ? boundary : 4;
+        unsigned hi = boundary < 4 ? 3 : boundary;
+        if (op & 32) { for (int i = hi; i >= (int)lo; i--) { push(read_gpr(d, i)); } }
+        else { for (unsigned i = lo; i <= hi; i++) { pop(gpr[i]); } }
+    } else if ((op & 0xfff0) == 0x0470 || (op & 0xfff0) == 0x0450) {
+        unsigned hi = op & 15;
+        if (hi < 4) { goto illegal; }
+        if (op & 32) {
+            push(spr[RETS]);
+            for (int i = hi; i >= 4; i--) { push(read_gpr(d, i)); }
+        } else {
+            TCGv_i32 dest = tcg_temp_new_i32();
+            for (unsigned i = 4; i <= hi; i++) { pop(gpr[i]); }
+            pop(dest);
+            count(d); dynamic_jump(d, dest);
+        }
+    } else if (op == 0x04e9) {
+        push(spr[PSR]); push(spr[RETS]); push(spr[RETI]);
+    } else if (op == 0x04a9) {
+        pop(spr[RETI]); pop(spr[RETS]); pop(spr[PSR]);
+    } else if ((op & 0xffc0) == 0xea80) {
+        int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
+        next = here + 4;
+        tcg_gen_movi_i32(spr[RETS], next);
+        count(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
+    } else if ((op & 0xe00c) == 0x8004) {
+        int32_t delta = sext(((op & 3) << 10) | (((op >> 4) & 15) << 6) | (((op >> 8) & 31) << 1), 12);
+        count(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
+    } else if ((op & 0xe08f) == 0x8001) {
+        int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
+        tcg_gen_movi_i32(spr[RETS], next);
+        count(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
+    } else if ((op & 0xe008) == 0x4000) {
+        int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
+        count(d); branch(d, next + delta, next, read_gpr(d, a), op & 128);
+    } else if ((op & 0xfc00) == 0xf800 || (op & 0xff00) == 0xfc00) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned kind = (op >> 7) & 63;
+        TCGCond cond;
+        switch (kind) {
+        case 0x30: cond = TCG_COND_EQ; break;
+        case 0x31: cond = TCG_COND_NE; break;
+        case 0x32: cond = TCG_COND_GEU; break;
+        case 0x33: cond = TCG_COND_LTU; break;
+        case 0x38: cond = TCG_COND_GTU; break;
+        case 0x39: cond = TCG_COND_LEU; break;
+        default: goto illegal;
+        }
+        next = here + 4;
+        count(d); compare_branch(d, next + sext(x & 511, 9) * 2, next, cond,
+                                 read_gpr(d, op & 15), tcg_constant_i32((((op >> 4) & 7) << 7) | (x >> 9)));
+    } else if ((op & 0xfff0) == 0x00c0) {
+        tcg_gen_movi_i32(spr[RETS], next);
+        count(d); dynamic_jump(d, read_gpr(d, op & 15));
+    } else if (op == 0x0080) {
+        count(d); dynamic_jump(d, spr[RETS]);
+    } else if (op == 0x0081) {
+        count(d); gen_helper_pi32v2_rti(tcg_env); tcg_gen_exit_tb(NULL, 0);
+        db->is_jmp = DISAS_NORETURN;
+    } else if (op == 0x0060 || op == 0x0061) {
+        if (op == 0x0060) { tcg_gen_andi_i32(spr[ICFG], spr[ICFG], ~0x200u); }
+        else { tcg_gen_ori_i32(spr[ICFG], spr[ICFG], 0x200); }
+        db->is_jmp = DISAS_EXIT;
+    } else if (op != 0x0020 && op != 0x0000) {
+        goto illegal;
+    }
+
+    if (db->is_jmp != DISAS_NORETURN) { count(d); }
+    return next;
+illegal:
+    gen_helper_pi32v2_illegal(tcg_env, tcg_constant_i32(op));
+    db->is_jmp = DISAS_NORETURN;
+    return next;
+}
+static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
+{
+    if ((op & 0xe008) == 0x6000) { return op & 128 ? 0 : 1u << (op & 7); }
+    if ((op & 0xe0c0) == 0x2040 || (op & 0xe0f8) == 0x2010 ||
+        (op & 0xfe00) == 0x1c00 || (op & 0xfe00) == 0x1e00 ||
+        (op & 0xe0c0) == 0x20c0 || (op & 0xe088) == 0x8008 ||
+        (op & 0xff00) == 0x1900 || (op & 0xe008) == 0xa000) {
+        return 1u << (op & 7);
+    }
+    if ((op & 0xff00) == 0x1600 || (op & 0xfff0) == 0xe040 ||
+        (op & 0xfff0) == 0xe160 || (op & 0xffc0) == 0xe100) {
+        return 1u << (op & 15);
+    }
+    if (op == 0xe060) { return 1u << (fetch(d, here + 2) >> 12); }
+    if (op == 0x0000 || (op & 0xffc0) == 0xea40) { return 0; }
+    return -1;
+}
+static unsigned operation_size(uint16_t op)
+{
+    if ((op & 0xffc0) == 0xffc0 || (op & 0xfff0) == 0xffe0) { return 6; }
+    return op >> 13 == 7 ? 4 : 2;
+}
+
 static void translate_insn(DisasContextBase *db, CPUState *cs)
 {
     PiDisasContext *d = container_of(db, PiDisasContext, base);
     uint32_t here = db->pc_next, next = here + 2;
     uint16_t op;
-    int a, b;
     tcg_gen_movi_i32(pc, here);
+    if (PI32V2_CPU(cs)->instruction_limit) {
+        TCGLabel *within_budget = gen_new_label();
+        tcg_gen_brcondi_i64(TCG_COND_LTU, instructions,
+                           PI32V2_CPU(cs)->instruction_limit, within_budget);
+        gen_helper_pi32v2_budget(tcg_env);
+        gen_set_label(within_budget);
+    }
     if (here == d->stop) {
         gen_helper_pi32v2_finish(tcg_env);
         db->is_jmp = DISAS_NORETURN;
@@ -110,142 +328,36 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         gen_helper_pi32v2_frame(tcg_env);
     }
     op = fetch(d, here);
-    a = op & 7;
-    b = (op >> 4) & 7;
-
-    if ((op & 0xfff0) == 0xffc0 || (op & 0xfff0) == 0xffe0) {
-        uint32_t value = fetch(d, here + 2) | ((uint32_t)fetch(d, here + 4) << 16);
-        unsigned reg = op & 15;
-        if ((op & 0xfff0) == 0xffe0 && reg != SP && reg != SSP && reg != USP && reg != RETI) {
-            goto illegal;
-        }
-        tcg_gen_movi_i32((op & 0x20) ? spr[reg] : gpr[reg], value);
-        next = here + 6;
-    } else if (op == 0xe040 || (op & 0xfff0) == 0xe040) {
-        tcg_gen_movi_i32(gpr[op & 15], (int16_t)fetch(d, here + 2));
-        next = here + 4;
-    } else if (op == 0xe060) {
-        uint16_t x = fetch(d, here + 2);
-        unsigned mode = (x >> 10) & 3;
-        uint32_t value;
-        if (!mode) {
-            static const uint32_t repeat[] = {1, 0x00010001, 0x01000100, 0x01010101};
-            value = (x & 255) * repeat[(x >> 8) & 3];
+    bool parallel = op >> 13 == 6 || (op & 0xf800) == 0xf000;
+    if (parallel) {
+        uint16_t head = op >> 13 == 6 ? op & 0x1fff : op & ~0x1000;
+        uint32_t tail_pc = here + operation_size(head);
+        uint16_t tail = fetch(d, tail_pc);
+        int head_writes = parallel_writes(d, here, head);
+        int tail_writes = parallel_writes(d, tail_pc, tail);
+        if (head_writes < 0 || tail_writes < 0 || (head_writes & tail_writes)) {
+            gen_helper_pi32v2_illegal(tcg_env, tcg_constant_i32(op));
+            db->is_jmp = DISAS_NORETURN;
         } else {
-            value = ((uint32_t)(0x80 | (x & 127)) << (32 - mode * 8)) >> ((x >> 7) & 7);
+            TCGv_i32 incoming[16];
+            for (unsigned i = 0; i < 16; i++) {
+                incoming[i] = tcg_temp_new_i32();
+                tcg_gen_mov_i32(incoming[i], gpr[i]);
+            }
+            d->count_enabled = false;
+            next = decode_operation(d, tail_pc, tail);
+            d->count_enabled = true;
+            for (unsigned i = 0; i < 16; i++) { d->inputs[i] = incoming[i]; }
+            decode_operation(d, here, head);
+            for (unsigned i = 0; i < 16; i++) { d->inputs[i] = NULL; }
         }
-        tcg_gen_movi_i32(gpr[x >> 12], value);
-        next = here + 4;
-    } else if (op == 0xe064) {
-        uint16_t x = fetch(d, here + 2);
-        unsigned reg = x >> 12, special = (x >> 8) & 15;
-        if (special == 15 || ((x & 255) != 0 && (x & 255) != 128)) { goto illegal; }
-        tcg_gen_mov_i32((x & 128) ? spr[special] : gpr[reg],
-                       (x & 128) ? gpr[reg] : spr[special]);
-        next = here + 4;
-        /* Writing ICFG can make an already asserted IRQ deliverable. */
-        if (special == ICFG && (x & 128)) { db->is_jmp = DISAS_EXIT; }
-    } else if ((op & 0xe0c0) == 0x2040) {
-        tcg_gen_movi_i32(gpr[a], ((op >> 8) & 31) | (((op >> 3) & 7) << 5));
-    } else if ((op & 0xe0f8) == 0x2010) {
-        tcg_gen_movi_i32(gpr[a], 0xffffffe0u | ((op >> 8) & 31));
-    } else if ((op & 0xff00) == 0x1600) {
-        tcg_gen_mov_i32(gpr[op & 15], gpr[(op >> 4) & 15]);
-    } else if ((op & 0xfe00) == 0x1c00 || (op & 0xfe00) == 0x1e00) {
-        unsigned c = ((op >> 7) & 3) * 2 + ((op >> 3) & 1);
-        gen_helper_pi32v2_alu(gpr[a], tcg_env, gpr[b], gpr[c], tcg_constant_i32((op & 0x200) != 0));
-    } else if ((op & 0xe0c0) == 0x20c0) {
-        int imm = sext(((op >> 8) & 31) | (((op >> 3) & 7) << 5), 8);
-        gen_helper_pi32v2_alu(gpr[a], tcg_env, gpr[a], tcg_constant_i32(imm), tcg_constant_i32(0));
-    } else if ((op & 0xe088) == 0x8008) {
-        gen_helper_pi32v2_alu(gpr[a], tcg_env, gpr[b], tcg_constant_i32((op >> 8) & 31), tcg_constant_i32(0));
-    } else if ((op & 0xff88) == 0x1900) {
-        tcg_gen_or_i32(gpr[a], gpr[a], gpr[b]);
-    } else if ((op & 0xff88) == 0x1908) {
-        tcg_gen_xor_i32(gpr[a], gpr[a], gpr[b]);
-    } else if ((op & 0xff88) == 0x1980) {
-        tcg_gen_and_i32(gpr[a], gpr[a], gpr[b]);
-    } else if ((op & 0xff88) == 0x1988) {
-        tcg_gen_not_i32(gpr[a], gpr[b]);
-    } else if ((op & 0xe008) == 0xa000) {
-        if (op & 128) { tcg_gen_shri_i32(gpr[a], gpr[b], (op >> 8) & 31); }
-        else { tcg_gen_shli_i32(gpr[a], gpr[b], (op >> 8) & 31); }
-    } else if ((op & 0xe008) == 0x6000) {
-        TCGv_i32 addr = tcg_temp_new_i32();
-        tcg_gen_addi_i32(addr, gpr[b], sext((op >> 8) & 31, 5) * 4);
-        if (op & 128) { tcg_gen_qemu_st_i32(gpr[a], addr, 0, MO_LEUL | MO_ALIGN); }
-        else { tcg_gen_qemu_ld_i32(gpr[a], addr, 0, MO_LEUL | MO_ALIGN); }
-    } else if (op == 0xe8d8 || op == 0xe8d4) {
-        uint16_t mask = fetch(d, here + 2);
-        if (op == 0xe8d8) {
-            for (int i = 15; i >= 0; i--) { if (mask & (1 << i)) { push(gpr[i]); } }
-        } else {
-            for (int i = 0; i < 16; i++) { if (mask & (1 << i)) { pop(gpr[i]); } }
-        }
-        next = here + 4;
-    } else if ((op & 0xfff0) == 0x0460 || (op & 0xfff0) == 0x0440) {
-        unsigned boundary = op & 15;
-        unsigned lo = boundary < 4 ? boundary : 4;
-        unsigned hi = boundary < 4 ? 3 : boundary;
-        if (op & 32) { for (int i = hi; i >= (int)lo; i--) { push(gpr[i]); } }
-        else { for (unsigned i = lo; i <= hi; i++) { pop(gpr[i]); } }
-    } else if ((op & 0xfff0) == 0x0470 || (op & 0xfff0) == 0x0450) {
-        unsigned hi = op & 15;
-        if (hi < 4) { goto illegal; }
-        if (op & 32) {
-            push(spr[RETS]);
-            for (int i = hi; i >= 4; i--) { push(gpr[i]); }
-        } else {
-            TCGv_i32 dest = tcg_temp_new_i32();
-            for (unsigned i = 4; i <= hi; i++) { pop(gpr[i]); }
-            pop(dest);
-            count(); dynamic_jump(d, dest);
-        }
-    } else if (op == 0x04e9) {
-        push(spr[PSR]); push(spr[RETS]); push(spr[RETI]);
-    } else if (op == 0x04a9) {
-        pop(spr[RETI]); pop(spr[RETS]); pop(spr[PSR]);
-    } else if ((op & 0xffc0) == 0xea80) {
-        int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
-        next = here + 4;
-        tcg_gen_movi_i32(spr[RETS], next);
-        count(); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
-    } else if ((op & 0xe00c) == 0x8004) {
-        int32_t delta = sext(((op & 3) << 10) | (((op >> 4) & 15) << 6) | (((op >> 8) & 31) << 1), 12);
-        count(); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
-    } else if ((op & 0xe08f) == 0x8001) {
-        int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
-        tcg_gen_movi_i32(spr[RETS], next);
-        count(); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
-    } else if ((op & 0xe008) == 0x4000) {
-        int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
-        count(); branch(d, next + delta, next, gpr[a], op & 128);
-    } else if ((op & 0xfff0) == 0x00c0) {
-        tcg_gen_movi_i32(spr[RETS], next);
-        count(); dynamic_jump(d, gpr[op & 15]);
-    } else if (op == 0x0080) {
-        count(); dynamic_jump(d, spr[RETS]);
-    } else if (op == 0x0081) {
-        count(); gen_helper_pi32v2_rti(tcg_env); tcg_gen_exit_tb(NULL, 0);
-        db->is_jmp = DISAS_NORETURN;
-    } else if (op == 0x0060 || op == 0x0061) {
-        if (op == 0x0060) { tcg_gen_andi_i32(spr[ICFG], spr[ICFG], ~0x200u); }
-        else { tcg_gen_ori_i32(spr[ICFG], spr[ICFG], 0x200); }
-        db->is_jmp = DISAS_EXIT;
-    } else if (op != 0x0020 && op != 0x0000) {
-        goto illegal;
+    } else {
+        next = decode_operation(d, here, op);
     }
-
-    if (db->is_jmp != DISAS_NORETURN) { count(); }
     db->pc_next = next;
     if (db->is_jmp == DISAS_NEXT && !translator_is_same_page(db, next + 5)) {
         db->is_jmp = DISAS_TOO_MANY;
     }
-    return;
-illegal:
-    gen_helper_pi32v2_illegal(tcg_env, tcg_constant_i32(op));
-    db->is_jmp = DISAS_NORETURN;
-    db->pc_next = next;
 }
 static void tb_stop(DisasContextBase *db, CPUState *cs)
 {
