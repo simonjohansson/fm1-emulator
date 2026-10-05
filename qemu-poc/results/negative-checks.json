@@ -1,0 +1,22 @@
+[
+  {
+    "case": "unsupported-opcode",
+    "returncode": 1,
+    "diagnostic": "qemu-system-pi32v2: pi32v2 PoC: unsupported instruction 0xffff at PC 0x02000120 after 0 instructions"
+  },
+  {
+    "case": "unmapped-memory",
+    "returncode": 1,
+    "diagnostic": "qemu-system-pi32v2: pi32v2 PoC: unmapped access at 0xdead0000 at PC 0x02000146 after 7 instructions"
+  },
+  {
+    "case": "unaligned-memory",
+    "returncode": 1,
+    "diagnostic": "qemu-system-pi32v2: pi32v2 PoC: unaligned access at PC 0x02000146 after 7 instructions"
+  },
+  {
+    "case": "read-only-xip",
+    "returncode": 1,
+    "diagnostic": "qemu-system-pi32v2: pi32v2 PoC: write to read-only XIP at PC 0x02000146 after 7 instructions"
+  }
+]

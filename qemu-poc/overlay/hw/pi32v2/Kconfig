@@ -1,0 +1,4 @@
+config FM1_POC
+    bool
+    default y
+    depends on PI32V2

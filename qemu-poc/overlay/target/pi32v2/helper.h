@@ -1,0 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+DEF_HELPER_2(pi32v2_illegal, noreturn, env, i32)
+DEF_HELPER_1(pi32v2_finish, noreturn, env)
+DEF_HELPER_4(pi32v2_alu, i32, env, i32, i32, i32)
+DEF_HELPER_1(pi32v2_rti, void, env)

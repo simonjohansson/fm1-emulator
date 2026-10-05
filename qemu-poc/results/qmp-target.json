@@ -1,0 +1,39 @@
+[
+  {
+    "QMP": {
+      "version": {
+        "qemu": {
+          "micro": 0,
+          "minor": 0,
+          "major": 10
+        },
+        "package": ""
+      },
+      "capabilities": [
+        "oob"
+      ]
+    }
+  },
+  {
+    "return": {}
+  },
+  {
+    "return": {
+      "arch": "pi32v2"
+    }
+  },
+  {
+    "timestamp": {
+      "seconds": 1791222073,
+      "microseconds": 720318
+    },
+    "event": "SHUTDOWN",
+    "data": {
+      "guest": false,
+      "reason": "host-qmp-quit"
+    }
+  },
+  {
+    "return": {}
+  }
+]
