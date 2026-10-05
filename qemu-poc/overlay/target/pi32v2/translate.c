@@ -200,6 +200,9 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
     } else if ((op & 0xe008) == 0x4000) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
         count(); branch(d, next + delta, next, gpr[a], op & 128);
+    } else if ((op & 0xfff0) == 0x00c0) {
+        tcg_gen_movi_i32(spr[RETS], next);
+        count(); dynamic_jump(d, gpr[op & 15]);
     } else if (op == 0x0080) {
         count(); dynamic_jump(d, spr[RETS]);
     } else if (op == 0x0081) {

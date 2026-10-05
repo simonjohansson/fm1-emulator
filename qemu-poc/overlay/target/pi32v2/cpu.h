@@ -18,7 +18,7 @@ struct ArchCPU {
     CPUState parent_obj;
     CPUPi32v2State env;
     uint32_t boot_pc, stop_pc;
-    bool timer_fixture;
+    bool timer_fixture, foundation_fixture;
     void *machine;
 };
 struct Pi32v2CPUClass {
