@@ -357,7 +357,9 @@ fn wide(h: u32, x: u32) -> Wide {
     if h & 0xfff8 == 0xed50 || h & 0xfff8 == 0xed58 {
         return Wide::HalfwordExtended;
     }
-    if h == 0xedd0 || h == 0xedd4 && x & 1 == 0 {
+    // imm10m2 offset in h[1:0] and x; x bit 0 = store, h bit 2 = signed load
+    // (there is no signed store).
+    if h & 0xfff8 == 0xedd0 && !(h & 4 != 0 && x & 1 != 0) {
         return Wide::HalfwordPostincrement;
     }
     // imm9m1 offset in h[0] and x; h bit 1 = store, h bit 2 = signed load.
@@ -559,7 +561,7 @@ fn wide(h: u32, x: u32) -> Wide {
     if h == 0xecdc && x & 15 == 2 {
         return Wide::WordRegisterPreincrement;
     }
-    if h == 0xeddc && matches!(x & 15, 0 | 2) {
+    if h == 0xeddc && matches!(x & 15, 0..=2) {
         return Wide::HalfwordRegisterPreincrement;
     }
     if h == 0xecd8 && x & 3 == 1 {

@@ -272,7 +272,8 @@ pub(crate) fn execute(
                     op = "halfword_extended";
                 }
                 Wide::HalfwordPostincrement => {
-                    let increment = ((x >> 8) & 15) * 16 + (x & 14);
+                    let increment =
+                        signed(((h & 3) << 8) | ((x >> 8) & 15) << 4 | (x & 14), 10) as u32;
                     let address = cpu.r[s];
                     mem = Some((
                         d,
@@ -921,14 +922,22 @@ pub(crate) fn execute(
                     op = "word_register_preincrement";
                 }
                 Wide::HalfwordRegisterPreincrement => {
+                    // Vendor forms: rD = h[++rS=rC] (u/s) and h[++rS=rC] = rD.
                     let address = cpu.r[s].wrapping_add(cpu.r[c]);
-                    let value = cpu.read(address, 2)?;
-                    cpu.r[s] = address;
-                    cpu.r[d] = if x & 2 != 0 {
-                        signed(value, 16) as u32
+                    if x & 1 != 0 {
+                        cpu.bus
+                            .write(address, cpu.r[d], 2)
+                            .map_err(|fault| Fault::Access { pc, fault })?;
+                        cpu.r[s] = address;
                     } else {
-                        value
-                    };
+                        let value = cpu.read(address, 2)?;
+                        cpu.r[s] = address;
+                        cpu.r[d] = if x & 2 != 0 {
+                            signed(value, 16) as u32
+                        } else {
+                            value
+                        };
+                    }
                     op = "halfword_register_preincrement";
                 }
                 Wide::WordPostincrementStore => {
