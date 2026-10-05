@@ -12,6 +12,7 @@
 #include "exec/address-spaces.h"
 #include "cpu.h"
 #include "fm1-lcd.h"
+#include "fm1-system.h"
 
 #define TYPE_FM1_POC_MACHINE MACHINE_TYPE_NAME("fm1-poc")
 OBJECT_DECLARE_SIMPLE_TYPE(FM1PocState, FM1_POC_MACHINE)
@@ -32,14 +33,33 @@ struct FM1PocState {
     MemoryRegion xip, irq_mmio, gpio_mmio, iomap_mmio;
     FM1TimerState timers[2];
     qemu_irq irq;
+    uint32_t irq_configs[32];
     uint32_t gpio[3][8], iomap_con1;
     FM1PocLCD lcd;
+    FM1PocSystem system;
     unsigned frames;
     const char *frame_dir;
     uint16_t shift, latched;
     uint8_t matrix[11];
     uint64_t shift_edges, latch_edges;
 };
+
+void fm1_poc_check_access(CPUPi32v2State *e, uint32_t address, unsigned size, unsigned flags)
+{
+    FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
+    if (m->cpu->diag_fixture) {
+        fm1_system_check_stack(&m->system);
+        if (!(flags & 4)) {
+            fm1_system_check_access(&m->system, address, size, flags & 1, flags & 2);
+        }
+    }
+}
+
+void fm1_poc_note_branch(CPUPi32v2State *e)
+{
+    FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
+    if (m->cpu->diag_fixture) { fm1_system_note_branch(&m->system, e->pc); }
+}
 
 static unsigned divider(FM1TimerState *t) { return t->control & 16 ? 4 : 1; }
 static uint64_t period_ticks(FM1TimerState *t)
@@ -202,6 +222,7 @@ static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
 static uint64_t irq_read(void *opaque, hwaddr offset, unsigned size)
 {
     FM1PocState *m = opaque;
+    if (m->cpu->diag_fixture && offset < 0x80 && !(offset & 3)) { return m->irq_configs[offset / 4]; }
     switch (offset) {
     case 0x1c: return m->cpu->env.irq_config;
     case 0x84: return m->timers[1].pending ? 0x80000000u : 0;
@@ -212,6 +233,15 @@ static uint64_t irq_read(void *opaque, hwaddr offset, unsigned size)
 static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     FM1PocState *m = opaque;
+    if (m->cpu->diag_fixture && offset < 0x80 && !(offset & 3)) {
+        /* Reset can disable every source. Only IRQ1 exception configuration
+         * and the implemented TIMER5 IRQ63 may subsequently be enabled. */
+        uint32_t allowed = offset == 0 ? 0xf0 : offset == 0x1c ? 0xf0000000u : 0;
+        if (value & ~allowed) { pi32v2_fail(&m->cpu->env, "unsupported IRQ source enable"); }
+        m->irq_configs[offset / 4] = value;
+        if (offset == 0x1c) { m->cpu->env.irq_config = value; }
+        return;
+    }
     switch (offset) {
     case 0x1c:
         if (value & 0x0fffffffu) { pi32v2_fail(&m->cpu->env, "only IRQ63 configuration is implemented"); }
@@ -219,6 +249,10 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     case 0xa8:
         if (value > 7) { pi32v2_fail(&m->cpu->env, "invalid priority mask"); }
         m->cpu->env.priority_mask = value; break;
+    case 0xa4:
+        if (!m->cpu->diag_fixture || value != 255) { pi32v2_fail(&m->cpu->env, "unsupported IRQ pending clear"); }
+        if (m->timers[1].pending) { pi32v2_fail(&m->cpu->env, "IRQ clear requires TIMER5 device acknowledgment"); }
+        break;
     default: pi32v2_fail(&m->cpu->env, "unsupported IRQ write");
     }
 }
@@ -343,6 +377,26 @@ void fm1_poc_finish(CPUPi32v2State *e)
                m->frames, fm1_lcd_visible(&m->lcd) ? "true" : "false", m->lcd.pixels_written,
                m->lcd.dma_transfers, m->lcd.completed_transfers);
     }
+    if (m->cpu->diag_fixture) {
+        FM1PocSystem *s = &m->system;
+        printf(",\"p33_transfers\":%" PRIu64 ",\"p33_transactions\":%" PRIu64
+               ",\"watchdog_arms\":%" PRIu64 ",\"watchdog_feeds\":%" PRIu64
+               ",\"watchdog_expirations\":%" PRIu64 ",\"guard_checks\":%" PRIu64
+               ",\"branches\":%" PRIu64 ",\"emu_control\":%u,\"debug_enable\":%u,"
+               "\"write_enable\":%u",
+               s->p33_transfers, s->p33_transactions, s->watchdog_arms, s->watchdog_feeds,
+               s->watchdog_expirations, s->guard_checks, s->branches, s->emu_control,
+               s->debug_enable, s->write_enable);
+        const char *state_dir = getenv("FM1_POC_STATE_DIR");
+        if (state_dir) {
+            g_autofree char *path = g_strdup_printf("%s/state-%08x.sram", state_dir, e->pc);
+            GError *error = NULL;
+            if (!g_file_set_contents(path, memory_region_get_ram_ptr(MACHINE(m)->ram),
+                                     MACHINE(m)->ram_size, &error)) {
+                error_report("cannot save diagnostic SRAM: %s", error->message); exit(EXIT_FAILURE);
+            }
+        }
+    }
     puts("}");
     exit(EXIT_SUCCESS);
 }
@@ -396,6 +450,15 @@ static void machine_init(MachineState *ms)
     }
     cpu_reset(CPU(m->cpu));
     memory_region_add_subregion(get_system_memory(), 0x01c00000, ms->ram);
+    if (diag) {
+        uint8_t *ram = memory_region_get_ram_ptr(ms->ram);
+        /* Preserve the explicit loader handoff and zeroed persistent regions;
+         * poison every region the unchanged startup must initialize. */
+        memset(ram, 0xa5, 0xb48);
+        memset(ram + 0x8000, 0xa5, 0x14);
+        memset(ram + 0x8020, 0xa5, 0x1ce0);
+        memset(ram + 0x7fd80, 0xa5, 0x80);
+    }
     if (foundation) {
         /* Poison only the new startup fixture. Guest copies/clears must replace
          * this state; the existing probe/timer seed stays unchanged. */
@@ -422,6 +485,7 @@ static void machine_init(MachineState *ms)
     memory_region_init_io(&m->irq_mmio, OBJECT(m), &irq_ops, m, "fm1.irq63", 0xac);
     memory_region_add_subregion(get_system_memory(), 0x01eef100, &m->irq_mmio);
     m->irq = qdev_get_gpio_in(DEVICE(m->cpu), 0);
+    if (diag) { fm1_system_init(&m->system, OBJECT(m), m->cpu); }
     if (display) {
         fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
         memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap-con1", 4);

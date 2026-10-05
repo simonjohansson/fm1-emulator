@@ -34,6 +34,38 @@ void HELPER(pi32v2_budget)(CPUPi32v2State *env)
     pi32v2_fail(env, "diagnostic instruction limit reached");
 }
 
+void HELPER(pi32v2_access)(CPUPi32v2State *env, uint32_t address, uint32_t size, uint32_t flags)
+{
+    fm1_poc_check_access(env, address, size, flags);
+}
+
+void HELPER(pi32v2_branch)(CPUPi32v2State *env)
+{
+    fm1_poc_note_branch(env);
+}
+
+uint32_t HELPER(pi32v2_if)(CPUPi32v2State *env, uint32_t result,
+                          uint32_t then_end, uint32_t else_end)
+{
+    if (env->predicate_end) { pi32v2_fail(env, "nested conditional block is unsupported"); }
+    env->predicate_end = result ? then_end : else_end;
+    if (!result && then_end == else_end) { env->predicate_end = 0; }
+    if (result && then_end != else_end) {
+        env->predicate_from = then_end;
+        env->predicate_to = else_end;
+    }
+    return result ? env->pc + 4 : then_end;
+}
+
+uint32_t HELPER(pi32v2_advance)(CPUPi32v2State *env, uint32_t next)
+{
+    if (env->predicate_end && next == env->predicate_end) {
+        if (env->predicate_from) { next = env->predicate_to; }
+        env->predicate_from = env->predicate_to = env->predicate_end = 0;
+    }
+    return next;
+}
+
 /* Fresh implementation of the four observed condition bits. No Rust code
  * is linked or copied. The probe validates values, not all flag semantics. */
 uint32_t HELPER(pi32v2_alu)(CPUPi32v2State *env, uint32_t a, uint32_t b,

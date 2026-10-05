@@ -9,6 +9,7 @@ enum { RETI = 0, RETS = 3, PSR = 5, ICFG = 11, USP = 12, SSP = 13, SP = 14 };
 typedef struct CPUArchState {
     uint32_t gpr[16], spr[16], pc;
     uint32_t irq_config, priority_mask;
+    uint32_t predicate_from, predicate_to, predicate_end;
     bool in_irq;
     uint64_t instructions, irq_entries, rti_count;
     uint32_t last_irq_pc, last_irq_handler, entry_icfg, return_icfg;
@@ -32,6 +33,8 @@ void pi32v2_translate_init(void);
 void pi32v2_translate_code(CPUState *, TranslationBlock *, int *, vaddr, void *);
 G_NORETURN void fm1_poc_finish(CPUPi32v2State *env);
 void fm1_poc_frame(CPUPi32v2State *env);
+void fm1_poc_check_access(CPUPi32v2State *env, uint32_t address, unsigned size, unsigned flags);
+void fm1_poc_note_branch(CPUPi32v2State *env);
 G_NORETURN void pi32v2_fail(CPUPi32v2State *env, const char *reason);
 #include "exec/cpu-all.h"
 

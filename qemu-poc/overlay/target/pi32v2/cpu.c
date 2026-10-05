@@ -62,14 +62,15 @@ static bool interrupt(CPUState *cs, int request)
     CPUPi32v2State *e = cpu_env(cs);
     unsigned nibble = e->irq_config >> 28;
     unsigned priority = nibble >> 1;
-    if (!(request & CPU_INTERRUPT_HARD) || e->in_irq ||
+    if (!(request & CPU_INTERRUPT_HARD) || e->in_irq || e->predicate_end ||
         (e->spr[ICFG] & 0x300) != 0x300 || !(nibble & 1) ||
         priority < e->priority_mask) {
         return false;
     }
+    fm1_poc_check_access(e, 0x01c7fefc, 4, 0);
     uint32_t handler = cpu_ldl_data(e, 0x01c7fefc);
     /* A missing/unmapped vector fails through QEMU's memory access path. */
-    cpu_lduw_code(e, handler);
+    /* The normal per-instruction fetch gate validates the selected handler. */
     e->last_irq_pc = e->pc;
     e->last_irq_handler = handler;
     e->spr[RETI] = e->pc;
