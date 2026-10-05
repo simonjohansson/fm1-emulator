@@ -8,7 +8,7 @@ pub struct Usb {
     io: u32,
     clock: u32,
     sie: [u8; 16],
-    endpoints: [[u8; 8]; 4],
+    endpoints: [[u8; 8]; 5],
     index: usize,
     ticks: u64,
     deadline: u64,
@@ -23,6 +23,7 @@ pub struct Usb {
     pub serial: VecDeque<u8>,
     pub setups: u64,
     pub packets: u64,
+    pub iso_packets: u64,
 }
 
 #[cfg(test)]
@@ -107,6 +108,29 @@ mod tests {
     }
 
     #[test]
+    fn isochronous_ep4_uses_its_own_count_and_dma_registers() {
+        let (mut usb, mut ram) = configured();
+        usb.regs[13] = 184; // EP4 count: 46 stereo frames, Felucca's largest packet.
+        usb.regs[14] = RAM + 64; // EP4 TX DMA.
+        usb.regs[2 + 3] = 999; // EP3's count must not be used.
+        sie_write(&mut usb, &mut ram, 14, 4);
+        sie_write(&mut usb, &mut ram, 17, 1); // TXCSR1: TxPktRdy.
+        assert_eq!(usb.iso_packets, 1);
+        assert_eq!(sie_read(&mut usb, &mut ram, 2), 1 << 4);
+        assert_eq!(sie_read(&mut usb, &mut ram, 17) & 1, 0);
+        assert!(usb.serial.is_empty());
+        usb.regs[13] = 1024;
+        assert_eq!(
+            usb.write(0x11804, 17 << 8 | 1, &mut ram),
+            Some(Err("USB full-speed isochronous packet exceeds 1023 bytes"))
+        );
+        assert_eq!(
+            usb.write(0x11804, 14 << 8 | 5, &mut ram),
+            Some(Err("USB endpoint index exceeds modeled controller"))
+        );
+    }
+
+    #[test]
     fn host_input_is_bounded_and_failed_enqueue_keeps_existing_bytes() {
         let (mut usb, mut ram) = configured();
         assert!(usb.receive_serial(&vec![42; 4096]));
@@ -180,17 +204,26 @@ impl Usb {
         self.deadline = self.ticks + 24000;
     }
     fn send(&mut self, ep: usize, ram: &mut [u8]) -> Result<(), &'static str> {
-        let n = self.regs[2 + ep] as usize;
-        if n > 64 {
+        // EP4 has its own count and DMA address registers (0x11834 / 0x11838;
+        // SDK usb_write_ep_cnt / usb_set_dma_taddr, ep 4).
+        let (n, a) = match ep {
+            0 => (self.regs[2], self.regs[6]),
+            4 => (self.regs[13], self.regs[14]),
+            _ => (self.regs[2 + ep], self.regs[7 + (ep - 1) * 2]),
+        };
+        let n = n as usize;
+        if ep == 4 && n > 1023 {
+            return Err("USB full-speed isochronous packet exceeds 1023 bytes");
+        }
+        if ep != 4 && n > 64 {
             return Err("USB full-speed packet exceeds 64 bytes");
         }
-        let a = if ep == 0 {
-            self.regs[6]
-        } else {
-            self.regs[7 + (ep - 1) * 2]
-        };
         let bytes = Self::dma(ram, a, n)?;
-        if ep == 0 {
+        if ep == 4 {
+            // The host takes each isochronous packet at once and has no
+            // audio sink; frame pacing is not modeled.
+            self.iso_packets += 1;
+        } else if ep == 0 {
             self.response.extend_from_slice(bytes);
         } else if Some(ep) == self.cdc_endpoint {
             self.serial.extend(bytes.iter().copied());
@@ -223,7 +256,7 @@ impl Usb {
                     self.phase = 0;
                     self.waiting = false;
                     self.sie = [0; 16];
-                    self.endpoints = [[0; 8]; 4];
+                    self.endpoints = [[0; 8]; 5];
                     self.cdc_interface = None;
                     self.cdc_endpoint = None;
                     self.cdc_out = None;
@@ -251,7 +284,8 @@ impl Usb {
                 } else {
                     let data = v as u8;
                     if r == 14 {
-                        if data > 3 {
+                        // EP4 is the isochronous endpoint (Felucca 1.0 USB audio).
+                        if data > 4 {
                             return Err("USB endpoint index exceeds modeled controller");
                         }
                         self.index = data as usize;
