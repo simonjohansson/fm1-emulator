@@ -50,6 +50,7 @@ other firmware paths can stop emulation.
 | Firmware | Status | Verified behavior / blocker |
 | --- | --- | --- |
 | Felucca 0.9-beta (`FM-1_909`, `.fwsc`) | Partial | LCD, USB console (`help`), watchdog, note audio/DMA and FX pass; full UI coverage remains incomplete |
+| Felucca 1.0.1 (`felucca-1.0.1.fwsc`, published) | Partial | LCD boot to HOME, USB console banner, watchdog, note audio/DMA and release pass; stopped at boot before the EP4 and halfword/byte step fixes |
 | Felucca source build (`1e838e1`, `.elf`) | Partial | Boot, note press/release, FX, HOME and ENV pass; other UI paths need broader coverage |
 | Official `FM-1_015` (`FM-1.fwsc`) | Partial | LCD boot, PIANO 1, FX/HOME and note audio/DMA pass |
 | Baud Girl `FM-1_093` (`FM-1_093.fwsc`) | Partial | LCD boot and FX/HOME pass; its factory preset payload fails integrity validation |
