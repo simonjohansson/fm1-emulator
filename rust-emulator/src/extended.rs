@@ -286,7 +286,8 @@ pub(crate) fn execute(
                     op = "halfword_postincrement";
                 }
                 Wide::BytePostincrementStore => {
-                    let increment = ((x >> 8) & 15) * 16 + (x & 15);
+                    let increment =
+                        signed(((h & 1) << 8) | ((x >> 8) & 15) << 4 | (x & 15), 9) as u32;
                     let address = cpu.r[s];
                     mem = Some((
                         d,
@@ -300,7 +301,7 @@ pub(crate) fn execute(
                     op = "byte_postincrement_store";
                 }
                 Wide::BytePostincrementLoad => {
-                    let off = ((x >> 8) & 15) * 16 + (x & 15);
+                    let off = signed(((h & 1) << 8) | ((x >> 8) & 15) << 4 | (x & 15), 9) as u32;
                     let addr = cpu.r[s];
                     mem = Some((
                         d,

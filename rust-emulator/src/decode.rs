@@ -360,10 +360,11 @@ fn wide(h: u32, x: u32) -> Wide {
     if h == 0xedd0 || h == 0xedd4 && x & 1 == 0 {
         return Wide::HalfwordPostincrement;
     }
-    if h == 0xeed2 {
+    // imm9m1 offset in h[0] and x; h bit 1 = store, h bit 2 = signed load.
+    if h & 0xfffe == 0xeed2 {
         return Wide::BytePostincrementStore;
     }
-    if matches!(h, 0xeed0 | 0xeed4) {
+    if matches!(h & 0xfffe, 0xeed0 | 0xeed4) {
         return Wide::BytePostincrementLoad;
     }
     if h & 0xfff0 == 0xe1e0 {
