@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-use fm1_emu::{bus::Bus, cpu::Cpu, RAM, XIP};
+use fm1_emu::{
+    bus::Bus,
+    cpu::{Cpu, Fault},
+    RAM, XIP,
+};
 
 fn cpu(words: &[u16]) -> Cpu {
     Cpu::new(
@@ -2077,4 +2081,66 @@ fn float_min_max_and_comparison_flags_match_the_fm1_986_capture() {
         );
         assert_eq!(c.sr[5], 0xabc00000 | flags);
     }
+}
+
+#[test]
+fn divide_by_zero_is_reported_with_the_guests_div0_trap_state() {
+    // Vendor disassembly: f4 e1 00 01 is r0 = r0 / r1 (u), f4 e1 01 01 is
+    // (s); f6 e1 00 02 is r1_r0 = r1_r0 / r2 (u).
+    for words in [[0xe1f4, 0x0100], [0xe1f4, 0x0101], [0xe1f6, 0x0200]] {
+        for trap in [false, true] {
+            let mut c = cpu(&words);
+            // EMU_CON bit 2 enables the div0 trap.
+            c.bus.write(0x1eef0d0, if trap { 4 } else { 0 }, 4).unwrap();
+            c.r[0] = 7;
+            c.r[1] = 0;
+            c.r[2] = 0;
+            let fault = c.step().unwrap_err();
+            assert!(
+                matches!(fault, Fault::DivideByZero { pc: XIP, trap: t } if t == trap),
+                "{words:04x?} trap {trap}: {fault:?}"
+            );
+            assert!(fault.to_string().starts_with("divide by zero at PC 0x"));
+        }
+    }
+    let mut c = cpu(&[0xe1f4, 0x0101]);
+    c.r[0] = 7;
+    c.r[1] = 0;
+    assert!(matches!(
+        c.step(),
+        Err(Fault::DivideByZero { trap: false, .. })
+    ));
+}
+
+#[test]
+fn nonzero_and_overflowing_divides_are_unchanged() {
+    for (words, a, b, quotient) in [
+        ([0xe1f4, 0x0100], 100, 7, 14),
+        ([0xe1f4, 0x0101], -100i32 as u32, 7, -14i32 as u32),
+        ([0xe1f4, 0x0100], u32::MAX, 2, u32::MAX / 2),
+    ] {
+        let mut c = cpu(&words);
+        c.r[0] = a;
+        c.r[1] = b;
+        c.step().unwrap();
+        assert_eq!(c.r[0], quotient);
+    }
+    // i32::MIN / -1 still stops as unsupported, not as a divide by zero.
+    let mut c = cpu(&[0xe1f4, 0x0101]);
+    c.r[0] = i32::MIN as u32;
+    c.r[1] = -1i32 as u32;
+    assert!(matches!(
+        c.step(),
+        Err(Fault::Unsupported {
+            pc: XIP,
+            word: 0xe1f4
+        })
+    ));
+    // r1_r0 = r1_r0 / r2 (u), vendor encoding f6 e1 00 02.
+    let mut c = cpu(&[0xe1f6, 0x0200]);
+    c.r[0] = 128_000_000;
+    c.r[1] = 0;
+    c.r[2] = 1_000_000;
+    c.step().unwrap();
+    assert_eq!((c.r[1], c.r[0]), (0, 128));
 }

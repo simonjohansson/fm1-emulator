@@ -12,6 +12,7 @@ use std::{fmt, io::Write};
 pub enum Fault {
     Access { pc: u32, fault: AccessFault },
     Unsupported { pc: u32, word: u16 },
+    DivideByZero { pc: u32, trap: bool },
     Limit { pc: u32, limit: u64 },
     Preservation,
     Trace(String),
@@ -134,6 +135,14 @@ impl fmt::Display for Fault {
             Self::Unsupported { pc, word } => {
                 write!(f, "unsupported instruction 0x{word:04x} at PC 0x{pc:08x}")
             }
+            Self::DivideByZero { pc, trap: true } => write!(
+                f,
+                "divide by zero at PC 0x{pc:08x} (div0 trap enabled in EMU_CON: the hardware raises a CPU exception, which is not modelled)"
+            ),
+            Self::DivideByZero { pc, trap: false } => write!(
+                f,
+                "divide by zero at PC 0x{pc:08x} (div0 trap disabled: the hardware's result is not known)"
+            ),
             Self::Limit { pc, limit } => write!(f, "instruction limit {limit} at PC 0x{pc:08x}"),
             Self::Preservation => write!(f, "probe did not preserve registers or stack"),
             Self::Trace(message) => write!(f, "trace: {message}"),

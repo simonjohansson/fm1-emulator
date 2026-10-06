@@ -16,6 +16,13 @@ pub(crate) fn packed(x: u32) -> u32 {
         mode => ((0x80 | (x & 127)) << (32 - mode * 8)) >> ((x >> 7) & 7),
     }
 }
+// A zero divisor is the guest's fault, not an unsupported instruction. The
+// hardware's EMU_CON bit 2 raises an exception on it; with the bit clear the
+// result is unknown. Either way the core stops.
+fn divide_by_zero(cpu: &Cpu, pc: u32) -> Fault {
+    let trap = cpu.bus.read(0x1eef0d0, 4).is_ok_and(|v| v & 4 != 0);
+    Fault::DivideByZero { pc, trap }
+}
 pub(crate) fn execute(
     cpu: &mut Cpu,
     h: u32,
@@ -378,6 +385,9 @@ pub(crate) fn execute(
                 }
                 Wide::DivideWide => {
                     let dividend = cpu.r[s] as u64 | ((cpu.r[s + 1] as u64) << 32);
+                    if cpu.r[c] == 0 {
+                        return Err(divide_by_zero(cpu, pc));
+                    }
                     let quotient = if x & 1 == 0 {
                         dividend.checked_div(cpu.r[c] as u64)
                     } else {
@@ -416,6 +426,9 @@ pub(crate) fn execute(
                     op = "shift_wide_immediate";
                 }
                 Wide::Divide => {
+                    if cpu.r[c] == 0 {
+                        return Err(divide_by_zero(cpu, pc));
+                    }
                     cpu.r[d] = if x & 1 == 0 {
                         cpu.r[s].checked_div(cpu.r[c])
                     } else {
