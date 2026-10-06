@@ -6,6 +6,45 @@ build products in `.cache/` are disposable.
 
 Worktree: `/private/tmp/fm1-qemu-poc`, branch `codex/qemu-poc`.
 
+## Watch the diagnostic boot in a macOS window
+
+```sh
+cd /private/tmp/fm1-qemu-poc
+mise exec python@3.13.15 -- python qemu-poc/build.py
+mise exec python@3.13.15 -- python qemu-poc/run_display.py
+```
+
+The build enables QEMU's built-in Cocoa display on macOS and automatically
+reconfigures an older headless build. No additional package installation is
+needed on the validated machine. The launcher opens **FM-1 diagnostic**, shows
+the guest drawing its screen, and pauses after the validated one-second boot
+and USB-retry checkpoint. The window stays open for inspection. Resize it to
+enlarge the display; close it or quit QEMU to exit. Guest buttons, encoders and
+keyboard input are not mapped in this viewer.
+
+This is the modeled LCD's live framebuffer, including panel sleep and
+backlight visibility. Display refresh does not advance guest time or write
+guest memory. The observer's `FM1_POC_KEEP_OPEN=1` option pauses virtual time
+instead of exiting at completion; a Resume command returns to the held
+checkpoint without executing guest instructions. Existing headless commands
+continue to exit normally when that option is absent.
+
+The launcher writes final state, SRAM and LCD capture to `.cache/live-display/`.
+The native run's complete state, SRAM and capture matched the validated
+headless USB-retry run exactly, and the user confirmed the native window
+appeared and closed successfully. The automated hold check is:
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_window.py
+```
+
+It checks unchanged guest state, exact guest LCD capture, pause/resume behavior
+and clean QMP shutdown. Its local Unix socket may require permission outside
+a restricted sandbox. The minimal build deliberately omits Pixman, so QMP
+`screendump` is unavailable; native window appearance was confirmed visually,
+not by an automated screenshot comparison. Evidence is in
+`.cache/window-validation/`.
+
 ## Foundation: full application startup
 
 The existing 592-byte `build/foundation/firmware.bin` starts at `0x02000120`
@@ -341,6 +380,7 @@ The milestones are separate signed commits:
 - `a531f78`: validate exact status pixels and 640 completed TIMER5 cycles.
 - `0e4149d`: fix conditional-call completion and validate the scheduled USB
   retry after one second of guest time.
+- `57ea938`: add the native Cocoa LCD window, launcher and held checkpoint.
 
 All listed signatures were verified. The original tracked fixture binaries and
 recorded results remain unchanged. Current validation records and frame images
@@ -350,3 +390,5 @@ also have durable ignored copies outside the temporary worktree:
   `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-boot-2026-10-05/`
 - FM-1_980, with separate records for each milestone:
   `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-diag-boot-2026-10-05/`
+- Native window and pause checks:
+  `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-window-2026-10-06/`

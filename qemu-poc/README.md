@@ -12,6 +12,17 @@ setup, RAM flash identification and reads, an exact status framebuffer,
 disconnected USB startup, and timer-driven matrix/encoder scans are validated.
 See [BOOTING.md](BOOTING.md) for current commands, evidence and limitations.
 
+To watch the diagnostic boot in a native macOS window:
+
+```sh
+cd /private/tmp/fm1-qemu-poc
+mise exec python@3.13.15 -- python qemu-poc/build.py
+mise exec python@3.13.15 -- python qemu-poc/run_display.py
+```
+
+The screen updates during boot and remains open at the validated checkpoint.
+Close the window to quit. This viewer does not yet map guest controls.
+
 ## Original probe and timer milestone
 
 The remainder of this document records the original proof of concept before
