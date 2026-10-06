@@ -483,24 +483,10 @@ impl Cpu {
         let else_count = (counts >> 12) & 3;
         for i in 0..then_count + else_count {
             let h = self.read(cursor, 2)?;
-            let length = if matches!(h & 0xffe0, 0xffc0 | 0xffe0) || h == 0xff80 {
-                6
-            } else if h >> 13 == 7 {
-                4
-            } else {
-                2
-            };
-            cursor += length;
+            cursor += crate::decode::length(h);
             // A parallel pair counts as one conditional instruction bundle.
             if h >> 13 == 6 || h & 0xf800 == 0xf000 {
-                let following = self.read(cursor, 2)?;
-                cursor += if matches!(following & 0xffe0, 0xffc0 | 0xffe0) || following == 0xff80 {
-                    6
-                } else if following >> 13 == 7 {
-                    4
-                } else {
-                    2
-                };
+                cursor += crate::decode::length(self.read(cursor, 2)?);
             }
             if i + 1 == then_count {
                 then_end = cursor;

@@ -142,6 +142,16 @@ pub(crate) enum Wide {
     Unknown,
 }
 
+/// Bytes in the instruction that starts with `h`, as the vendor disassembler has
+/// every valid encoding: 16-bit below e000, 48-bit from ff00 (compare-and-branch
+/// ff00..ff4f / ff60 / ff61, call ff80, rD = [npc + N] ffa0..ffaf, 32-bit moves).
+pub(crate) fn length(h: u32) -> u32 {
+    match h >> 8 {
+        0xff => 6,
+        0xe0..=0xfe => 4,
+        _ => 2,
+    }
+}
 fn first(h: u32) -> First {
     if matches!(h & 0xfff0, 0xffc0 | 0xffe0) {
         return First::MoveImmediate32;

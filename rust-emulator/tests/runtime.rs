@@ -2078,3 +2078,26 @@ fn float_min_max_and_comparison_flags_match_the_fm1_986_capture() {
         assert_eq!(c.sr[5], 0xabc00000 | flags);
     }
 }
+#[test]
+fn conditional_blocks_count_every_48_bit_instruction_in_their_body() {
+    // Vendor disassembly gives every valid encoding from ff00 up six bytes. A false
+    // `if (r3 <= 65536) {` (ECA3 0B80, one instruction) must skip all of its body.
+    for (body, length) in [
+        (&[0xff00, 0x0000, 0x0000][..], 6), // if (r0 == 0) goto N
+        (&[0xff4c, 0x0000, 0x0000], 6),     // ifs (r0 > r0) goto N
+        (&[0xff60, 0x00ff, 0x0000], 6),     // if ((r0 & 0xFF) == 0) goto N
+        (&[0xff80, 0x0000, 0x0000], 6),     // call N
+        (&[0xffa0, 0x0000, 0x0000], 6),     // r0 = [npc + N]
+        (&[0xffc0, 0x0000, 0x0000], 6),     // r0 = N
+        (&[0xe1f6, 0x0020], 4),             // r1_r0 = r3_r2 / r0 (u)
+        (&[0x2140], 2),                     // r0 = 1
+    ] {
+        let mut words = vec![0xeca3, 0x0b80];
+        words.extend_from_slice(body);
+        words.extend_from_slice(&[0, 0, 0]);
+        let mut c = cpu(&words);
+        c.r[3] = 70_000;
+        c.step().unwrap();
+        assert_eq!(c.pc, XIP + 4 + length, "{:04x}", body[0]);
+    }
+}
