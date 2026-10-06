@@ -219,6 +219,15 @@ def main():
         threshold = value if value in [520, 1099, 4095] else 240
         fixture(f"conditional-unsigned-le-{value:08x}", [*literal(0, value),
                 0xecb0, threshold, 0xe041, 7])
+    for threshold, values in [(5, [0, 4, 5, 6, 0x80000000, 0xffffffff]),
+                              (4095, [4094, 4095])]:
+        for value in values:
+            state = fixture(f"conditional-unsigned-lt-{threshold}-{value:08x}",
+                    [*literal(5, value), 0xe9b5, 0x1000 | threshold,
+                     0xe041, 0x1111, 0xe041, 0x2222, 0xe042, 0x3333])
+            validate.check(state["registers"][1] == (0x1111 if value < threshold else 0x2222) and
+                           state["registers"][2] == 0x3333,
+                           "unsigned less-than block chose the wrong arm or failed to retire")
     for value in [0, 1, 0x80000000]:
         fixture(f"conditional-register-mask-{value:08x}", [*literal(0, value), *literal(1, 1),
                 0xea10, 0x0100, 0xe042, 7])

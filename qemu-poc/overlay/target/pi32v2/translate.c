@@ -370,7 +370,8 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                (op & 0xfff0) == 0xe830 || (op & 0xfff0) == 0xe8b0 ||
                (op & 0xfff0) == 0xe810 || (op & 0xfff0) == 0xe890 ||
                (op & 0xfff0) == 0xe910 ||
-               (op & 0xfff0) == 0xe930 || (op & 0xfff0) == 0xec10 ||
+               (op & 0xfff0) == 0xe930 || (op & 0xfff0) == 0xe9b0 ||
+               (op & 0xfff0) == 0xec10 ||
                (op & 0xfff0) == 0xecb0) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = (op >> 4) & 255;
@@ -397,7 +398,9 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             right = tcg_constant_i32(x & 4095); cond = TCG_COND_LEU;
         } else {
             right = tcg_constant_i32(kind == 0x83 || kind == 0x8b ? sext(x & 4095, 12) : x & 4095);
-            cond = kind == 0x83 ? TCG_COND_EQ : kind == 0x8b ? TCG_COND_NE : TCG_COND_GEU;
+            /* Vendor E9B5 1005 at Felucca 0x02004b30 selects r5 < 5. */
+            cond = kind == 0x83 ? TCG_COND_EQ : kind == 0x8b ? TCG_COND_NE :
+                   kind == 0x9b ? TCG_COND_LTU : TCG_COND_GEU;
         }
         tcg_gen_setcond_i32(cond, result, left, right);
         uint32_t then_end = here + 4, else_end;
