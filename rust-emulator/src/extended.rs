@@ -378,7 +378,7 @@ pub(crate) fn execute(
                 }
                 Wide::DivideWide => {
                     let dividend = cpu.r[s] as u64 | ((cpu.r[s + 1] as u64) << 32);
-                    let quotient = if x & 1 == 0 {
+                    let quotient = if d & 1 == 0 {
                         dividend.checked_div(cpu.r[c] as u64)
                     } else {
                         (dividend as i64)
@@ -386,8 +386,8 @@ pub(crate) fn execute(
                             .map(|n| n as u64)
                     }
                     .ok_or(Fault::Unsupported { pc, word: h as u16 })?;
-                    cpu.r[d] = quotient as u32;
-                    cpu.r[d + 1] = (quotient >> 32) as u32;
+                    cpu.r[d & 14] = quotient as u32;
+                    cpu.r[(d & 14) + 1] = (quotient >> 32) as u32;
                     op = "divide_wide";
                 }
                 Wide::ShiftWideRegister => {

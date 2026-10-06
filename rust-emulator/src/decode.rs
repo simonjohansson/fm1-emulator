@@ -390,7 +390,8 @@ fn wide(h: u32, x: u32) -> Wide {
     if matches!(h, 0xe1f8 | 0xe1fc) && x & 15 == 0 {
         return Wide::MultiplyWide;
     }
-    if h == 0xe1f6 && d & 1 == 0 && s & 1 == 0 && x & 15 <= 1 {
+    // Vendor-exhaustive: x & 0x1f == 0; the destination's low bit selects signed.
+    if h == 0xe1f6 && s & 1 == 0 && x & 15 == 0 {
         return Wide::DivideWide;
     }
     if h == 0xe1d8 && d & 1 == 0 && s == 0 && matches!(x & 15, 0 | 2) {
