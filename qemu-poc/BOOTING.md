@@ -384,6 +384,7 @@ mise exec python@3.13.15 -- python qemu-poc/run_felucca.py \
   --label startup-copies --stop-pc 0x0200cc64 \
   --expect-reason 'checkpoint reached'
 mise exec python@3.13.15 -- python qemu-poc/validate_felucca.py --capture
+mise exec python@3.13.15 -- python qemu-poc/validate_felucca.py --capture --reference
 ```
 
 The runner checks the binary, ELF and disassembly hashes and saves state,
@@ -409,6 +410,18 @@ focused ISA gate passes. The unchanged application advances through JEDEC
 identification to the sample header scan, then explicitly stops at the
 pre-increment word load `r1 = [++r6=r1]` (`dc ec 62 11`) at `0x020049fa`
 after 269,535 instructions. Evidence is in `after-stack-offset/`.
+
+The optional `--reference` gate runs the existing Rust emulator as a separate
+process through a private wrapper using only its public interfaces. At the
+startup-copy checkpoint all 16 general registers, all 16 special registers,
+the complete 512 KiB SRAM and the pre-LCD pixels match exactly. QEMU retires
+157,321 instructions and Rust 155,089 under their different functional clocks.
+The caller verifies all input hashes and binds both executable hashes to the
+comparison evidence. The Rust wrapper keeps its existing physical NOR erased
+while mapping the raw application into XIP; QEMU also seeds the application
+bytes into physical NOR. These are equivalent for the selected startup
+checkpoint, before any NOR transaction, rather than a full flash comparison.
+No Rust implementation is linked or copied into QEMU.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

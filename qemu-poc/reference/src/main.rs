@@ -3,15 +3,23 @@
 use fm1_emu::{bus::Bus, cpu::Cpu, firmware::Firmware, SYSTEM_STACK, USER_STACK, XIP};
 use std::{env, fs, path::Path};
 mod display;
+mod felucca;
 mod snapshot;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     assert!(
         args.len() == 3,
-        "usage: reference probe|timer|direct-probe|display|snapshot IMAGE"
+        "usage: reference probe|timer|direct-probe|display|snapshot|felucca IMAGE"
     );
     let firmware = Firmware::load(Path::new(&args[2])).unwrap();
+    if args[1] == "felucca" {
+        if let Err(error) = felucca::run(firmware) {
+            eprintln!("Felucca reference: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if args[1] == "snapshot" {
         snapshot::run(firmware);
         return;

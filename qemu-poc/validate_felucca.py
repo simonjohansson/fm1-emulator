@@ -8,6 +8,7 @@ It establishes application-entry initialization only, not a completed boot.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import struct
@@ -17,6 +18,7 @@ import sys
 HERE = Path(__file__).resolve().parent
 FIRMWARE = Path("/Users/simonjohansson/src/Felucca/build")
 EVIDENCE = HERE / ".cache/felucca-validation/startup-copies"
+REFERENCE = HERE / ".cache/felucca-validation/startup-reference"
 ENTRY = 0x02000120
 SRAM_BASE = 0x01C00000
 CHECKPOINT = 0x0200CC64
@@ -148,22 +150,113 @@ def verify(directory, binary):
     }
 
 
+def sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def capture_reference(firmware_dir):
+    REFERENCE.mkdir(parents=True, exist_ok=True)
+    command = ["mise", "exec", "--", "cargo", "build", "--manifest-path",
+               str(HERE / "reference/Cargo.toml"), "--locked", "--offline",
+               "--message-format=json-render-diagnostics"]
+    build = subprocess.run(command, cwd=HERE.parent, capture_output=True, text=True, timeout=180)
+    (REFERENCE / "build.stdout.jsonl").write_text(build.stdout)
+    (REFERENCE / "build.stderr.txt").write_text(build.stderr)
+    check(build.returncode == 0, f"reference build failed: {build.stderr}")
+    artifacts = [json.loads(line) for line in build.stdout.splitlines() if line.startswith("{")]
+    executables = [Path(item["executable"]) for item in artifacts if
+                   item.get("reason") == "compiler-artifact" and item.get("executable") and
+                   item.get("target", {}).get("name") == "fm1-qemu-reference"]
+    check(len(executables) == 1, "cargo did not identify exactly one reference executable")
+    executable = executables[0]
+    executable_sha = sha256(executable)
+    settings = {"FM1_REFERENCE_STATE_DIR": str(REFERENCE),
+                "FM1_POC_STOP_PC": hex(CHECKPOINT), "FM1_POC_MAX_INSTRUCTIONS": "1000000"}
+    env = {key: value for key, value in os.environ.items() if not key.startswith("FM1_POC_") and
+           key != "FM1_REFERENCE_STATE_DIR"}
+    env.update(settings)
+    command = ["mise", "exec", "--", str(executable), "felucca",
+               str(firmware_dir / "felucca.bin")]
+    metadata = {"input_hashes": HASHES, "executable": str(executable),
+                "executable_sha256": executable_sha, "command": command,
+                "environment": settings, "checkpoint": CHECKPOINT}
+    try:
+        result = subprocess.run(command, cwd=HERE.parent, env=env,
+                                capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired as error:
+        for name, output in [("stdout.txt", error.stdout), ("stderr.txt", error.stderr)]:
+            content = output.decode(errors="replace") if isinstance(output, bytes) else output or ""
+            (REFERENCE / name).write_text(content)
+        metadata.update(returncode=None, reason="host timeout")
+        (REFERENCE / "run.json").write_text(json.dumps(metadata, indent=2) + "\n")
+        raise SystemExit(f"reference host timeout; partial evidence: {REFERENCE}") from error
+    (REFERENCE / "stdout.txt").write_text(result.stdout)
+    (REFERENCE / "stderr.txt").write_text(result.stderr)
+    metadata.update(returncode=result.returncode,
+                    executable_unchanged=sha256(executable) == executable_sha)
+    (REFERENCE / "run.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    check(metadata["executable_unchanged"], "reference executable changed during capture")
+    check(result.returncode == 0, f"reference startup failed: {result.stderr}")
+    return metadata
+
+
+def compare_reference(directory, reference_run):
+    qemu = json.loads((directory / "state.json").read_text())
+    qemu_run = json.loads((directory / "run.json").read_text())
+    reference = json.loads((REFERENCE / "state.json").read_text())
+    check(reference["profile"] == "felucca-reference" and reference["reason"] == "checkpoint reached" and
+          reference["pc"] == qemu["pc"] == CHECKPOINT,
+          "reference did not reach the same selected startup checkpoint")
+    check(reference["registers"] == qemu["registers"] and
+          reference["specials"] == qemu["specials"], "startup architectural registers differ")
+    qemu_ram = (directory / "state.sram").read_bytes()
+    reference_ram = (REFERENCE / "state.sram").read_bytes()
+    check(len(reference_ram) == 0x80000 and reference_ram == qemu_ram,
+          "startup complete 512 KiB SRAM differs from the separate reference")
+    check((REFERENCE / "lcd.ppm").read_bytes() == (directory / "lcd.ppm").read_bytes(),
+          "pre-LCD framebuffer differs from the separate reference")
+    summary = {"passed": True, "checkpoint": CHECKPOINT, "input_hashes": HASHES,
+               "qemu_executable_sha256": qemu_run["qemu_binary_sha256"],
+               "reference_executable_sha256": reference_run["executable_sha256"],
+               "qemu_instructions": qemu["instructions"],
+               "reference_instructions": reference["instructions"],
+               "comparison": "all 16 GPR, all 16 SPR, all 512 KiB SRAM and pre-LCD pixels equal",
+               "clock_comparison": "independent functional clocks; counts/time not required equal",
+               "flash_comparison": "no serial NOR transaction before this checkpoint; physical app region differs",
+               "completed_boot": False}
+    (directory / "reference-comparison.json").write_text(json.dumps(summary, indent=2) + "\n")
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--firmware-dir", type=Path, default=FIRMWARE)
     parser.add_argument("--evidence-dir", type=Path, default=EVIDENCE)
     parser.add_argument("--capture", action="store_true",
                         help="run the bounded application before checking its evidence")
+    parser.add_argument("--reference", action="store_true",
+                        help="with --capture, build/run the separate Rust oracle and compare startup")
     args = parser.parse_args()
+    if args.reference and not args.capture:
+        parser.error("--reference requires --capture to bind both executable hashes")
     binary = checked_inputs(args.firmware_dir)
     if args.capture:
         if args.evidence_dir != EVIDENCE:
             parser.error("--capture uses the default startup-copies evidence directory")
+        executable = HERE / ".cache/build/qemu-system-pi32v2"
+        executable_sha = sha256(executable)
         subprocess.run([sys.executable, str(HERE / "run_felucca.py"),
                         "--firmware-dir", str(args.firmware_dir),
                         "--label", "startup-copies", "--stop-pc", hex(CHECKPOINT),
                         "--expect-reason", "checkpoint reached"], check=True)
+        check(sha256(executable) == executable_sha, "QEMU executable changed during capture")
+        capture_run = json.loads((args.evidence_dir / "run.json").read_text())
+        check(capture_run.get("qemu_binary_sha256") == executable_sha,
+              "QEMU capture executable hash differs from the checked executable")
     summary = verify(args.evidence_dir, binary)
+    if args.reference:
+        summary["reference_comparison"] = compare_reference(
+            args.evidence_dir, capture_reference(args.firmware_dir))
     (args.evidence_dir / "validation.json").write_text(json.dumps(summary, indent=2) + "\n")
     print("PASS unchanged Felucca startup: exact RAM code/data, zero BSS/pool/mailbox,")
     print("cold loader/noinit, bootguard, vectors, stacks and watchdog")
