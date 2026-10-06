@@ -201,6 +201,32 @@ def main():
                                        0xffc1, 0x8000, 0x01c0, 0xea41, 0x1005])
     validate.check(state["registers"][2] == 0x123 and state["inspection"][1] == 5,
                    "packed immediate mask/store differs")
+    state = fixture("and-not-parallel-reached-byte-store", [*literal(0, 0x89abcde5), 0xe064, 0x0580,
+            *literal(8, 0x89abcdef), *literal(4, 0x12345678), *literal(6, 0x01c08000),
+            *literal(7, 0x123456fe), 0xf174, 0x80fc, 0x45ef, *literal(13, 0x33445566)])
+    validate.check(state["registers"][4] == 0x89abcd03 and
+                   state["registers"][6:9] == [0x01c08000, 0x123456fe, 0x89abcdef] and
+                   state["inspection"][:2] == [0xa5a5a5a5, 0xa5a5fea5] and
+                   state["specials"][5] == 0x89abcde5 and state["instructions"] == 8 and
+                   state["registers"][13] == 0x33445566,
+                   "reached parallel AND-not mask, byte store, PSR or six-byte retirement differs")
+    for tail_reg in [15, 6]:
+        state = fixture(f"and-not-parallel-high-bank-tail-{tail_reg}", [*literal(0, 0x89abcde5),
+                0xe064, 0x0580, *literal(15, 0xfedcba98), 0xf17e, 0xf0fc,
+                0xe040 | tail_reg, 0x1234, *literal(13, 0x33445566)])
+        validate.check(state["registers"][14] == 0xfedcba00 and state["registers"][tail_reg] == 0x1234 and
+                       state["registers"][15] == (0x1234 if tail_reg == 15 else 0xfedcba98) and
+                       state["specials"][5] == 0x89abcde5 and state["instructions"] == 5 and
+                       state["registers"][13] == 0x33445566,
+                       "parallel AND-not lost incoming source, full destination bank, PSR or eight-byte retirement")
+    state = fixture("and-not-parallel-incoming-store", [*literal(0, 0x89abcde5), 0xe064, 0x0580,
+            *literal(8, 0x89abcdef), *literal(4, 0x123456ef), *literal(6, 0x01c08000),
+            0xf174, 0x80fc, 0x45ec, *literal(13, 0x33445566)])
+    validate.check(state["registers"][4] == 0x89abcd03 and state["registers"][8] == 0x89abcdef and
+                   state["registers"][6] == 0x01c08000 and state["inspection"][1] == 0xa5a5efa5 and
+                   state["specials"][5] == 0x89abcde5 and state["instructions"] == 7 and
+                   state["registers"][13] == 0x33445566,
+                   "parallel byte store consumed masked destination instead of its incoming value")
     fixture("compare-branch", [0xe040, 1, 0xf800, 0x0201, 0x0000])
     # Cross the displacement's low-word boundary in both directions. The
     # backward fixture jumps over its target, back to it, then forward to stop.
