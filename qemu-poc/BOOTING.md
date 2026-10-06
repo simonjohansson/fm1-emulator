@@ -6,7 +6,7 @@ build products in `.cache/` are disposable.
 
 Worktree: `/private/tmp/fm1-qemu-poc`, branch `codex/qemu-poc`.
 
-## Watch the diagnostic boot in a macOS window
+## Watch the timer and key matrix in a macOS window
 
 ```sh
 cd /private/tmp/fm1-qemu-poc
@@ -14,36 +14,60 @@ mise exec python@3.13.15 -- python qemu-poc/build.py
 mise exec python@3.13.15 -- python qemu-poc/run_display.py
 ```
 
+The launcher runs the unchanged 2,700-byte display example continuously.
+Its timer readout keeps changing, and the OCT-minus matrix tile alternates
+between pressed and released every half-second of guest time. The firmware
+reads the modeled GPIO matrix and draws every pixel through SPI/DMA.
+Execution does not pause after boot or after three frames. Close the window
+or quit QEMU to exit; resize the window to enlarge the display. Keyboard and
+mouse controls are not mapped; the key cycle is automatic.
+
 The build enables QEMU's built-in Cocoa display on macOS and automatically
 reconfigures an older headless build. No additional package installation is
-needed on the validated machine. The launcher opens **FM-1 diagnostic**, shows
-the guest drawing its screen, and pauses after the validated one-second boot
-and USB-retry checkpoint. The window stays open for inspection. Resize it to
-enlarge the display; close it or quit QEMU to exit. Guest buttons, encoders and
-keyboard input are not mapped in this viewer.
+needed on the validated machine. The live launcher uses
+`-icount shift=6,align=on,sleep=on` to pace guest virtual time against host
+elapsed time. Live mode uses 64 ns per guest instruction, while the exact
+headless regressions retain 8 ns (`shift=3`). This reduces busy-loop polling
+between device events; modeled TIMER4 and SPI transfer rates are unchanged.
+A busy host may fall behind. This is functional emulation, not
+a claim about the real FM-1 CPU's clock accuracy. The readout shows the guest
+TIMER4 counter in hexadecimal, not elapsed decimal seconds.
 
-This is the modeled LCD's live framebuffer, including panel sleep and
-backlight visibility. Display refresh does not advance guest time or write
-guest memory. The observer's `FM1_POC_KEEP_OPEN=1` option pauses virtual time
-instead of exiting at completion; a Resume command returns to the held
-checkpoint without executing guest instructions. Existing headless commands
-continue to exit normally when that option is absent.
+The private `FM1_POC_DISPLAY_LIVE=1` switch applies only to `-append display`.
+Without it, the existing three-frame regression still exits normally. Live
+mode saves no frame captures by default. For analysis, explicitly setting
+`FM1_POC_FRAME_DIR` to an existing directory overwrites the fixed files
+`frame-live.ppm` and `frame-live.json` at each complete frame. These contain
+the guest LCD pixels and observed guest state; the viewer draws no substitute
+screen and does not write guest RAM.
 
-The launcher writes final state, SRAM and LCD capture to `.cache/live-display/`.
-The native run's complete state, SRAM and capture matched the validated
-headless USB-retry run exactly, and the user confirmed the native window
-appeared and closed successfully. The automated hold check is:
+Run the continuous-mode and unchanged three-frame checks with:
 
 ```sh
-mise exec python@3.13.15 -- python qemu-poc/validate_window.py
+mise exec python@3.13.15 -- python qemu-poc/validate_live_display.py
+mise exec python@3.13.15 -- python qemu-poc/validate_display.py
 ```
 
-It checks unchanged guest state, exact guest LCD capture, pause/resume behavior
-and clean QMP shutdown. Its local Unix socket may require permission outside
-a restricted sandbox. The minimal build deliberately omits Pixman, so QMP
-`screendump` is unavailable; native window appearance was confirmed visually,
-not by an automated screenshot comparison. Evidence is in
-`.cache/window-validation/`.
+The live check observes execution past frame three, changing timer pixels,
+two press/release cycles, and QMP's running status without pausing the guest.
+The validated run completed 116 frames and two key cycles without a pause;
+1.916 seconds of guest time elapsed in 1.917 seconds of host time. It stores
+its evidence in `.cache/live-display-validation/`. The unchanged three-frame
+regression still passed with 15,581,968 guest instructions and matching
+reference pixels outside its timer band. The minimal
+build omits Pixman, so QMP `screendump` is unavailable; automated pixel checks
+inspect guest LCD captures. The native Cocoa window was previously confirmed
+visually by the user.
+
+### Diagnostic checkpoint inspection
+
+The separate `-append diag` fixture still supports `FM1_POC_KEEP_OPEN=1` to
+pause at its validated completion checkpoint for inspection. That option is
+not used by the live display launcher. `validate_window.py` checks this
+older diagnostic hold mode, including unchanged guest state, exact LCD
+capture, pause/resume behavior and clean QMP shutdown. Its local Unix socket
+may require permission outside a restricted sandbox. Prior native diagnostic
+state, SRAM and LCD capture matched the headless USB-retry run exactly.
 
 ## Foundation: full application startup
 
