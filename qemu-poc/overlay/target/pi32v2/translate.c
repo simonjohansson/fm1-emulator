@@ -652,6 +652,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         next = here + 4;
         set_call_return(d, next);
         count(d); record_branch(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
+    } else if ((op & 0xffc0) == 0xeac0) {
+        int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
+        next = here + 4;
+        /* The long GOTO shares CALL's displacement fields but preserves RETS. */
+        count(d); record_branch(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe00c) == 0x8004) {
         int32_t delta = sext(((op & 3) << 10) | (((op >> 4) & 15) << 6) | (((op >> 8) & 31) << 1), 12);
         count(d); record_branch(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;

@@ -145,6 +145,18 @@ def main():
     validate.check(state["registers"][2] == 0x123 and state["inspection"][1] == 5,
                    "packed immediate mask/store differs")
     fixture("compare-branch", [0xe040, 1, 0xf800, 0x0201, 0x0000])
+    # Cross the displacement's low-word boundary in both directions. The
+    # backward fixture jumps over its target, back to it, then forward to stop.
+    header = [*literal(0, 0x11223344), 0xe064, 0x0380]
+    forward = [*header, 0xeac1, 0, *([0] * 0x10000), *literal(2, 0x22334455)]
+    backward = [*header, 0xeac1, 0, *literal(2, 0x22334455), 0xeac0, 0xfffd,
+                *([0] * 0xfffb), 0xeafe, 0xfffe]
+    for name, words, count in [("forward", forward, 4), ("backward", backward, 6)]:
+        state = fixture(f"long-goto-{name}", words)
+        validate.check(state["specials"][3] == 0x11223344 and
+                       state["registers"][2] == 0x22334455 and
+                       state["instructions"] == count,
+                       "long GOTO signed target, RETS preservation or retired count differs")
     for value in [0, 1]:
         state = fixture(f"conditional-else-{value}", [0xe040, value, 0xea20, 0x1001,
                                                      0xe041, 2, 0xe041, 3])
