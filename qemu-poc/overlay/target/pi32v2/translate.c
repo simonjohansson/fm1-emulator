@@ -645,6 +645,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             }
         }
         next = here + 4;
+    } else if (op == 0x0400) {
+        TCGv_i32 dest = tcg_temp_new_i32();
+        pop(d, dest);
+        count(d); dynamic_jump(d, dest);
     } else if (op == 0x0410) {
         push(d, spr[RETS]);
     } else if ((op & 0xfff0) == 0x0460 || (op & 0xfff0) == 0x0440) {

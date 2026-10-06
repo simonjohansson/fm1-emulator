@@ -170,6 +170,44 @@ def main():
                    state["specials"][5] == 0x89abcde5 and state["instructions"] == 15 and
                    state["inspection"][:4] == [0xa5a5a5a5, 0xa5a5a5a5, 0x81234567, outer_return],
                    "nested CALL did not return through saved RETS, restore stack/register or preserve PSR")
+    header = [0xffee, 0x8004, 0x01c0, *literal(0, 0x01c08004), *literal(1, 0), 0x6081,
+              *literal(2, 0xdeadbeef), 0xe064, 0x2380, *literal(5, 0x89abcde5), 0xe064, 0x5580,
+              *literal(4, 0x12345678)]
+    target = ENTRY + (len(header) + 1 + 3) * 2
+    header[6:9] = literal(1, target)
+    state = fixture("stack-pop-pc-single", [*header, 0x0400, *literal(4, 0xdeadc0de),
+            *literal(3, 0x33445566)])
+    validate.check(state["registers"][3:5] == [0x33445566, 0x12345678] and
+                   state["specials"][14] == 0x01c08008 and state["specials"][3] == 0xdeadbeef and
+                   state["specials"][5] == 0x89abcde5 and state["instructions"] == 11 and
+                   state["inspection"][:3] == [0xa5a5a5a5, target, 0xa5a5a5a5],
+                   "standalone pop PC target, stack progression, skipped code, live RETS/PSR or retirement differs")
+    main_words = [0xffee, 0x8010, 0x01c0, *literal(0, 0x89abcde5), 0xe064, 0x0580,
+                  *literal(1, 0)]
+    outer_call = len(main_words)
+    main_words += [0, 0, *literal(2, 0x22334455)]
+    stop = ENTRY + len(main_words) * 2
+    outer_pc = stop + 2
+    outer_words = [0x0410]
+    inner_call = len(outer_words)
+    outer_words += [0, 0, *literal(3, 0x33445566), 0x0400]
+    inner_pc = outer_pc + len(outer_words) * 2
+    outer_return = ENTRY + (outer_call + 2) * 2
+    inner_return = outer_pc + (inner_call + 2) * 2
+    for words, index, target, return_pc in [(main_words, outer_call, outer_pc, outer_return),
+                                           (outer_words, inner_call, inner_pc, inner_return)]:
+        displacement = (target - return_pc) // 2
+        words[index:index + 2] = [0xea80 | ((displacement >> 16) & 63), displacement & 0xffff]
+    image = CACHE / "stack-pop-pc-nested-call.bin"
+    words = [*main_words, 0, *outer_words, *literal(5, 0x55667788), 0x0080]
+    image.write_bytes(struct.pack("<" + "H" * len(words), *words) + b"\0" * 16)
+    state = compare(image.stem, image, stop)
+    validate.check(state["registers"][2:4] == [0x22334455, 0x33445566] and
+                   state["registers"][5] == 0x55667788 and state["specials"][14] == 0x01c08010 and
+                   state["specials"][3] == inner_return and state["specials"][5] == 0x89abcde5 and
+                   state["instructions"] == 12 and
+                   state["inspection"][:4] == [0xa5a5a5a5] * 3 + [outer_return],
+                   "nested CALL/RETS save/pop PC failed to return or altered live RETS, PSR, stack or retirement")
     state = fixture("bundle-old-store", [0xe040, 0, 0xffc1, 0x8000, 0x01c0,
                                           0xf040, 0x4009, 0x6190])
     validate.check(state["inspection"][1] == 0 and state["registers"][0] == 0x4009,
