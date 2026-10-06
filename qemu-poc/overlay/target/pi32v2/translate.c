@@ -619,6 +619,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         unsigned hi = boundary < 4 ? 3 : boundary;
         if (op & 32) { for (int i = hi; i >= (int)lo; i--) { push(d, read_gpr(d, i)); } }
         else { for (unsigned i = lo; i <= hi; i++) { pop(d, gpr[i]); } }
+    } else if ((op & 0xfff0) == 0x0430) {
+        unsigned hi = op & 15;
+        if (hi < 4) { goto illegal; }
+        /* Invert the existing RETS/range push without returning: Felucca
+         * LCD-window 0438 restores RETS before its separate tail branch. */
+        for (unsigned i = 4; i <= hi; i++) { pop(d, gpr[i]); }
+        pop(d, spr[RETS]);
     } else if ((op & 0xfff0) == 0x0470 || (op & 0xfff0) == 0x0450) {
         unsigned hi = op & 15;
         if (hi < 4) { goto illegal; }

@@ -114,6 +114,22 @@ def main():
                             ("zero", 0x8002, 0), ("maximum", 0x9f62, 508)]:
         state = fixture(f"stack-{name}", [0xffee, 0xa000, 0x01c7, op])
         validate.check(state["specials"][14] == 0x01c7a000 + delta, "SP adjustment differs")
+    for hi in [4, 8, 15]:
+        words = [0xffee, 0x8080, 0x01c0, *literal(0, 0x11223344), 0xe064, 0x0380]
+        expected = [0x81000000 + reg * 0x01010101 for reg in range(4, hi + 1)]
+        for reg, value in zip(range(4, hi + 1), expected):
+            words += literal(reg, value)
+        words += [0x0470 | hi]
+        for reg in range(4, hi + 1):
+            words += [0xe040 | reg, 0]
+        words += [*literal(0, 0xdeadbeef), 0xe064, 0x0380, 0x0430 | hi,
+                  *literal(2, 0x22334455)]
+        state = fixture(f"stack-pop-rets-range-{hi}", words)
+        validate.check(state["registers"][4:hi + 1] == expected and
+                       state["specials"][3] == 0x11223344 and
+                       state["specials"][14] == 0x01c08080 and
+                       state["registers"][2] == 0x22334455,
+                       "RETS/range pop order, restored stack or sequential continuation differs")
     state = fixture("bundle-old-store", [0xe040, 0, 0xffc1, 0x8000, 0x01c0,
                                           0xf040, 0x4009, 0x6190])
     validate.check(state["inspection"][1] == 0 and state["registers"][0] == 0x4009,
