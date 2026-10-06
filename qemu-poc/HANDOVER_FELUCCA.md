@@ -6,15 +6,21 @@ Continue the QEMU proof of concept toward booting the Felucca firmware from `/Us
 
 | Item | Location or revision |
 | --- | --- |
-| QEMU worktree root | `/private/tmp/fm1-qemu-poc` |
-| Experimental project | `/private/tmp/fm1-qemu-poc/qemu-poc` |
+| QEMU worktree root | `/Users/simonjohansson/src/fm1-qemu-poc` |
+| Experimental project | `/Users/simonjohansson/src/fm1-qemu-poc/qemu-poc` |
 | Branch | `codex/qemu-poc` |
 | Implementation baseline | `ea18f7fcedd47e48d84114b7f9e5458c0e5be4d0` |
 | Main emulator repository | `/Users/simonjohansson/src/fm1-emulator` |
 | Felucca source repository | `/Users/simonjohansson/src/Felucca` |
 | Inspected Felucca source HEAD | `1e838e17e170b20ff09b9660c9a7171aadfc5dca` |
 
-Both inspected worktrees were clean before adding this document. The implementation is committed; reuse the existing QEMU worktree. The handover itself is a subsequent documentation commit. Recheck status and applicable instructions before making changes. `/private/tmp` is temporary storage; retain important evidence under the main repository's ignored `.deps/` directory as well.
+Workspace relocation: on 2026-10-06, the complete QEMU worktree moved from
+`/private/tmp/fm1-qemu-poc` to `~/src/fm1-qemu-poc` at the user's request.
+All 193,091 files and symlinks matched exactly after the move; tracked,
+untracked and ignored build/evidence files were retained. The original
+inspection below predates the subsequent Felucca bring-up commits.
+
+Both inspected worktrees were clean before adding this document. The implementation is committed; reuse the existing QEMU worktree. The handover itself is a subsequent documentation commit. Recheck status and applicable instructions before making changes. Retain important evidence under the main repository's ignored `.deps/` directory as well.
 
 The user wants discrete, signed commits. Follow Tim Pope's commit-message conventions, include the relevant user prompt in the commit body, and use no emojis. Signing worked in this session. Never use `git -C`; run commands with the correct working directory. Use `git worktree add` if a further feature worktree is needed. Manage language runtimes with mise.
 
@@ -37,7 +43,7 @@ The previous Rust performance experiments did not establish a compelling general
 From the QEMU worktree root:
 
 ```sh
-cd /private/tmp/fm1-qemu-poc
+cd /Users/simonjohansson/src/fm1-qemu-poc
 mise exec python@3.13.15 -- python qemu-poc/build.py
 mise exec python@3.13.15 -- python qemu-poc/run_display.py
 ```
@@ -50,7 +56,7 @@ The viewer uses `-icount shift=8,align=on,sleep=on`: 256 ns per functional guest
 
 ## Code and evidence to read first
 
-All paths below are relative to `/private/tmp/fm1-qemu-poc/qemu-poc`.
+All paths below are relative to `/Users/simonjohansson/src/fm1-qemu-poc/qemu-poc`.
 
 | Path | Purpose |
 | --- | --- |
@@ -141,7 +147,7 @@ Once the sustained run passes, add a Felucca launcher using the existing native 
 
 ## Validation and working boundaries
 
-Useful existing checks, run from `/private/tmp/fm1-qemu-poc`:
+Useful existing checks, run from `/Users/simonjohansson/src/fm1-qemu-poc`:
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_boot.py

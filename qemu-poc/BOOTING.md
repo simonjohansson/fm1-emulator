@@ -4,12 +4,12 @@ This experiment runs unchanged guest binaries using a native pi32v2 QEMU
 target. The maintained source is `overlay/`; the downloaded QEMU tree and
 build products in `.cache/` are disposable.
 
-Worktree: `/private/tmp/fm1-qemu-poc`, branch `codex/qemu-poc`.
+Worktree: `/Users/simonjohansson/src/fm1-qemu-poc`, branch `codex/qemu-poc`.
 
 ## Watch the timer and key matrix in a macOS window
 
 ```sh
-cd /private/tmp/fm1-qemu-poc
+cd /Users/simonjohansson/src/fm1-qemu-poc
 mise exec python@3.13.15 -- python qemu-poc/build.py
 mise exec python@3.13.15 -- python qemu-poc/run_display.py
 ```

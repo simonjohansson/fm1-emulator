@@ -15,7 +15,7 @@ See [BOOTING.md](BOOTING.md) for current commands, evidence and limitations.
 To watch the timer and key matrix continuously in a native macOS window:
 
 ```sh
-cd /private/tmp/fm1-qemu-poc
+cd /Users/simonjohansson/src/fm1-qemu-poc
 mise exec python@3.13.15 -- python qemu-poc/build.py
 mise exec python@3.13.15 -- python qemu-poc/run_display.py
 ```
@@ -44,7 +44,7 @@ compatibility and performance remain unproven.
 
 ## Worktree and boundaries
 
-- Worktree: `/private/tmp/fm1-qemu-poc`
+- Worktree: `/Users/simonjohansson/src/fm1-qemu-poc`
 - Branch: `codex/qemu-poc`
 - Base commit: `81b9ed96e33b28fc401fb3e0faf46c5f904bd843`
 - Original checkout: `/Users/simonjohansson/src/fm1-emulator`
@@ -53,7 +53,7 @@ compatibility and performance remain unproven.
 The worktree was created from the original checkout with:
 
 ```sh
-git worktree add -b codex/qemu-poc /private/tmp/fm1-qemu-poc
+git worktree add -b codex/qemu-poc /Users/simonjohansson/src/fm1-qemu-poc
 ```
 
 All experimental source, build configuration, documentation and validation
@@ -72,7 +72,7 @@ pinned downloads are required. Linux and other hosts have not been tested.
 Use mise for both language runtimes. If they are not already installed:
 
 ```sh
-cd /private/tmp/fm1-qemu-poc
+cd /Users/simonjohansson/src/fm1-qemu-poc
 mise trust
 mise install rust@1.91.1 python@3.13.15
 ```
@@ -80,7 +80,7 @@ mise install rust@1.91.1 python@3.13.15
 Build and run the complete validation:
 
 ```sh
-cd /private/tmp/fm1-qemu-poc
+cd /Users/simonjohansson/src/fm1-qemu-poc
 mise exec python@3.13.15 -- python qemu-poc/build.py
 mise exec python@3.13.15 -- python qemu-poc/validate.py
 ```
