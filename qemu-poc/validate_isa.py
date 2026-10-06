@@ -142,6 +142,24 @@ def main():
     fixture("bit-extract-insert", [0xe040, 0x1234, 0xe1b1, 0x0408, 0xe1a1, 0x02ec])
     fixture("wide-stack-offset", [0xffee, 0x9ef0, 0x01c7, 0xe040, 0x1234,
                                   0xe9d4, 0x010d, 0xe9d4, 0x210c])
+    # Vendor 21A0/2120 at Felucca 0x0200cd2a/2c use SP+132; compact
+    # offsets include bit 5 and extend through 252, in unsigned word units.
+    for offset in [124, 128, 132, 252]:
+        compact = 0x2000 | (((offset // 4) & 31) << 8) | ((offset // 4) & 32)
+        state = fixture(f"stack-compact-offset-{offset}", [0xffee, 0x8000, 0x01c0,
+                *literal(0, 0x81234567), compact | 0x80, compact | 2,
+                *literal(1, 0x01c08000 + offset), 0x6015, 0x7f13, 0x6114])
+        validate.check(state["registers"][0] == state["registers"][2] ==
+                       state["registers"][5] == 0x81234567 and
+                       state["registers"][3:5] == [0xa5a5a5a5] * 2 and
+                       state["specials"][14] == 0x01c08000,
+                       "compact stack load/store address, source, neighbors or SP differ")
+    state = fixture("stack-compact-bundle-old-source", [0xffee, 0x8000, 0x01c0,
+            *literal(0, 0x1234), 0xf040, 0x5678, 0x21a0,
+            0xf041, 0x1111, 0x2122, *literal(1, 0x01c08084), 0x6013])
+    validate.check(state["registers"][0] == 0x5678 and
+                   state["registers"][2] == state["registers"][3] == 0x1234,
+                   "compact stack bundle did not preserve incoming store source")
     for condition, op in [("ge", 0xf900), ("lt", 0xf980), ("gt", 0xfc00), ("le", 0xfc80)]:
         for value in [0, 1, 2, 0x80000000]:
             fixture(f"unsigned-{condition}-{value:08x}", [0xffc0, value & 0xffff, value >> 16,

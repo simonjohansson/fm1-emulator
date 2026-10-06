@@ -383,6 +383,7 @@ mise exec python@3.13.15 -- python qemu-poc/run_felucca.py
 mise exec python@3.13.15 -- python qemu-poc/run_felucca.py \
   --label startup-copies --stop-pc 0x0200cc64 \
   --expect-reason 'checkpoint reached'
+mise exec python@3.13.15 -- python qemu-poc/validate_felucca.py --capture
 ```
 
 The runner checks the binary, ELF and disassembly hashes and saves state,
@@ -400,6 +401,14 @@ the guest's exact RAM-code/data copies, zero BSS/pool/mailbox, application
 handoff, installed fatal vectors and cold bootguard. Watchdog setup completes
 without expiry and the guest subsequently enables its protection guards.
 This milestone has no splash or running-home-screen claim.
+
+The compact stack offset decoder now includes its sixth unsigned word-offset
+bit. Boundary tests at 124, 128, 132 and 252 bytes, neighboring memory and
+incoming-source bundle behavior match the separate Rust process. The full
+focused ISA gate passes. The unchanged application advances through JEDEC
+identification to the sample header scan, then explicitly stops at the
+pre-increment word load `r1 = [++r6=r1]` (`dc ec 62 11`) at `0x020049fa`
+after 269,535 instructions. Evidence is in `after-stack-offset/`.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

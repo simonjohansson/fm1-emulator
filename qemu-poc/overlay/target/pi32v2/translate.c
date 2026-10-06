@@ -206,9 +206,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_movi_i32(gpr[a], ((op >> 8) & 31) | (((op >> 3) & 7) << 5));
     } else if ((op & 0xe0f8) == 0x2010) {
         tcg_gen_movi_i32(gpr[a], 0xffffffe0u | ((op >> 8) & 31));
-    } else if ((op & 0xe0f0) == 0x2000 || (op & 0xe0f0) == 0x2080) {
+    } else if ((op & 0xe0d0) == 0x2000 || (op & 0xe0d0) == 0x2080) {
         TCGv_i32 addr = tcg_temp_new_i32();
-        tcg_gen_addi_i32(addr, spr[SP], ((op >> 8) & 31) * 4);
+        /* Vendor 21A0/2120 at Felucca 0x0200cd2a/2c address SP+132:
+         * bit 5 supplies the sixth unsigned word-offset bit. */
+        tcg_gen_addi_i32(addr, spr[SP], (((op >> 8) & 31) | (op & 32)) * 4);
         if (op & 128) { store(d, read_gpr(d, op & 15), addr, MO_LEUL | MO_ALIGN); }
         else { load(d, gpr[op & 15], addr, MO_LEUL | MO_ALIGN); }
     } else if ((op & 0xe0f8) == 0x2030 || (op & 0xe0f8) == 0x2038 || (op & 0xe0f8) == 0x20b8) {
@@ -734,8 +736,8 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     if ((op & 0xff00) == 0x1700) { return 1u << (op & 7); }
     if ((op & 0xfff8) == 0x14c0) { return 1u << (8 + (op & 7)); }
     if ((op & 0xfff0) == 0x1480 && !(op & 1)) { return 3u << (op & 14); }
-    if ((op & 0xe0f0) == 0x2000) { return 1u << (op & 15); }
-    if ((op & 0xe0f0) == 0x2080) { return 0; }
+    if ((op & 0xe0d0) == 0x2000) { return 1u << (op & 15); }
+    if ((op & 0xe0d0) == 0x2080) { return 0; }
     if (op == 0xe060) { return 1u << (fetch(d, here + 2) >> 12); }
     if (op == 0xe1c8 || op == 0xe1c0 || op == 0xe190 || op == 0xe0b4) {
         return 1u << (fetch(d, here + 2) >> 12);
