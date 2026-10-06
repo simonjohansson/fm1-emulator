@@ -44,11 +44,13 @@ struct FM1PocState {
     FM1PocUSB usb;
     unsigned frames;
     const char *frame_dir;
+    QEMUTimer *display_key_timer;
+    int64_t display_key_deadline;
     uint16_t shift, latched;
     uint8_t matrix[11];
     uint64_t shift_edges, latch_edges;
     uint64_t loop_visits, loop_target_irqs;
-    bool keep_open, finished;
+    bool keep_open, finished, display_live;
 };
 
 void fm1_poc_check_access(CPUPi32v2State *e, uint32_t address, unsigned size, unsigned flags)
@@ -331,9 +333,19 @@ static void save_lcd_ppm(FM1PocState *m, const char *path)
     if (fclose(f)) { pi32v2_fail(&m->cpu->env, "cannot close display frame PPM"); }
 }
 
+static void display_key_toggle(void *opaque)
+{
+    FM1PocState *m = opaque;
+    /* Change a physical matrix closure only. Guest GPIO scans and drawing
+     * discover the OCT-minus press/release through the existing wiring. */
+    m->matrix[0] ^= 1u << 4;
+    m->display_key_deadline += 500000000;
+    timer_mod_ns(m->display_key_timer, m->display_key_deadline);
+}
+
 /* Private checkpoint instrumentation observes framebuffer and guest state.
- * It changes only the fixture's physical key closure between frames. The
- * guest still executes its goto, timer reads, scans and all drawing routines. */
+ * The standard regression changes the physical key between three frames;
+ * live mode uses a virtual-time input timer and keeps executing the guest. */
 void fm1_poc_frame(CPUPi32v2State *e)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
@@ -342,30 +354,47 @@ void fm1_poc_frame(CPUPi32v2State *e)
         pi32v2_fail(e, "display checkpoint needs the next complete visible guest frame");
     }
     m->frames++;
-    g_autofree char *path = g_strdup_printf("%s/frame-%u.ppm", m->frame_dir, m->frames);
-    save_lcd_ppm(m, path);
-    g_autofree char *record = g_strdup_printf("%s/frame-%u.json", m->frame_dir, m->frames);
-    FILE *f = fopen(record, "w");
-    if (!f) { pi32v2_fail(e, "cannot create display frame record"); }
-    fprintf(f, "{\"frame\":%u,\"pc\":%u,\"instructions\":%" PRIu64
-            ",\"virtual_ns\":%" PRId64 ",\"display_ticks\":%u,\"sp\":%u,\"ssp\":%u,"
-            "\"visible\":true,\"pixels_written\":%" PRIu64
-            ",\"commands\":%" PRIu64 ",\"dma_transfers\":%" PRIu64
-            ",\"completed_transfers\":%" PRIu64 ",\"matrix\":[",
-            m->frames, e->pc, e->instructions, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
-            ldl_le_phys(&address_space_memory, 0x01c08280), e->spr[SP], e->spr[SSP],
-            m->lcd.pixels_written, m->lcd.commands, m->lcd.dma_transfers, m->lcd.completed_transfers);
-    for (unsigned i = 0; i < 11; i++) {
-        fprintf(f, "%s%u", i ? "," : "", ldl_le_phys(&address_space_memory, 0x01c08068 + i * 4));
+    if (m->frame_dir) {
+        g_autofree char *path = m->display_live ?
+            g_strdup_printf("%s/frame-live.ppm.tmp", m->frame_dir) :
+            g_strdup_printf("%s/frame-%u.ppm", m->frame_dir, m->frames);
+        save_lcd_ppm(m, path);
+        g_autofree char *record = m->display_live ?
+            g_strdup_printf("%s/frame-live.json.tmp", m->frame_dir) :
+            g_strdup_printf("%s/frame-%u.json", m->frame_dir, m->frames);
+        FILE *f = fopen(record, "w");
+        if (!f) { pi32v2_fail(e, "cannot create display frame record"); }
+        fprintf(f, "{\"frame\":%u,\"pc\":%u,\"instructions\":%" PRIu64
+                ",\"virtual_ns\":%" PRId64 ",\"display_ticks\":%u,\"sp\":%u,\"ssp\":%u,"
+                "\"visible\":true,\"pixels_written\":%" PRIu64
+                ",\"commands\":%" PRIu64 ",\"dma_transfers\":%" PRIu64
+                ",\"completed_transfers\":%" PRIu64 ",\"matrix\":[",
+                m->frames, e->pc, e->instructions, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
+                ldl_le_phys(&address_space_memory, 0x01c08280), e->spr[SP], e->spr[SSP],
+                m->lcd.pixels_written, m->lcd.commands, m->lcd.dma_transfers, m->lcd.completed_transfers);
+        for (unsigned i = 0; i < 11; i++) {
+            fprintf(f, "%s%u", i ? "," : "", ldl_le_phys(&address_space_memory, 0x01c08068 + i * 4));
+        }
+        fprintf(f, "],\"registers\":[");
+        for (int i = 0; i < 16; i++) { fprintf(f, "%s%u", i ? "," : "", e->gpr[i]); }
+        fprintf(f, "],\"specials\":[");
+        for (int i = 0; i < 16; i++) { fprintf(f, "%s%u", i ? "," : "", e->spr[i]); }
+        fprintf(f, "]}\n");
+        if (fclose(f)) { pi32v2_fail(e, "cannot close display frame record"); }
+        if (m->display_live) {
+            g_autofree char *image_final = g_strdup_printf("%s/frame-live.ppm", m->frame_dir);
+            g_autofree char *record_final = g_strdup_printf("%s/frame-live.json", m->frame_dir);
+            /* Publish the image before its frame-number record; each individual
+             * file is complete, and readers can retry across a frame change. */
+            if (rename(path, image_final) || rename(record, record_final)) {
+                pi32v2_fail(e, "cannot publish live display snapshot");
+            }
+        }
     }
-    fprintf(f, "],\"registers\":[");
-    for (int i = 0; i < 16; i++) { fprintf(f, "%s%u", i ? "," : "", e->gpr[i]); }
-    fprintf(f, "],\"specials\":[");
-    for (int i = 0; i < 16; i++) { fprintf(f, "%s%u", i ? "," : "", e->spr[i]); }
-    fprintf(f, "]}\n");
-    if (fclose(f)) { pi32v2_fail(e, "cannot close display frame record"); }
-    if (m->frames == 3) { fm1_poc_finish(e); }
-    m->matrix[0] = m->frames == 1 ? 1u << 4 : 0;
+    if (!m->display_live) {
+        if (m->frames == 3) { fm1_poc_finish(e); }
+        m->matrix[0] = m->frames == 1 ? 1u << 4 : 0;
+    }
 }
 
 static G_NORETURN void hold_checkpoint(CPUPi32v2State *e)
@@ -501,6 +530,11 @@ static void machine_init(MachineState *ms)
     bool timer = !strcmp(ms->kernel_cmdline, "timer");
     bool display = !strcmp(ms->kernel_cmdline, "display");
     bool diag = !strcmp(ms->kernel_cmdline, "diag");
+    const char *display_live = getenv("FM1_POC_DISPLAY_LIVE");
+    if (display_live && (strcmp(display_live, "1") || !display)) {
+        error_report("FM1_POC_DISPLAY_LIVE=1 requires the display fixture"); exit(EXIT_FAILURE);
+    }
+    m->display_live = display_live != NULL;
     const char *keep_open = getenv("FM1_POC_KEEP_OPEN");
     if (keep_open && (strcmp(keep_open, "1") || !diag)) {
         error_report("FM1_POC_KEEP_OPEN=1 requires the diagnostic fixture"); exit(EXIT_FAILURE);
@@ -520,7 +554,7 @@ static void machine_init(MachineState *ms)
     m->cpu->diag_fixture = diag;
     m->cpu->frame_pc = display ? 0x020004fa : 0;
     m->frame_dir = getenv("FM1_POC_FRAME_DIR");
-    if (!m->frame_dir) { m->frame_dir = "."; }
+    if (!m->frame_dir && !m->display_live) { m->frame_dir = "."; }
     m->cpu->boot_pc = timer ? 0x02000238 : 0x02000120;
     m->cpu->stop_pc = display ? 0x020002be : timer || foundation ? 0x020002ba : 0x0200013a;
     if (diag) {
@@ -610,6 +644,11 @@ static void machine_init(MachineState *ms)
         memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", diag ? 8 : 4);
         memory_region_add_subregion(get_system_memory(), diag ? 0x5101c : 0x51020, &m->iomap_mmio);
         fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
+    }
+    if (m->display_live) {
+        m->display_key_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, display_key_toggle, m);
+        m->display_key_deadline = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 500000000;
+        timer_mod_ns(m->display_key_timer, m->display_key_deadline);
     }
 }
 static void machine_class_init(ObjectClass *oc, void *data)
