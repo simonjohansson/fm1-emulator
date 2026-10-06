@@ -497,13 +497,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xfff0) == 0xee50) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = op & 15;
-        if (kind != 0 && kind != 2 && kind != 8 && kind != 10) { goto illegal; }
+        if (kind != 0 && kind != 2 && kind != 4 && kind != 8 && kind != 10) { goto illegal; }
         unsigned base = (x >> 4) & 15, reg = x >> 12;
         if ((kind == 8 || kind == 10) && base == reg) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
         tcg_gen_addi_i32(addr, read_gpr(d, base), (x & 15) | ((x >> 8) & 15) * 16);
         if (kind == 2 || kind == 10) { store(d, read_gpr(d, x >> 12), addr, MO_UB); }
-        else { load(d, gpr[x >> 12], addr, MO_UB); }
+        else { load(d, gpr[x >> 12], addr, kind == 4 ? MO_SB : MO_UB); }
         if (kind == 8 || kind == 10) { tcg_gen_mov_i32(gpr[base], addr); }
         next = here + 4;
     } else if (op == 0xeed4) {

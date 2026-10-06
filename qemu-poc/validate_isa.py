@@ -606,6 +606,31 @@ def main():
     validate.check(state["registers"][14:16] == [0x80000000, 0x4444] and
                    state["specials"][5] & 15 == 9,
                    "high-bank parallel ADD did not preserve incoming source or overflow flags")
+    for offset, base, dest, byte, base_offset in [
+        (0, 0, 2, 0x00, 0),
+        (1, 0, 0, 0x7f, 0),
+        (15, 0, 2, 0x80, 0),
+        (16, 0, 2, 0xff, 0),
+        (127, 0, 0, 0x80, 0),
+        (128, 14, 15, 0x7f, 0),
+        (255, 15, 15, 0xff, 0),
+        (16, 0, 2, 0x80, 1),
+    ]:
+        pointer = 0x01c08000 + base_offset
+        address = pointer + offset
+        operand = (dest << 12) | ((offset >> 4) << 8) | (base << 4) | (offset & 15)
+        state = fixture(f"byte-immediate-signed-{offset}-base-{base}-dest-{dest}-odd-{base_offset}",
+                [*literal(3, address), *literal(4, 0x12345600 | byte), 0x07b4,
+                 *literal(base, pointer), *literal(5, 0x89abcde5), 0xe064, 0x5580,
+                 0xee54, operand, *literal(6, address & ~3), 0x6067])
+        expected = byte if byte < 128 else 0xffffff00 | byte
+        shift = (address & 3) * 8
+        word = (0xa5a5a5a5 & ~(255 << shift)) | (byte << shift)
+        validate.check(state["registers"][dest] == expected and
+                       state["registers"][base] == (expected if base == dest else pointer) and
+                       state["registers"][4] == 0x12345600 | byte and
+                       state["registers"][7] == word and state["specials"][5] == 0x89abcde5,
+                       "signed byte offset load extension, unsigned offset, alias, memory or PSR differ")
     fixture("byte-pre-unsigned", [*literal(0, 0x01c08000), 0xe041, 0x12,
             0xee52, 0x100b, 0xee58, 0x200b])
     for value in [0, 1, 0x80000000]:
