@@ -267,6 +267,30 @@ def main():
     fixture("lcd-multiply-flags-alias", [*literal(0, 11), 0xe064, 0x0580,
             *literal(0, 0x81234567), *literal(1, 0x7fffffff),
             0xe1e0, 0x0005, 0xe1f0, 0x1100])
+    state = fixture("multiply-parallel-stack-source", [0xffee, 0x8000, 0x01c0,
+            *literal(0, 12), *literal(10, 7), *literal(11, 0x11223344),
+            *literal(2, 0x87654321), 0x2782, *literal(4, 0x89abcde5), 0xe064, 0x4580,
+            0xf1f0, 0xb0a0, 0x2700, *literal(13, 0x33445566)])
+    validate.check(state["registers"][11] == 84 and state["registers"][0] == 0x87654321 and
+                   state["registers"][10] == 7 and state["inspection"][7] == 0x87654321 and
+                   state["specials"][5] == 0x89abcde5 and state["instructions"] == 10 and
+                   state["registers"][13] == 0x33445566,
+                   "six-byte parallel multiply used loaded source, altered PSR or retired incorrectly")
+    state = fixture("multiply-parallel-high-bank-source", [*literal(4, 0x89abcde5), 0xe064, 0x4580,
+            *literal(14, 0x80000001), *literal(15, 3), 0xf1f0, 0xafe0, 0xe04e, 0x1234,
+            *literal(13, 0x33445566)])
+    validate.check(state["registers"][10] == 0x80000003 and state["registers"][14] == 0x1234 and
+                   state["registers"][15] == 3 and state["specials"][5] == 0x89abcde5 and
+                   state["instructions"] == 6 and state["registers"][13] == 0x33445566,
+                   "eight-byte parallel multiply lost word width, incoming high-bank source or retirement")
+    state = fixture("multiply-parallel-incoming-store", [*literal(4, 0x89abcde5), 0xe064, 0x4580,
+            *literal(0, 0x01c08000), *literal(2, 0x89abcdef), *literal(5, 0xffffffff),
+            *literal(6, 3), 0xf1f0, 0x2650, 0x6082, *literal(13, 0x33445566)])
+    validate.check(state["registers"][2] == 0xfffffffd and state["inspection"][0] == 0x89abcdef and
+                   state["registers"][5:7] == [0xffffffff, 3] and state["registers"][0] == 0x01c08000 and
+                   state["specials"][5] == 0x89abcde5 and state["instructions"] == 8 and
+                   state["registers"][13] == 0x33445566,
+                   "parallel store lost incoming multiply destination, word width, PSR or retirement")
     fixture("lcd-unsigned-div-min", [*literal(0, 0x80000000), *literal(1, 7),
             0xe1f4, 0x2100, 0xe435, 0x3020])
     # E1F4/0101 at Felucca 0x02000848 divides the signed width difference

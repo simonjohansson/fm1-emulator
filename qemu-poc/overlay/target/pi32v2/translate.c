@@ -817,6 +817,10 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     if ((op & 0xe0d0) == 0x2000) { return 1u << (op & 15); }
     if ((op & 0xe0d0) == 0x2080) { return 0; }
     if (op == 0xe060) { return 1u << (fetch(d, here + 2) >> 12); }
+    if (op == 0xe1f0) {
+        uint16_t x = fetch(d, here + 2);
+        return x & 15 ? -1 : 1u << (x >> 12);
+    }
     if (op == 0xe1c8 || op == 0xe1c0 || op == 0xe190 || op == 0xe0b4) {
         return 1u << (fetch(d, here + 2) >> 12);
     }
