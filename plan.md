@@ -13,6 +13,30 @@ reproducible physical key/encoder sequence with verified UI/audio effects,
 and a native Cocoa viewer left **executing**, without checkpoint pause.
 Splash success and first audio entry do not complete this objective.
 
+## General-purpose FM-1 compatibility goal
+
+The user clarified after pausing that the emulator must target all firmware
+for the synth. Felucca is an acceptance workload; its successful boot is not
+the final compatibility boundary. Keep implementation paused until resumed.
+
+Before further firmware-specific integration, audit and separate the present
+fixture machinery from the production CPU/board model. CPU execution and
+peripheral availability must not depend on firmware names, hashes or guest
+PCs. Keep firmware hashes, section poisoning, checkpoint PCs and guest symbol
+observations in optional test/validation harnesses. Current profile flags also
+select CPU conditional-completion handling and device maps, so this requires
+more than renaming the Felucca launcher.
+
+Make hardware behavior register-driven: support evidenced audio clock/buffer
+configurations and interrupt sources independently of the loaded application.
+Retain explicit faults for unimplemented behavior and preserve existing tests.
+Use Felucca, diagnostics and available stock/other firmware as a compatibility
+matrix with documented artifact identities and supported boot modes. Inventory
+inputs first; do not promise all-firmware support from one successful boot.
+Preserve the required subagents, independent review and serialized signed
+milestones described below. This clarification does not authorize changes to
+the stable Rust implementation or physical flashing.
+
 ## Permanent workspace and checkpoint
 
 - Worktree: `/Users/simonjohansson/src/fm1-qemu-poc`
