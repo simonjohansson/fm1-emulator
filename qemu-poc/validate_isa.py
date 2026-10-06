@@ -382,6 +382,21 @@ def main():
         validate.check(state["registers"][6] == expected and state["registers"][1] == 0xef and
                        state["registers"][4] == 0x01c08001,
                        "parallel byte post-increment load did not preserve incoming base/source")
+    for head, initial, expected, flags in [(0xd805, 0xffffffff, 0, 6),
+                                         (0xd815, 0x100, 0x102, 0),
+                                         (0xd845, 1, 0x01c08001, 0)]:
+        state = fixture(f"add-byte-post-bundle-{head:04x}", [*literal(0, 0x01c08000),
+                *literal(2, 0x89abcdef), 0x6082, *literal(4, 0x01c08000),
+                *literal(0, 1), *literal(1, 2), *literal(5, initial), head, 0x0741])
+        validate.check(state["registers"][5] == expected and state["registers"][1] == 0xef and
+                       state["registers"][4] == 0x01c08001 and
+                       state["specials"][5] & 15 == flags,
+                       "parallel ADD result, incoming byte-load source/base or flags differ")
+    state = fixture("add-high-bank-bundle-incoming-source", [*literal(14, 0x7fffffff),
+            *literal(15, 1), 0xd8fe, 0xe04f, 0x4444])
+    validate.check(state["registers"][14:16] == [0x80000000, 0x4444] and
+                   state["specials"][5] & 15 == 9,
+                   "high-bank parallel ADD did not preserve incoming source or overflow flags")
     fixture("byte-pre-unsigned", [*literal(0, 0x01c08000), 0xe041, 0x12,
             0xee52, 0x100b, 0xee58, 0x200b])
     for value in [0, 1, 0x80000000]:
