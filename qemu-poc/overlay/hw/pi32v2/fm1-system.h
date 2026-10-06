@@ -17,7 +17,7 @@ typedef struct FM1PocSystem {
     uint32_t p33_control, reset_source;
     uint8_t p33_data, transfer_byte, command, phase;
     uint16_t address;
-    bool p33_busy, debug_unlocked;
+    bool p33_busy, debug_unlocked, alnk_dma;
     uint8_t p3_reset_source, valid_keep, watchdog_control, power_control;
     uint16_t audio_control;
     uint32_t debug_message, debug_enable, write_enable;

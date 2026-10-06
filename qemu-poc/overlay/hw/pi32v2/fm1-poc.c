@@ -16,6 +16,7 @@
 #include "fm1-system.h"
 #include "fm1-nor.h"
 #include "fm1-usb.h"
+#include "fm1-alnk.h"
 
 #define TYPE_FM1_POC_MACHINE MACHINE_TYPE_NAME("fm1-poc")
 OBJECT_DECLARE_SIMPLE_TYPE(FM1PocState, FM1_POC_MACHINE)
@@ -35,13 +36,14 @@ struct FM1PocState {
     Pi32v2CPU *cpu;
     MemoryRegion xip, irq_mmio, gpio_mmio, iomap_mmio;
     FM1TimerState timers[2];
-    qemu_irq irq;
+    qemu_irq irq, alnk_irq;
     uint32_t irq_configs[32];
     uint32_t gpio[8][8], iomap_con0, iomap_con1;
     FM1PocLCD lcd;
     FM1PocSystem system;
     FM1PocNOR nor;
     FM1PocUSB usb;
+    FM1PocALNK alnk;
     unsigned frames;
     const char *frame_dir;
     QEMUTimer *display_key_timer;
@@ -51,13 +53,14 @@ struct FM1PocState {
     uint64_t shift_edges, latch_edges;
     uint64_t loop_visits, loop_target_irqs;
     bool keep_open, finished, display_live, saving_fault;
+    bool alnk_probe, alnk_irq_level;
     uint32_t last_access_address, last_access_size, last_access_flags;
 };
 
 void fm1_poc_check_access(CPUPi32v2State *e, uint32_t address, unsigned size, unsigned flags)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
-    if (m->cpu->felucca_fixture) {
+    if (m->cpu->felucca_fixture || m->alnk_probe) {
         m->last_access_address = address;
         m->last_access_size = size;
         m->last_access_flags = flags;
@@ -106,9 +109,19 @@ static uint32_t counter_now(FM1TimerState *t)
 {
     return (t->counter + elapsed_ticks(t)) % period_ticks(t);
 }
+static void update_irq(FM1PocState *m)
+{
+    qemu_set_irq(m->irq, m->timers[1].pending || m->alnk_irq_level);
+}
+static void alnk_irq_input(void *opaque, int number, int level)
+{
+    FM1PocState *m = opaque;
+    m->alnk_irq_level = level;
+    update_irq(m);
+}
 static void timer_irq(FM1TimerState *t)
 {
-    if (t->number == 5) { qemu_set_irq(t->machine->irq, t->pending); }
+    if (t->number == 5) { update_irq(t->machine); }
     else if (t->pending) {
         pi32v2_fail(&t->machine->cpu->env, "TIMER4 IRQ62 is unimplemented");
     }
@@ -346,7 +359,7 @@ static void save_lcd_ppm(FM1PocState *m, const char *path)
 void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
-    if (!m || !m->cpu->felucca_fixture || m->saving_fault) { return; }
+    if (!m || (!m->cpu->felucca_fixture && !m->alnk_probe) || m->saving_fault) { return; }
     const char *dir = getenv("FM1_POC_STATE_DIR");
     if (!dir) { return; }
     m->saving_fault = true;
@@ -355,10 +368,11 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
     FILE *f = fopen(record, "w");
     if (!f) { error_report("cannot save Felucca state"); exit(EXIT_FAILURE); }
     g_autofree char *escaped = g_strescape(reason, NULL);
-    fprintf(f, "{\"profile\":\"felucca\",\"reason\":\"%s\",\"pc\":%u,"
+    fprintf(f, "{\"profile\":\"%s\",\"reason\":\"%s\",\"pc\":%u,"
             "\"instructions\":%" PRIu64 ",\"virtual_ns\":%" PRId64
             ",\"last_access\":{\"address\":%u,\"size\":%u,\"flags\":%u},"
-            "\"registers\":[", escaped, e->pc, e->instructions,
+            "\"registers\":[", m->alnk_probe ? "alnk-probe" : "felucca",
+            escaped, e->pc, e->instructions,
             qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), m->last_access_address,
             m->last_access_size, m->last_access_flags);
     for (unsigned i = 0; i < 16; i++) { fprintf(f, "%s%u", i ? "," : "", e->gpr[i]); }
@@ -383,6 +397,23 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
             fm1_lcd_visible(&m->lcd) ? "true" : "false", m->lcd.busy ? "true" : "false",
             m->lcd.pixels_written, m->lcd.commands, m->lcd.dma_transfers,
             m->lcd.completed_transfers);
+    FM1PocALNK *a = &m->alnk;
+    fprintf(f, "\"alnk\":{\"control0\":%u,\"control1\":%u,\"control3\":%u,"
+            "\"pending\":%u,\"dma_address\":%u,\"half_words\":%u,"
+            "\"active_half\":%u,\"enabled\":%s,\"irq_level\":%s,"
+            "\"clock_control\":%u,\"iomap_control\":%u,"
+            "\"completions\":%" PRIu64 ",\"acknowledgments\":%" PRIu64
+            ",\"coalesced_completions\":%" PRIu64 ",\"skipped_captures\":%" PRIu64
+            ",\"sample_words\":%" PRIu64 ",\"sample_frames\":%" PRIu64
+            ",\"nonzero_words\":%" PRIu64 ",\"sample_digest\":%u,"
+            "\"last_half\":%u,\"latest_half_bytes\":%u,\"epoch\":%" PRId64
+            ",\"deadline\":%" PRId64 "},", a->control0, a->control1, a->control3,
+            a->pending, a->dma_address, a->half_words, a->active_half,
+            a->enabled ? "true" : "false", a->irq_level ? "true" : "false",
+            a->clock_control, a->iomap_control, a->completions, a->acknowledgments,
+            a->coalesced_completions, a->skipped_captures, a->sample_words,
+            a->sample_frames, a->nonzero_words, a->sample_digest, a->last_half,
+            a->latest_half_bytes, a->epoch, a->deadline);
     FM1PocSystem *s = &m->system;
     fprintf(f, "\"guards\":{\"emu_control\":%u,\"debug_enable\":%u,"
             "\"debug_message\":%u,\"emu_message\":%u,\"debug_unlocked\":%s,"
@@ -406,6 +437,11 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
     if (!g_file_set_contents(ram_path, memory_region_get_ram_ptr(MACHINE(m)->ram),
                              MACHINE(m)->ram_size, NULL)) {
         error_report("cannot save Felucca SRAM"); exit(EXIT_FAILURE);
+    }
+    g_autofree char *audio_path = g_strdup_printf("%s/state.alnk", dir);
+    if (!g_file_set_contents(audio_path, (const char *)m->alnk.latest_half,
+                             m->alnk.latest_half_bytes, NULL)) {
+        error_report("cannot save ALNK sample evidence"); exit(EXIT_FAILURE);
     }
     /* Only call the framebuffer writer after the JSON/SRAM files exist. */
     g_autofree char *image = g_strdup_printf("%s/lcd.ppm", dir);
@@ -488,7 +524,7 @@ static G_NORETURN void hold_checkpoint(CPUPi32v2State *e)
 void fm1_poc_finish(CPUPi32v2State *e)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
-    if (m->cpu->felucca_fixture) {
+    if (m->cpu->felucca_fixture || m->alnk_probe) {
         fm1_poc_fault(e, "checkpoint reached");
         exit(EXIT_SUCCESS);
     }
@@ -614,7 +650,8 @@ static void machine_init(MachineState *ms)
     bool display = !strcmp(ms->kernel_cmdline, "display");
     bool diag = !strcmp(ms->kernel_cmdline, "diag");
     bool felucca = !strcmp(ms->kernel_cmdline, "felucca");
-    bool application = diag || felucca;
+    m->alnk_probe = !strcmp(ms->kernel_cmdline, "alnk-probe");
+    bool application = diag || felucca || m->alnk_probe;
     const char *display_live = getenv("FM1_POC_DISPLAY_LIVE");
     if (display_live && (strcmp(display_live, "1") || !display)) {
         error_report("FM1_POC_DISPLAY_LIVE=1 requires the display fixture"); exit(EXIT_FAILURE);
@@ -628,7 +665,7 @@ static void machine_init(MachineState *ms)
     bool foundation = display || !strcmp(ms->kernel_cmdline, "foundation") ||
                       !strcmp(ms->kernel_cmdline, "foundation-released");
     if (strcmp(ms->kernel_cmdline, "probe") && !timer && !foundation && !application) {
-        error_report("select -append probe, timer, foundation, foundation-released, display, diag or felucca"); exit(EXIT_FAILURE);
+        error_report("select -append probe, timer, foundation, foundation-released, display, diag, felucca or alnk-probe"); exit(EXIT_FAILURE);
     }
     if (!ms->kernel_filename) { error_report("a raw fixture must be supplied with -kernel"); exit(EXIT_FAILURE); }
     if (felucca) {
@@ -648,7 +685,7 @@ static void machine_init(MachineState *ms)
     m->cpu->timer_fixture = timer;
     m->cpu->foundation_fixture = foundation;
     m->cpu->display_fixture = display;
-    m->cpu->diag_fixture = diag;
+    m->cpu->diag_fixture = diag || m->alnk_probe;
     m->cpu->felucca_fixture = felucca;
     m->cpu->frame_pc = display ? 0x020004fa : 0;
     m->frame_dir = getenv("FM1_POC_FRAME_DIR");
@@ -679,7 +716,7 @@ static void machine_init(MachineState *ms)
             }
             m->cpu->stop_pc = parsed;
         }
-        if (loop_irqs && felucca) {
+        if (loop_irqs && !diag) {
             error_report("FM1_POC_LOOP_IRQS requires the diagnostic fixture"); exit(EXIT_FAILURE);
         }
         if (loop_irqs) {
@@ -748,7 +785,12 @@ static void machine_init(MachineState *ms)
     memory_region_add_subregion(get_system_memory(), 0x01eef100, &m->irq_mmio);
     m->irq = qdev_get_gpio_in(DEVICE(m->cpu), 0);
     if (application) {
+        m->system.alnk_dma = felucca || m->alnk_probe;
         fm1_system_init(&m->system, OBJECT(m), m->cpu);
+        if (m->system.alnk_dma) {
+            m->alnk_irq = qemu_allocate_irq(alnk_irq_input, m, 11);
+            fm1_alnk_init(&m->alnk, OBJECT(m), m->cpu, m->alnk_irq);
+        }
         fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
     }
     if (display || application) {

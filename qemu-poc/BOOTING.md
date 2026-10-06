@@ -453,10 +453,42 @@ initialized state are compared without requiring equal instruction counts.
 Evidence is in `.cache/felucca-validation/splash/` and `splash-reference/`,
 with a durable copy in
 `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-felucca-2026-10-06/`.
-After the splash, initialization next reaches the unsupported compact byte
-store `b[r3++=1] = r4` in `memcpy` at `0x02000ade` (38,257,636 instructions).
-Input, audio, ADC, interrupt startup and sustained home operation remain
-subsequent bring-up milestones.
+The first post-splash fault was the compact byte store `b[r3++=1] = r4`
+in `memcpy` at `0x02000ade` (38,257,636 instructions). Subsequent focused
+CPU extensions advance the unchanged application to audio initialization.
+
+### Reached ALNK audio configuration
+
+The first missing peripheral access after the splash was the halfword write
+to ALNK0 CON1 at `0x00012e04`, PC `0x0200d336`, after 38,928,409 instructions.
+The dedicated audio model now covers the reached control-register widths,
+clock/routing words and the selected configuration: two 512-word halves,
+256 stereo frames per half, with a functional 44.1 kHz completion clock.
+Cumulative rational deadlines avoid rounding drift. Each completion reads
+the actual guest SRAM half into a bounded sample sink; pending IRQ11 is a
+level latch until the guest writes its acknowledgment. Further completions
+coalesce while pending. Delayed callbacks count skipped captures instead of
+fabricating earlier sample contents; normal deterministic probes have not
+exercised that skipped-history path.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_felucca_devices.py
+```
+
+Six positive and twelve explicit-fault probes pass, including twelve
+alternating halves, exact sample bytes after guest buffer mutation,
+acknowledgments, phase retention, cancellation and invalid widths/configs.
+They use a separate private `alnk-probe` guest with interrupts disabled;
+the unchanged Felucca profile still enforces its binary hash. Probe evidence
+binds both fixture and QEMU executable hashes and saves the bounded latest
+half as `state.alnk`. The established diagnostic peripheral gate also passes.
+
+The unchanged boot then reached the parallel ADD/store bundle at
+`0x0200d380` (`01 f1 20 30 b9 60`), after 38,928,433 instructions; see
+`after-alnk-device/`. That observation precedes the IRQ11 enable and DMA
+start. Audio interrupt dispatch, ADC and sustained home operation are still
+subsequent milestones. Evidence is preserved in the worktree cache and the
+durable `.deps/qemu-felucca-2026-10-06/` directory described above.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

@@ -51,7 +51,7 @@ def main():
     blobs = checked_inputs(args.firmware_dir)
     directory = HERE / ".cache/felucca-validation" / args.label
     directory.mkdir(parents=True, exist_ok=True)
-    for name in ("state.json", "state.sram", "lcd.ppm"):
+    for name in ("state.json", "state.sram", "state.alnk", "lcd.ppm"):
         (directory / name).unlink(missing_ok=True)
     env = {key: value for key, value in os.environ.items() if not key.startswith("FM1_POC_")}
     settings = {"FM1_POC_STATE_DIR": str(directory),

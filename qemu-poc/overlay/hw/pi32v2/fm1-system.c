@@ -330,7 +330,9 @@ void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
     memory_region_add_subregion(get_system_memory(), address, &s->region)
     MAP(p33_mmio, p33_ops, "fm1.p33", 0x13e08, 8);
     MAP(reset_mmio, reset_ops, "fm1.reset-source", 0x100c0, 4);
-    MAP(audio_mmio, audio_ops, "fm1.alnk0-disabled", 0x12e00, 2);
+    if (!s->alnk_dma) {
+        MAP(audio_mmio, audio_ops, "fm1.alnk0-disabled", 0x12e00, 2);
+    }
     MAP(cache_mmio, cache_ops, "fm1.cache-idle", 0x01eee008, 4);
     MAP(debug_mmio, debug_ops, "fm1.debug-guards", 0x01eee240, 0x150);
     MAP(emu_mmio, emu_ops, "fm1.emu-guards", 0x01eef0d0, 24);
