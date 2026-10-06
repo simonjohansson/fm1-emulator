@@ -156,6 +156,18 @@ Preserve the provenance boundary in `LICENSES.md`: the fresh QEMU overlay is GPL
 
 Keep unsupported instructions and device operations explicit. Do not replace missing peripherals with blanket zero reads, patch firmware around failures, or fabricate guest progress. Physical hardware is unnecessary for the initial bring-up; any later hardware experiment needs a current device/recovery check and session-appropriate authorization. Preserve existing toolchain/dependency pins and established public interfaces.
 
-The user previously requested Sol 6.1 subagents with extra-high reasoning. If available, divide focused CPU, device-model and independent-review work with clear file ownership; serialize shared builds and commits. Keep each commit reviewable, record evidence alongside each milestone, and report precisely how far the unchanged firmware reaches.
+## Required subagent workflow
+
+Use subagents throughout the Felucca bring-up. The user explicitly requires **Sol 6.1 with extra-high reasoning for every subagent**, including any nested delegation. Set `model="gpt-6.1-sol"` and `reasoning_effort="xhigh"` explicitly when spawning each agent. Use `fork_turns="none"` with a self-contained assignment and this handover's absolute path, or a supported positive history count; full-history forks do not accept model overrides. Do not silently substitute another model or reasoning level. If the requested configuration is unavailable, report the limitation and continue useful coordinator work while resolving it.
+
+The parent agent coordinates the boot milestones, integrates changes, runs shared builds and acceptance checks, and creates discrete signed commits. Use the available worker slots for these responsibilities:
+
+- **CPU agent:** investigate reached instruction failures and implement focused decoder, translation and interrupt-semantics changes with matching regressions.
+- **Device agent:** implement the Felucca boot profile and reached peripheral behavior, including NOR, ADC and ALNK0 as the boot progresses.
+- **Review and validation agent:** independently review changes, compare behavior with source/disassembly and the separate reference, and check milestone evidence and regression coverage.
+
+Assign explicit file ownership before each round. The CPU and device agents must coordinate changes spanning interrupt delivery and machine wiring; give each shared file one owner at a time. Serialize shared builds, acceptance runs and commits to avoid interference. Use subagents within the current session rather than creating separate user-facing chats.
+
+Start with parallel CPU/startup and peripheral-gap inspection while the parent establishes the bounded boot attempt. After each captured failure, assign the concrete blocker to the relevant worker, integrate and validate its fix, obtain independent review, and repeat toward the splash and sustained home-screen milestones. Keep each commit reviewable, record evidence alongside each milestone, and report precisely how far the unchanged firmware reaches.
 
 **Start with the bounded Felucca boot profile and its first captured failure. Then work toward the splash and sustained home-screen milestones in order.**
