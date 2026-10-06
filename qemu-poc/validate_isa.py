@@ -601,6 +601,65 @@ def main():
         fixture(f"stack-wide-address-{offset}", [0xffee, 0x9ef0, 0x01c7, 0xe8f8, offset])
     fixture("stack-double-word", [0xffee, 0x8000, 0x01c0, *literal(0, 0x12345678),
             *literal(1, 0x87654321), 0xe9d0, 0x0029, 0xe9d0, 0x2028])
+    # Reached F101/3020 + 60B9 at Felucca 0x0200d380 computes a new
+    # r1 while the compact halfword store consumes its incoming value.
+    for dest in [1, 3]:
+        state = fixture(f"literal-add-parallel-reached-dest-{dest}", [*literal(4, 0x89abcde5),
+                0xe064, 0x4580, *literal(3, 0x01c08000), *literal(1, 0x89abcdef),
+                0xf100 | dest, 0x3020, 0x60b9, *literal(13, 0x33445566)])
+        validate.check(state["registers"][dest] == 0x01c08020 and
+                       state["registers"][3] == (0x01c08020 if dest == 3 else 0x01c08000) and
+                       state["registers"][1] == (0x01c08020 if dest == 1 else 0x89abcdef) and
+                       state["inspection"][:2] == [0xa5a5cdef, 0xa5a5a5a5] and
+                       state["inspection"][8] == 0xa5a5a5a5 and
+                       state["specials"][5] == 0x89abcde0 and state["instructions"] == 6 and
+                       state["registers"][13] == 0x33445566,
+                       "parallel literal ADD/store lost incoming value/base, halfword width, flags or six-byte retirement")
+    for offset in [-32, 30]:
+        tail = 0x60bb | (((offset // 2) & 31) << 8)
+        address = 0x01c08020 + offset
+        expected = 0x8020a5a5 if address & 2 else 0xa5a58020
+        state = fixture(f"literal-add-parallel-half-store-offset-{offset}", [*literal(4, 0x89abcde5),
+                0xe064, 0x4580, *literal(3, 0x01c08020), 0xf103, 0x3020, tail,
+                *literal(6, address & ~3), 0x6067, *literal(13, 0x33445566)])
+        validate.check(state["registers"][3] == 0x01c08040 and state["registers"][7] == expected and
+                       state["specials"][5] == 0x89abcde0 and state["instructions"] == 7 and
+                       state["registers"][13] == 0x33445566,
+                       "parallel halfword store lost signed offset, old base/source alias, neighbor bytes or retirement")
+    for name, value, immediate, expected, flags in [
+        ("carry-zero", 0xffffffff, 1, 0, 6),
+        ("positive-overflow", 0x7fffffff, 8191, 0x80001ffe, 9),
+        ("negative-result", 0, -8192, 0xffffe000, 8),
+        ("negative-overflow", 0x80000000, -1, 0x7fffffff, 3),
+    ]:
+        encoded = immediate & 0x3fff
+        state = fixture(f"literal-add-parallel-high-bank-{name}", [*literal(4, 0x89abcde5),
+                0xe064, 0x4580, *literal(15, value), 0xf10e | ((encoded >> 12) << 4),
+                0xf000 | (encoded & 4095), 0xe04f, 0x1234, *literal(13, 0x33445566)])
+        validate.check(state["registers"][14:16] == [expected, 0x1234] and
+                       state["specials"][5] == (0x89abcde0 | flags) and
+                       state["instructions"] == 5 and state["registers"][13] == 0x33445566,
+                       "parallel literal ADD lost full destination bank, incoming source, flags or eight-byte retirement")
+    for name, base, tail, reason in [
+        ("overlapping-destination", 0x01c08000, [0xe041, 0x2222], "unsupported instruction 0xf101"),
+        ("deferred-halfword-load", 0x01c08000, [0x603a], "unsupported instruction 0xf101"),
+        ("unaligned-halfword-store", 0x01c08001, [0x60b9], "unaligned access"),
+    ]:
+        image = CACHE / f"literal-add-parallel-{name}.bin"
+        header = [*literal(3, base), *literal(1, 0x89abcdef)]
+        words = [*header, 0xf101, 0x3020, *tail]
+        image.write_bytes(struct.pack("<" + "H" * len(words), *words) + b"\0" * 16)
+        fault_pc = ENTRY + len(header) * 2
+        env = dict(os.environ, FM1_POC_STOP_PC=hex(ENTRY + len(words) * 2),
+                   FM1_POC_MAX_INSTRUCTIONS="1000000")
+        result = subprocess.run([*validate.COMMAND, "-kernel", str(image), "-append", "diag"],
+                                cwd=validate.ROOT, env=env, capture_output=True, text=True, timeout=15)
+        validate.check(result.returncode != 0 and reason in result.stderr and
+                       f"PC 0x{fault_pc:08x}" in result.stderr and "after 2 instructions" in result.stderr,
+                       "invalid parallel ADD/store did not fault at its bundle before retirement")
+        (CACHE / f"{image.stem}-negative.json").write_text(json.dumps(
+            {"fault_pc": fault_pc, "returncode": result.returncode, "stderr": result.stderr}, indent=2) + "\n")
+        print(f"PASS {image.stem}: explicit invalid or deferred bundle")
     state = fixture("literal-add-reached-4296", [*literal(3, 0x01c09224), 0xe110, 0x30c8])
     validate.check(state["registers"][0] == 0x01c0a2ec and state["registers"][3] == 0x01c09224 and
                    state["specials"][5] & 15 == 0,
