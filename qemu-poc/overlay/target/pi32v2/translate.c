@@ -567,6 +567,15 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_mov_i32(gpr[base], addr);
         load(d, gpr[dest], addr, MO_LEUL | MO_ALIGN);
         next = here + 4;
+    } else if (op == 0xedd0) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, dest = x >> 12;
+        if ((x & 1) || base == dest) { goto illegal; }
+        /* Vendor EDD0 2104 at Felucca 0x0200d258 walks GP defaults:
+         * load the old base, then advance by the unsigned even byte stride. */
+        load(d, gpr[dest], read_gpr(d, base), MO_LEUW | MO_ALIGN);
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 14) | ((x >> 8) & 15) * 16);
+        next = here + 4;
     } else if (op == 0xedd8) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 15;

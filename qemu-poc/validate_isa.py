@@ -369,6 +369,39 @@ def main():
         (CACHE / f"{image.stem}-negative.json").write_text(json.dumps(
             {"fault_pc": fault_pc, "returncode": result.returncode, "stderr": result.stderr}, indent=2) + "\n")
         print(f"PASS {image.stem}: explicit unaligned halfword access")
+    for stride, base, dest in [(0, 0, 2), (2, 0, 2), (20, 0, 2), (128, 14, 15), (254, 0, 2)]:
+        words = [*literal(0, 0x01c08000), *literal(2, 0xabcd8001), 0x6082]
+        if stride:
+            words += [*literal(1, stride // 2), *literal(2, 0x76547f02), 0xedd8, 0x2109]
+        words += [*literal(4, 0x89abcde5), 0xe064, 0x4580, *literal(base, 0x01c08000),
+                  0xedd0, (dest << 12) | ((stride >> 4) << 8) | (base << 4) | (stride & 14),
+                  0xedd0, 0x3000 | (base << 4)]
+        state = fixture(f"halfword-post-stride-{stride}-base-{base}", words)
+        validate.check(state["registers"][dest] == 0x8001 and
+                       state["registers"][3] == (0x7f02 if stride else 0x8001) and
+                       state["registers"][base] == 0x01c08000 + stride and
+                       state["inspection"][0] == (0x7f028001 if stride == 2 else 0xabcd8001) and
+                       state["specials"][5] == 0x89abcde5,
+                       "post-increment halfword old-base load, stride, zero extension, memory or PSR differ")
+    for name, base, operand, reason in [
+        ("unaligned", 0x01c08001, 0x2104, "unaligned access"),
+        ("same-base-destination", 0x01c08000, 0x0104, "unsupported instruction 0xedd0"),
+        ("store", 0x01c08000, 0x2105, "unsupported instruction 0xedd0"),
+    ]:
+        image = CACHE / f"halfword-post-{name}.bin"
+        words = [*literal(0, base), 0xedd0, operand]
+        image.write_bytes(struct.pack("<" + "H" * len(words), *words) + b"\0" * 16)
+        fault_pc = ENTRY + (len(words) - 2) * 2
+        env = dict(os.environ, FM1_POC_STOP_PC=hex(ENTRY + len(words) * 2),
+                   FM1_POC_MAX_INSTRUCTIONS="1000000")
+        result = subprocess.run([*validate.COMMAND, "-kernel", str(image), "-append", "diag"],
+                                cwd=validate.ROOT, env=env, capture_output=True, text=True, timeout=15)
+        validate.check(result.returncode != 0 and reason in result.stderr and
+                       f"PC 0x{fault_pc:08x}" in result.stderr,
+                       "unaligned or unsupported post-increment halfword form did not fault at its instruction")
+        (CACHE / f"{image.stem}-negative.json").write_text(json.dumps(
+            {"fault_pc": fault_pc, "returncode": result.returncode, "stderr": result.stderr}, indent=2) + "\n")
+        print(f"PASS {image.stem}: explicit unaligned or unsupported halfword form")
     for offset, dest in [(0, 3), (232, 0), (254, 3), (256, 3), (510, 3)]:
         operand = (dest << 12) | (((offset & 255) >> 4) << 8) | (offset & 14)
         state = fixture(f"halfword-immediate-{offset}-dest-{dest}", [*literal(0, 0x01c08000),
