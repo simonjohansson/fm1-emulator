@@ -59,6 +59,7 @@ static void unexpected_exception(CPUState *cs)
 
 static bool interrupt(CPUState *cs, int request)
 {
+    if (PI32V2_CPU(cs)->display_held) { return false; }
     CPUPi32v2State *e = cpu_env(cs);
     unsigned nibble = e->irq_config >> 28;
     unsigned priority = nibble >> 1;

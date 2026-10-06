@@ -23,6 +23,8 @@ struct ArchCPU {
     bool timer_fixture, foundation_fixture, display_fixture, diag_fixture;
     bool diag_loop_checkpoint;
     void *machine;
+    /* Host display checkpoint, not architectural guest state. */
+    bool display_held;
 };
 struct Pi32v2CPUClass {
     CPUClass parent_class;

@@ -14,6 +14,8 @@ typedef struct FM1PocLCD {
     MemoryRegion spi_mmio;
     QEMUTimer *transfer_timer;
     Pi32v2CPU *cpu;
+    QemuConsole *console;
+    bool redraw;
     uint32_t control, baud, buffer, address, count;
     uint32_t pc_out, iomap_con1, pa_out;
     uint32_t transfer_address, transfer_count;

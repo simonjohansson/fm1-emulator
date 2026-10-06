@@ -10,6 +10,7 @@
 #include "qemu/osdep.h"
 #include "fm1-lcd.h"
 #include "exec/address-spaces.h"
+#include "ui/console.h"
 
 #define SPI1_BASE 0x11d00
 #define SRAM_BASE 0x01c00000
@@ -26,6 +27,37 @@ static void lcd_fail(FM1PocLCD *lcd, const char *reason)
 {
     pi32v2_fail(&lcd->cpu->env, reason);
 }
+
+static void lcd_update_display(void *opaque)
+{
+    FM1PocLCD *lcd = opaque;
+    if (!lcd->redraw) { return; }
+    DisplaySurface *surface = qemu_console_surface(lcd->console);
+    /* qemu_console_resize creates QEMU's native 32-bit RGB surface. The
+     * console observes completed panel writes; it never advances the guest. */
+    g_assert(surface_format(surface) == PIXMAN_x8r8g8b8);
+    bool visible = fm1_lcd_visible(lcd);
+    for (unsigned y = 0; y < FM1_LCD_HEIGHT; y++) {
+        uint32_t *row = (uint32_t *)((uint8_t *)surface_data(surface) +
+                                   y * surface_stride(surface));
+        for (unsigned x = 0; x < FM1_LCD_WIDTH; x++) {
+            row[x] = visible ? fm1_lcd_rgb(lcd, x, y) : 0;
+        }
+    }
+    lcd->redraw = false;
+    dpy_gfx_update(lcd->console, 0, 0, FM1_LCD_WIDTH, FM1_LCD_HEIGHT);
+}
+
+static void lcd_invalidate_display(void *opaque)
+{
+    FM1PocLCD *lcd = opaque;
+    lcd->redraw = true;
+}
+
+static const GraphicHwOps lcd_graphic_ops = {
+    .invalidate = lcd_invalidate_display,
+    .gfx_update = lcd_update_display,
+};
 
 static unsigned parameter_length(uint8_t command)
 {
@@ -50,6 +82,7 @@ static void panel_reset(FM1PocLCD *lcd)
     lcd->x1 = FM1_LCD_WIDTH - 1;
     lcd->y1 = FM1_LCD_HEIGHT - 1;
     memset(lcd->pixels, 0, sizeof(lcd->pixels));
+    lcd->redraw = true;
 }
 
 static void panel_command(FM1PocLCD *lcd, uint8_t command)
@@ -61,6 +94,7 @@ static void panel_command(FM1PocLCD *lcd, uint8_t command)
     lcd->commands++;
     lcd->parameter_count = 0;
     lcd->command = command;
+    lcd->redraw = true;
     switch (command) {
     case 0x01: panel_reset(lcd); break;
     case 0x11: lcd->sleeping = false; break;
@@ -91,6 +125,7 @@ static void panel_data(FM1PocLCD *lcd, uint8_t byte)
             (lcd->pixel_high << 8) | byte;
         lcd->have_pixel_high = false;
         lcd->pixels_written++;
+        lcd->redraw = true;
         if (lcd->x++ == lcd->x1) {
             lcd->x = lcd->x0;
             if (lcd->y++ == lcd->y1) {
@@ -256,6 +291,9 @@ void fm1_lcd_init(FM1PocLCD *lcd, Object *owner, Pi32v2CPU *cpu)
     lcd->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, transfer_complete, lcd);
     memory_region_init_io(&lcd->spi_mmio, owner, &spi_ops, lcd, "fm1.spi1", 20);
     memory_region_add_subregion(get_system_memory(), SPI1_BASE, &lcd->spi_mmio);
+    /* This private panel is machine state rather than a qdev device. */
+    lcd->console = graphic_console_init(NULL, 0, &lcd_graphic_ops, lcd);
+    qemu_console_resize(lcd->console, FM1_LCD_WIDTH, FM1_LCD_HEIGHT);
 }
 
 void fm1_lcd_set_pins(FM1PocLCD *lcd, uint32_t pc_out,
@@ -265,6 +303,7 @@ void fm1_lcd_set_pins(FM1PocLCD *lcd, uint32_t pc_out,
                      ((iomap_con1 ^ lcd->iomap_con1) & 0x10))) {
         lcd_fail(lcd, "LCD SPI routing or CS/D/C changed during a transfer");
     }
+    if ((pa_out ^ lcd->pa_out) & LCD_BACKLIGHT) { lcd->redraw = true; }
     lcd->pc_out = pc_out;
     lcd->iomap_con1 = iomap_con1;
     lcd->pa_out = pa_out;

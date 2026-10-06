@@ -10,6 +10,7 @@
 #include "hw/loader.h"
 #include "hw/irq.h"
 #include "exec/address-spaces.h"
+#include "system/runstate.h"
 #include "cpu.h"
 #include "fm1-lcd.h"
 #include "fm1-system.h"
@@ -47,6 +48,7 @@ struct FM1PocState {
     uint8_t matrix[11];
     uint64_t shift_edges, latch_edges;
     uint64_t loop_visits, loop_target_irqs;
+    bool keep_open, finished;
 };
 
 void fm1_poc_check_access(CPUPi32v2State *e, uint32_t address, unsigned size, unsigned flags)
@@ -72,6 +74,7 @@ void fm1_poc_note_branch(CPUPi32v2State *e)
 void fm1_poc_diag_loop(CPUPi32v2State *e)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
+    if (m->finished) { fm1_poc_finish(e); }
     m->loop_visits++;
     if (m->loop_visits >= 3 && e->rti_count >= m->loop_target_irqs) {
         fm1_poc_finish(e);
@@ -365,9 +368,19 @@ void fm1_poc_frame(CPUPi32v2State *e)
     m->matrix[0] = m->frames == 1 ? 1u << 4 : 0;
 }
 
+static G_NORETURN void hold_checkpoint(CPUPi32v2State *e)
+{
+    /* Stop virtual time and leave the display/event loop responsive.
+     * Exit this helper without retiring the checkpoint instruction. */
+    PI32V2_CPU(env_cpu(e))->display_held = true;
+    vm_stop(RUN_STATE_PAUSED);
+    cpu_loop_exit_noexc(env_cpu(e));
+}
+
 void fm1_poc_finish(CPUPi32v2State *e)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
+    if (m->finished) { hold_checkpoint(e); }
     FM1TimerState *t = &m->timers[1];
     bool foundation = m->cpu->foundation_fixture;
     uint32_t addr = m->cpu->timer_fixture || foundation ? 0x01c08010 : 0x01c08000;
@@ -474,6 +487,11 @@ void fm1_poc_finish(CPUPi32v2State *e)
         }
     }
     puts("}");
+    fflush(stdout);
+    if (m->keep_open) {
+        m->finished = true;
+        hold_checkpoint(e);
+    }
     exit(EXIT_SUCCESS);
 }
 
@@ -483,6 +501,11 @@ static void machine_init(MachineState *ms)
     bool timer = !strcmp(ms->kernel_cmdline, "timer");
     bool display = !strcmp(ms->kernel_cmdline, "display");
     bool diag = !strcmp(ms->kernel_cmdline, "diag");
+    const char *keep_open = getenv("FM1_POC_KEEP_OPEN");
+    if (keep_open && (strcmp(keep_open, "1") || !diag)) {
+        error_report("FM1_POC_KEEP_OPEN=1 requires the diagnostic fixture"); exit(EXIT_FAILURE);
+    }
+    m->keep_open = keep_open != NULL;
     bool foundation = display || !strcmp(ms->kernel_cmdline, "foundation") ||
                       !strcmp(ms->kernel_cmdline, "foundation-released");
     if (strcmp(ms->kernel_cmdline, "probe") && !timer && !foundation && !diag) {
