@@ -2078,3 +2078,89 @@ fn float_min_max_and_comparison_flags_match_the_fm1_986_capture() {
         assert_eq!(c.sr[5], 0xabc00000 | flags);
     }
 }
+#[test]
+fn packed_immediate_blocks_cover_unsigned_below_above_and_signed_at_most() {
+    // Vendor disassembly of the three packed-immediate block kinds the decoder
+    // lacked (0x9a, 0xc2, 0xea); Felucca's drum voices and PHYS use the last two.
+    // u32::MAX tells the unsigned forms from a signed fallback.
+    for (h, x, n, value, taken) in [
+        (0xe9a3, 0x0b80, 3, 65535, true), // if (r3 < 65536) {
+        (0xe9a3, 0x0b80, 3, 65536, false),
+        (0xe9a3, 0x0b80, 3, u32::MAX, false),
+        (0xec23, 0x0ba0, 3, 81920, false), // if (r3 > 81920) {
+        (0xec23, 0x0ba0, 3, 81921, true),
+        (0xec23, 0x0ba0, 3, u32::MAX, true),
+        (0xeea6, 0x0b80, 6, 65536, true), // ifs (r6 <= 65536) {
+        (0xeea6, 0x0b80, 6, 65537, false),
+        (0xeea6, 0x0b80, 6, u32::MAX, true),
+        (0xeea3, 0x0fff, 3, 510, true), // ifs (r3 <= 510) {
+        (0xeea3, 0x0fff, 3, 511, false),
+    ] {
+        let mut c = cpu(&[h, x, 0, 0]);
+        c.r[n] = value;
+        c.step().unwrap();
+        assert_eq!(c.pc == XIP + 4, taken, "{h:04x} {x:04x} r{n}={value:#x}");
+    }
+}
+#[test]
+fn doubleword_memory_steps_its_base_before_or_after_the_access() {
+    // Vendor disassembly: ec50..ec57 with x & 3 = 2 / 3 pre-increment, ec58..ec5f
+    // with x & 3 = 0 / 1 post-increment; the pair field must be even.
+    let base = RAM + 0x100;
+    for (words, n, value, address, after) in [
+        ([0xec50, 0x2213], 1, base, base + 32, base + 32), // d[++r1=32] = r3_r2
+        ([0xec58, 0x2009], 0, base, base, base + 8),       // d[r0++=8] = r3_r2
+        ([0xec57, 0x2a03], 0, base, base - 96, base - 96), // d[++r0=-96] = r3_r2
+    ] {
+        let mut c = cpu(&words);
+        c.r[n] = value;
+        c.r[2] = 0x1111_2222;
+        c.r[3] = 0x3333_4444;
+        c.step().unwrap();
+        assert_eq!(c.bus.read(address, 4).unwrap(), 0x1111_2222);
+        assert_eq!(c.bus.read(address + 4, 4).unwrap(), 0x3333_4444);
+        assert_eq!(c.r[n], after);
+    }
+    for (words, n, pair, address, after) in [
+        ([0xec50, 0x421a], 1, 4, base + 40, base + 40), // r5_r4 = d[++r1=40]
+        ([0xec5f, 0x6f00], 0, 6, base, base - 16),      // r7_r6 = d[r0++=-16]
+    ] {
+        let mut c = cpu(&words);
+        c.r[n] = base;
+        c.bus.write(address, 0x5555_6666, 4).unwrap();
+        c.bus.write(address + 4, 0x7777_8888, 4).unwrap();
+        c.step().unwrap();
+        assert_eq!((c.r[pair], c.r[pair + 1]), (0x5555_6666, 0x7777_8888));
+        assert_eq!(c.r[n], after);
+    }
+    assert!(cpu(&[0xec50, 0x3001]).step().is_err()); // odd pair: not an instruction
+}
+#[test]
+fn byte_memory_covers_negative_offsets_and_signed_preincrement() {
+    // Vendor disassembly of ee50..ee5f: h & 1 is offset bit 8, & 2 store, & 4
+    // signed, & 8 pre-increment; there is no signed store.
+    let base = RAM + 0x100;
+    let mut c = cpu(&[0xee5c, 0x0b61]); // r0 = b[++r6=177] (s)
+    c.r[6] = base;
+    c.bus.write(base + 177, 0x80, 1).unwrap();
+    c.step().unwrap();
+    assert_eq!((c.r[0], c.r[6]), (0xffff_ff80, base + 177));
+    let mut c = cpu(&[0xee5d, 0x0f6f]); // r0 = b[++r6=-1] (s)
+    c.r[6] = base;
+    c.bus.write(base - 1, 0xfe, 1).unwrap();
+    c.step().unwrap();
+    assert_eq!((c.r[0], c.r[6]), (0xffff_fffe, base - 1));
+    let mut c = cpu(&[0xee59, 0x1f00]); // r1 = b[++r0=-16] (u)
+    c.r[0] = base;
+    c.bus.write(base - 16, 0x80, 1).unwrap();
+    c.step().unwrap();
+    assert_eq!((c.r[1], c.r[0]), (0x80, base - 16));
+    let mut c = cpu(&[0xee53, 0x0e4b]); // b[r4+-21] = r0
+    c.r[4] = base;
+    c.r[0] = 0x1234_56ab;
+    c.step().unwrap();
+    assert_eq!((c.bus.read(base - 21, 1).unwrap(), c.r[4]), (0xab, base));
+    for h in [0xee56, 0xee57, 0xee5e, 0xee5f] {
+        assert!(cpu(&[h, 0]).step().is_err(), "{h:04x}");
+    }
+}

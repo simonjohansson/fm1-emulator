@@ -456,7 +456,10 @@ fn wide(h: u32, x: u32) -> Wide {
     if h == 0xe9d4 {
         return Wide::StackExtended;
     }
-    if h & 0xfff8 == 0xec50 && x & 3 <= 1 {
+    // Vendor-exhaustive: ec50..ec57 x & 3 = 0 / 1 load / store at rS + offset, 2 / 3 the
+    // same with a pre-increment; ec58..ec5f x & 3 = 0 / 1 post-increment (2 / 3 there are
+    // the register-index forms, not modelled). The pair field (x >> 12) must be even.
+    if h & 0xfff0 == 0xec50 && x & 0x1000 == 0 && (h & 8 == 0 || x & 2 == 0) {
         return Wide::MemoryPair;
     }
     if matches!(h & 0xfff0, 0xe1a0 | 0xe1b0) {
@@ -482,11 +485,13 @@ fn wide(h: u32, x: u32) -> Wide {
             | 0x92
             | 0x93
             | 0x99
+            | 0x9a
             | 0x9b
             | 0xa1
             | 0xa2
             | 0xa3
             | 0xc1
+            | 0xc2
             | 0xc3
             | 0xc9
             | 0xca
@@ -501,6 +506,7 @@ fn wide(h: u32, x: u32) -> Wide {
             | 0xe2
             | 0xe3
             | 0xe9
+            | 0xea
             | 0xeb
     ) && h & 0xf000 == 0xe000
     {
@@ -543,10 +549,9 @@ fn wide(h: u32, x: u32) -> Wide {
     {
         return Wide::BranchCompareRegister;
     }
-    if matches!(
-        h,
-        0xee50 | 0xee51 | 0xee52 | 0xee54 | 0xee55 | 0xee58 | 0xee5a
-    ) {
+    // Vendor-exhaustive: h & 1 offset bit 8, & 2 store, & 4 signed, & 8 pre-increment;
+    // no signed store, so ee56/57/5e/5f are not instructions.
+    if matches!(h, 0xee50..=0xee55 | 0xee58..=0xee5d) {
         return Wide::ByteExtended;
     }
     if h & 0xfff8 == 0xecd0 {

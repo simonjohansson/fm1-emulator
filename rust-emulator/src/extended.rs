@@ -636,14 +636,28 @@ pub(crate) fn execute(
                 Wide::MemoryPair => {
                     let offset =
                         (signed(h & 7, 3) << 8) | (((x >> 8) & 15) << 4) as i32 | (x & 12) as i32;
-                    let addr = cpu.r[s].wrapping_add(offset as u32);
+                    let stepped = cpu.r[s].wrapping_add(offset as u32);
+                    let (addr, update) = match (h & 8 != 0, x & 2 != 0) {
+                        (true, _) => (cpu.r[s], Some(stepped)),    // d[rS++=N]
+                        (false, true) => (stepped, Some(stepped)), // d[++rS=N]
+                        (false, false) => (stepped, None),         // d[rS+N]
+                    };
                     let reg = d & 14;
+                    // As the other increment forms: a store writes the pair before the
+                    // base update; a load commits the base first, so loaded words win.
                     if x & 1 != 0 {
                         cpu.write(addr, cpu.r[reg])?;
                         cpu.write(addr + 4, cpu.r[reg + 1])?;
+                        if let Some(base) = update {
+                            cpu.r[s] = base;
+                        }
                     } else {
-                        cpu.r[reg] = cpu.read(addr, 4)?;
-                        cpu.r[reg + 1] = cpu.read(addr + 4, 4)?;
+                        let (low, high) = (cpu.read(addr, 4)?, cpu.read(addr + 4, 4)?);
+                        if let Some(base) = update {
+                            cpu.r[s] = base;
+                        }
+                        cpu.r[reg] = low;
+                        cpu.r[reg + 1] = high;
                     }
                     op = "memory_pair";
                 }
@@ -729,7 +743,7 @@ pub(crate) fn execute(
                             0x81..=0x83 => lhs == rhs,
                             0x89..=0x8b => lhs != rhs,
                             0x91..=0x93 => lhs >= rhs,
-                            0x99 | 0x9b => lhs < rhs,
+                            0x99..=0x9b => lhs < rhs,
                             0xa1 => {
                                 if x & 128 == 0 {
                                     lhs & rhs == 0
@@ -739,7 +753,7 @@ pub(crate) fn execute(
                             }
                             0xa2 => lhs & rhs == 0,
                             0xa3 => lhs & rhs != 0,
-                            0xc1 | 0xc3 => lhs > rhs,
+                            0xc1..=0xc3 => lhs > rhs,
                             0xc9..=0xcb => lhs <= rhs,
                             0xd1..=0xd3 => (lhs as i32) >= (rhs as i32),
                             0xd9..=0xdb => (lhs as i32) < (rhs as i32),
