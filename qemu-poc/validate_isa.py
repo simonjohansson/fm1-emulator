@@ -499,6 +499,36 @@ def main():
         fixture(f"stack-wide-address-{offset}", [0xffee, 0x9ef0, 0x01c7, 0xe8f8, offset])
     fixture("stack-double-word", [0xffee, 0x8000, 0x01c0, *literal(0, 0x12345678),
             *literal(1, 0x87654321), 0xe9d0, 0x0029, 0xe9d0, 0x2028])
+    state = fixture("literal-add-reached-4296", [*literal(3, 0x01c09224), 0xe110, 0x30c8])
+    validate.check(state["registers"][0] == 0x01c0a2ec and state["registers"][3] == 0x01c09224 and
+                   state["specials"][5] & 15 == 0,
+                   "reached E110/30C8 literal add lost upper immediate bits or source")
+    for immediate in [-8192, -4097, -4096, -1, 0, 4095, 4096, 4296, 8191]:
+        dest = 3 if immediate == 4096 else 0
+        encoded = immediate & 0x3fff
+        state = fixture(f"literal-add-boundary-{immediate}", [*literal(4, 0x89abcdef), 0xe064, 0x4580,
+                *literal(3, 0x12345678), 0xe100 | ((encoded >> 12) << 4) | dest,
+                0x3000 | (encoded & 4095)])
+        expected = (0x12345678 + immediate) & 0xffffffff
+        validate.check(state["registers"][dest] == expected and
+                       state["registers"][3] == (expected if dest == 3 else 0x12345678) and
+                       state["specials"][5] == (0x89abcde2 if immediate < 0 else 0x89abcde0),
+                       "literal add signed range, destination alias, source or preserved PSR bits differ")
+    for name, source, dest, value, immediate, expected, flags in [
+        ("carry", 0, 0, 0xffffffff, 4096, 0x00000fff, 2),
+        ("carry-zero-high-bank", 14, 15, 0xfffff000, 4096, 0, 6),
+        ("positive-overflow", 0, 0, 0x7fffffff, 8191, 0x80001ffe, 9),
+        ("negative-overflow", 0, 0, 0x80000000, -4096, 0x7ffff000, 3),
+        ("negative-result-high-bank", 15, 14, 0, -8192, 0xffffe000, 8),
+    ]:
+        encoded = immediate & 0x3fff
+        state = fixture(f"literal-add-flags-{name}", [*literal(4, 0x89abcdef), 0xe064, 0x4580,
+                *literal(source, value), 0xe100 | ((encoded >> 12) << 4) | dest,
+                (source << 12) | (encoded & 4095)])
+        validate.check(state["registers"][dest] == expected and
+                       state["registers"][source] == (expected if source == dest else value) and
+                       state["specials"][5] == 0x89abcde0 | flags,
+                       "literal add word width, carry/zero/overflow/negative flags or register aliases differ")
     fixture("packed-add", [*literal(0, 0xffffffff), 0xe0e1, 0x0001])
     for index in [0, 31]:
         fixture(f"bit-register-{index}", [*literal(0, 0x81234567), *literal(1, index),

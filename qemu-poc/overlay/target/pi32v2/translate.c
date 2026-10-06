@@ -600,7 +600,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         uint16_t x = fetch(d, here + 2);
         int32_t imm = x & 4095;
         if (op & 32) { imm += sext((op >> 4) & 3, 2) * 4096; }
-        else if (op & 16) { goto illegal; }
+        else if (op & 16) { imm += 4096; }
         gen_helper_pi32v2_alu(gpr[op & 15], tcg_env, read_gpr(d, x >> 12),
                               tcg_constant_i32(imm), tcg_constant_i32(0));
         next = here + 4;
