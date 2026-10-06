@@ -1018,6 +1018,51 @@ fn wide_multiply_accumulate_keeps_carry_and_incoming_aliased_operands() {
 }
 
 #[test]
+fn wide_divides_decode_as_the_vendor_assembler_does() {
+    // Vendor objdump of every E1F6 xxxx: a divide exactly when x & 0x1f == 0;
+    // x >> 12 is the destination pair with its low bit selecting signed (as for
+    // the wide multiply), (x >> 4) & 15 the dividend pair, (x >> 8) & 15 the
+    // divisor. The compiler emits E1F6 1200 for a long long / int.
+    for (x, d, s, c, signed) in [
+        (0x1200, 0, 0, 2, true),    // r1_r0 = r1_r0 / r2 (s)
+        (0x1020, 0, 2, 0, true),    // r1_r0 = r3_r2 / r0 (s)
+        (0x3200, 2, 0, 2, true),    // r3_r2 = r1_r0 / r2 (s)
+        (0xf2e0, 14, 14, 2, true),  // r15_r14 = r15_r14 / r2 (s)
+        (0xe0e0, 14, 14, 0, false), // r15_r14 = r15_r14 / r0 (u)
+        (0x0e40, 0, 4, 14, false),  // r1_r0 = r5_r4 / r14 (u)
+    ] {
+        for (dividend, divisor) in [
+            (-7i64, 2i32),
+            (i64::MAX, -3),
+            (-(1 << 40) - 5, 1000),
+            (5, -1),
+        ] {
+            let mut cpu = cpu(&[0xe1f6, x]);
+            cpu.r[s] = dividend as u32;
+            cpu.r[s + 1] = (dividend >> 32) as u32;
+            cpu.r[c] = divisor as u32;
+            cpu.step().unwrap();
+            let expected = if signed {
+                (dividend / divisor as i64) as u64
+            } else {
+                dividend as u64 / divisor as u32 as u64
+            };
+            assert_eq!(
+                (cpu.r[d + 1] as u64) << 32 | cpu.r[d] as u64,
+                expected,
+                "{x:#06x}"
+            );
+        }
+    }
+    let mut cpu = cpu(&[0]);
+    for x in 0..=u16::MAX {
+        cpu.bus.write(RAM, 0xe1f6 | (x as u32) << 16, 4).unwrap();
+        cpu.pc = RAM;
+        cpu.r = [3; 16];
+        assert_eq!(cpu.step().is_ok(), x & 0x1f == 0, "{x:#06x}");
+    }
+}
+#[test]
 fn stock_wide_arithmetic_preserves_high_words_and_overlapping_operands() {
     // Vendor stock clock arithmetic, with aliased inputs/outputs and values
     // requiring both words. The destination's low bit selects signed multiply.
