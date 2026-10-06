@@ -465,6 +465,44 @@ def main():
     (CACHE / f"{image.stem}-negative.json").write_text(json.dumps(
         {"fault_pc": fault_pc, "returncode": result.returncode, "stderr": result.stderr}, indent=2) + "\n")
     print(f"PASS {image.stem}: explicit unaligned halfword access")
+    for offset, base, source, value in [
+        (0, 0, 2, 0xffff0000),
+        (2, 0, 2, 0xabcdffff),
+        (74, 4, 2, 0xabcd8001),
+        (254, 0, 2, 0x12345678),
+        (256, 15, 14, 0x89abcdef),
+        (510, 0, 2, 0xabcd7fff),
+        (74, 0, 0, 0x01c08000),
+        (510, 14, 14, 0x01c08000),
+    ]:
+        operand = (source << 12) | (((offset & 255) >> 4) << 8) | (base << 4) | (offset & 14) | 1
+        words = [*literal(base, 0x01c08000)]
+        if source != base:
+            words += literal(source, value)
+        words += [*literal(5, 0x89abcde5), 0xe064, 0x5580, 0xed50 | (offset >> 8), operand,
+                  *literal(6, 0x01c08000 + (offset & ~3)), 0x6067]
+        state = fixture(f"halfword-immediate-store-{offset}-base-{base}-source-{source}", words)
+        shift = (offset & 2) * 8
+        expected = (0xa5a5a5a5 & ~(0xffff << shift)) | ((value & 0xffff) << shift)
+        validate.check(state["registers"][7] == expected and state["registers"][source] == value and
+                       state["registers"][base] == 0x01c08000 and state["specials"][5] == 0x89abcde5,
+                       "immediate halfword store truncation, neighbor bytes, offset, source/base alias or PSR differ")
+    for offset in [0, 510]:
+        image = CACHE / f"halfword-immediate-store-unaligned-{offset}.bin"
+        operand = 0x2000 | (((offset & 255) >> 4) << 8) | (offset & 14) | 1
+        words = [*literal(0, 0x01c08001), *literal(2, 0x12345678), 0xed50 | (offset >> 8), operand]
+        image.write_bytes(struct.pack("<" + "H" * len(words), *words) + b"\0" * 16)
+        fault_pc = ENTRY + (len(words) - 2) * 2
+        env = dict(os.environ, FM1_POC_STOP_PC=hex(ENTRY + len(words) * 2),
+                   FM1_POC_MAX_INSTRUCTIONS="1000000")
+        result = subprocess.run([*validate.COMMAND, "-kernel", str(image), "-append", "diag"],
+                                cwd=validate.ROOT, env=env, capture_output=True, text=True, timeout=15)
+        validate.check(result.returncode != 0 and "unaligned access" in result.stderr and
+                       f"PC 0x{fault_pc:08x}" in result.stderr,
+                       "unaligned immediate halfword store did not fault at its instruction")
+        (CACHE / f"{image.stem}-negative.json").write_text(json.dumps(
+            {"fault_pc": fault_pc, "returncode": result.returncode, "stderr": result.stderr}, indent=2) + "\n")
+        print(f"PASS {image.stem}: explicit unaligned halfword store")
     fixture("lcd-pre-byte-store", [*literal(0, 0x01c08000), *literal(1, 0x12345678), 0xee5a, 0x1002])
     for value in [239, 240, 241, 0xffffffff, 520, 1099, 4095]:
         # Vendor literal forms ECB* differ from the pinned SLEIGH packed label.
