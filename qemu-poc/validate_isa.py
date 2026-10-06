@@ -269,6 +269,49 @@ def main():
             0xe1e0, 0x0005, 0xe1f0, 0x1100])
     fixture("lcd-unsigned-div-min", [*literal(0, 0x80000000), *literal(1, 7),
             0xe1f4, 0x2100, 0xe435, 0x3020])
+    # E1F4/0101 at Felucca 0x02000848 divides the signed width difference
+    # by two. Sign combinations distinguish truncation toward zero from floor.
+    for name, left, right, dest, numerator, denominator, quotient in [
+        ("reached", 0, 1, 0, 128, 2, 64),
+        ("positive", 0, 1, 2, 7, 3, 2),
+        ("negative-numerator", 0, 1, 0, -7, 3, -2),
+        ("negative-denominator", 0, 1, 1, 7, -3, -2),
+        ("both-negative", 0, 1, 2, -7, -3, 2),
+        ("minimum", 0, 1, 2, -0x80000000, 1, -0x80000000),
+        ("minimum-half", 0, 1, 1, -0x80000000, 2, -0x40000000),
+        ("maximum-negative", 0, 1, 0, 0x7fffffff, -1, -0x7fffffff),
+        ("truncate-negative-zero", 0, 1, 2, -1, 2, 0),
+        ("zero", 0, 1, 1, 0, -1, 0),
+        ("high-bank", 14, 13, 15, -0x80000000, -0x80000000, 1),
+        ("high-bank-denominator-alias", 15, 14, 14, -0x7fffffff, 3, -715827882),
+        ("same-source", 3, 3, 3, -7, -7, 1),
+    ]:
+        state = fixture(f"signed-div-{name}", [*literal(4, 0x89abcde5), 0xe064, 0x4580,
+                *literal(left, numerator & 0xffffffff), *literal(right, denominator & 0xffffffff),
+                0xe1f4, (dest << 12) | (right << 8) | (left << 4) | 1])
+        expected = {left: numerator & 0xffffffff, right: denominator & 0xffffffff}
+        expected[dest] = quotient & 0xffffffff
+        validate.check(all(state["registers"][reg] == value for reg, value in expected.items()) and
+                       state["specials"][5] == 0x89abcde5,
+                       "signed division quotient, source/destination aliases or preserved PSR differ")
+    for name, numerator, denominator, reason in [
+        ("zero-denominator", 7, 0, "divide-by-zero behavior is unsupported"),
+        ("overflow", 0x80000000, 0xffffffff, "signed-division-overflow behavior is unsupported"),
+    ]:
+        image = CACHE / f"signed-div-{name}.bin"
+        words = [*literal(0, numerator), *literal(1, denominator), 0xe1f4, 0x0101]
+        image.write_bytes(struct.pack("<" + "H" * len(words), *words) + b"\0" * 16)
+        fault_pc = ENTRY + (len(words) - 2) * 2
+        env = dict(os.environ, FM1_POC_STOP_PC=hex(ENTRY + len(words) * 2),
+                   FM1_POC_MAX_INSTRUCTIONS="1000000")
+        result = subprocess.run([*validate.COMMAND, "-kernel", str(image), "-append", "diag"],
+                                cwd=validate.ROOT, env=env, capture_output=True, text=True, timeout=15)
+        validate.check(result.returncode != 0 and reason in result.stderr and
+                       f"PC 0x{fault_pc:08x}" in result.stderr,
+                       "unresolved signed division edge did not fault at its instruction")
+        (CACHE / f"{image.stem}-negative.json").write_text(json.dumps(
+            {"fault_pc": fault_pc, "returncode": result.returncode, "stderr": result.stderr}, indent=2) + "\n")
+        print(f"PASS {image.stem}: explicit unsupported division edge")
     fixture("lcd-post-half-store", [*literal(0, 0x01c08000), *literal(1, 0x12345678), 0x0681])
     for index, dest in [(0, 3), (1, 0), (4, 1)]:
         state = fixture(f"halfword-index-{index}-dest-{dest}", [*literal(0, 0x01c08000),

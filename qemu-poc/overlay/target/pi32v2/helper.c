@@ -111,6 +111,15 @@ uint32_t HELPER(pi32v2_div)(CPUPi32v2State *env, uint32_t numerator, uint32_t de
     return numerator / denominator;
 }
 
+uint32_t HELPER(pi32v2_divs)(CPUPi32v2State *env, uint32_t numerator, uint32_t denominator)
+{
+    if (!denominator) { pi32v2_fail(env, "divide-by-zero behavior is unsupported"); }
+    if (numerator == 0x80000000u && denominator == 0xffffffffu) {
+        pi32v2_fail(env, "signed-division-overflow behavior is unsupported");
+    }
+    return (int32_t)numerator / (int32_t)denominator;
+}
+
 void HELPER(pi32v2_rti)(CPUPi32v2State *env)
 {
     if (!env->in_irq) {
