@@ -218,6 +218,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if ((op & 0xf8) == 0x30) { tcg_gen_ori_i32(gpr[a], read_gpr(d, a), mask); }
         else if ((op & 0xf8) == 0x38) { tcg_gen_xori_i32(gpr[a], read_gpr(d, a), mask); }
         else { tcg_gen_andi_i32(gpr[a], read_gpr(d, a), ~mask); }
+    } else if ((op & 0xff00) == 0x1500) {
+        unsigned dest = op & 14, source = (op >> 4) & 14;
+        if (op & 17) { goto illegal; }
+        tcg_gen_mov_i32(gpr[dest], read_gpr(d, source));
+        tcg_gen_mov_i32(gpr[dest + 1], read_gpr(d, source + 1));
     } else if ((op & 0xff00) == 0x1600) {
         tcg_gen_mov_i32(gpr[op & 15], read_gpr(d, (op >> 4) & 15));
     } else if ((op & 0xfff8) == 0x14c0) {
@@ -795,6 +800,7 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
         return 1u << (op & 15);
     }
     if ((op & 0xff00) == 0x1700) { return 1u << (op & 7); }
+    if ((op & 0xff00) == 0x1500 && !(op & 17)) { return 3u << (op & 14); }
     if ((op & 0xfff8) == 0x14c0) { return 1u << (8 + (op & 7)); }
     if ((op & 0xfff0) == 0x1480 && !(op & 1)) { return 3u << (op & 14); }
     if ((op & 0xe0d0) == 0x2000) { return 1u << (op & 15); }

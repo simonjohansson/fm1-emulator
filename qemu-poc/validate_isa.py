@@ -136,6 +136,23 @@ def main():
                    "parallel store did not consume incoming r0")
     state = fixture("bundle-old-source", [0xe040, 0x1234, 0xd601, 0xe040, 0x8000])
     validate.check(state["registers"][:2] == [0xffff8000, 0x1234], "parallel ALU input was overwritten")
+    for source, dest in [(6, 0), (0, 14), (14, 6), (6, 6)]:
+        state = fixture(f"pair-move-{source}-{dest}", [*literal(source, 0x81234567),
+                *literal(source + 1, 0xfedcba98), 0x1500 | (source << 4) | dest])
+        validate.check(state["registers"][dest:dest + 2] == [0x81234567, 0xfedcba98] and
+                       state["registers"][source:source + 2] == [0x81234567, 0xfedcba98],
+                       "register-pair move order, word width or source preservation differs")
+    state = fixture("pair-move-bundle-incoming-source", [*literal(6, 0x81234567),
+            *literal(7, 0xfedcba98), 0xd562, 0xe046, 0x6666])
+    validate.check(state["registers"][2:4] == [0x81234567, 0xfedcba98] and
+                   state["registers"][6] == 0x6666,
+                   "parallel pair move did not consume its incoming source")
+    state = fixture("pair-move-bundle-incoming-store", [*literal(0, 0x01c08000),
+            *literal(2, 0x22334455), *literal(6, 0x81234567), *literal(7, 0xfedcba98),
+            0xd562, 0x6082])
+    validate.check(state["registers"][2:4] == [0x81234567, 0xfedcba98] and
+                   state["inspection"][0] == 0x22334455,
+                   "parallel store did not consume the incoming pair-move destination")
     state = fixture("bundle-head-old-store", [0xffc0, 0x8000, 0x01c0, 0xe041, 0x2222,
                                                0xc581, 0xe041, 0x3333])
     validate.check(state["inspection"][0] == 0x2222 and state["registers"][:2] == [0x01c08004, 0x3333],
