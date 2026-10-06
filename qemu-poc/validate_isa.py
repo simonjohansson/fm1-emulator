@@ -160,6 +160,21 @@ def main():
     validate.check(state["registers"][0] == 0x5678 and
                    state["registers"][2] == state["registers"][3] == 0x1234,
                    "compact stack bundle did not preserve incoming store source")
+    # Reached ECDC 1162 uses r1 as both incoming increment and load destination.
+    for name, base, increment, dest in [("separate", 0x01c08000, 4, 2),
+                                      ("increment-alias", 0x01c08008, 0xfffffffc, 1)]:
+        state = fixture(f"word-pre-register-{name}", [*literal(0, 0x01c08000),
+                *literal(3, 0x81234567), 0x6183, *literal(6, base),
+                *literal(1, increment), 0xecdc, (dest << 12) | 0x162])
+        validate.check(state["registers"][6] == 0x01c08004 and
+                       state["registers"][dest] == 0x81234567 and
+                       state["inspection"][1] == 0x81234567,
+                       "pre-increment word load address, writeback or alias result differs")
+    state = fixture("word-pre-register-base-increment-alias", [*literal(0, 0x01c08000),
+            *literal(3, 0x81234567), 0x6183, *literal(6, 0x00e04002), 0xecdc, 0x2662])
+    validate.check(state["registers"][6] == 0x01c08004 and
+                   state["registers"][2] == 0x81234567,
+                   "pre-increment word load did not use incoming base/increment")
     for condition, op in [("ge", 0xf900), ("lt", 0xf980), ("gt", 0xfc00), ("le", 0xfc80)]:
         for value in [0, 1, 2, 0x80000000]:
             fixture(f"unsigned-{condition}-{value:08x}", [0xffc0, value & 0xffff, value >> 16,

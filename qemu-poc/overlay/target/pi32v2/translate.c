@@ -539,6 +539,17 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (!(kind & 1)) { load(d, gpr[x >> 12], addr, MO_LEUL | MO_ALIGN); }
         else { store(d, read_gpr(d, x >> 12), addr, MO_LEUL | MO_ALIGN); }
         next = here + 4;
+    } else if (op == 0xecdc) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, dest = x >> 12;
+        /* Vendor ECDC 1162 at Felucca 0x020049fa loads r1 from
+         * [++r6=r1]. Capture the incoming increment before loading r1. */
+        if ((x & 15) != 2 || base == dest) { goto illegal; }
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_add_i32(addr, read_gpr(d, base), read_gpr(d, (x >> 8) & 15));
+        tcg_gen_mov_i32(gpr[base], addr);
+        load(d, gpr[dest], addr, MO_LEUL | MO_ALIGN);
+        next = here + 4;
     } else if ((op & 0xffc0) == 0xe100) {
         uint16_t x = fetch(d, here + 2);
         int32_t imm = x & 4095;
