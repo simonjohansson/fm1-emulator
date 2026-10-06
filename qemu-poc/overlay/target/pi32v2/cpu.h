@@ -21,6 +21,7 @@ struct ArchCPU {
     uint32_t boot_pc, stop_pc, frame_pc;
     uint64_t instruction_limit;
     bool timer_fixture, foundation_fixture, display_fixture, diag_fixture;
+    bool felucca_fixture;
     bool diag_loop_checkpoint;
     void *machine;
     /* Host display checkpoint, not architectural guest state. */
@@ -35,6 +36,7 @@ struct Pi32v2CPUClass {
 void pi32v2_translate_init(void);
 void pi32v2_translate_code(CPUState *, TranslationBlock *, int *, vaddr, void *);
 G_NORETURN void fm1_poc_finish(CPUPi32v2State *env);
+void fm1_poc_fault(CPUPi32v2State *env, const char *reason);
 void fm1_poc_frame(CPUPi32v2State *env);
 void fm1_poc_diag_loop(CPUPi32v2State *env);
 void fm1_poc_check_access(CPUPi32v2State *env, uint32_t address, unsigned size, unsigned flags);

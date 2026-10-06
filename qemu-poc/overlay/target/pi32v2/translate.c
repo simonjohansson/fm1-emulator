@@ -163,7 +163,7 @@ static void init_disas(DisasContextBase *db, CPUState *cs)
     d->env = cpu_env(cs);
     d->stop = PI32V2_CPU(cs)->stop_pc;
     d->count_enabled = true;
-    d->diagnostic = PI32V2_CPU(cs)->diag_fixture;
+    d->diagnostic = PI32V2_CPU(cs)->diag_fixture || PI32V2_CPU(cs)->felucca_fixture;
 }
 static void tb_start(DisasContextBase *db, CPUState *cs) {}
 static void insn_start(DisasContextBase *db, CPUState *cs)
@@ -848,8 +848,10 @@ void pi32v2_translate_code(CPUState *cs, TranslationBlock *tb,
                           int *max_insns, vaddr start, void *host_pc)
 {
     PiDisasContext d = {};
-    /* The diagnostic validates semantics, not throughput. A bounded TB lets
+    /* The bounded profiles validate semantics, not throughput. A short TB lets
      * conditional completion normalize PC and IRQ state with exact icount. */
-    if (PI32V2_CPU(cs)->diag_fixture) { *max_insns = 1; }
+    if (PI32V2_CPU(cs)->diag_fixture || PI32V2_CPU(cs)->felucca_fixture) {
+        *max_insns = 1;
+    }
     translator_loop(cs, tb, max_insns, start, host_pc, &ops, &d.base);
 }

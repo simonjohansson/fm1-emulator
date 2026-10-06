@@ -50,13 +50,19 @@ struct FM1PocState {
     uint8_t matrix[11];
     uint64_t shift_edges, latch_edges;
     uint64_t loop_visits, loop_target_irqs;
-    bool keep_open, finished, display_live;
+    bool keep_open, finished, display_live, saving_fault;
+    uint32_t last_access_address, last_access_size, last_access_flags;
 };
 
 void fm1_poc_check_access(CPUPi32v2State *e, uint32_t address, unsigned size, unsigned flags)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
-    if (m->cpu->diag_fixture) {
+    if (m->cpu->felucca_fixture) {
+        m->last_access_address = address;
+        m->last_access_size = size;
+        m->last_access_flags = flags;
+    }
+    if (m->cpu->diag_fixture || m->cpu->felucca_fixture) {
         fm1_system_check_stack(&m->system);
         if (!(flags & 4)) {
             fm1_system_check_access(&m->system, address, size, flags & 1, flags & 2);
@@ -68,7 +74,9 @@ void fm1_poc_check_access(CPUPi32v2State *e, uint32_t address, unsigned size, un
 void fm1_poc_note_branch(CPUPi32v2State *e)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
-    if (m->cpu->diag_fixture) { fm1_system_note_branch(&m->system, e->pc); }
+    if (m->cpu->diag_fixture || m->cpu->felucca_fixture) {
+        fm1_system_note_branch(&m->system, e->pc);
+    }
 }
 
 /* A private observation at the real foreground-loop boundary. The guest
@@ -177,12 +185,12 @@ static uint64_t gpio_read(void *opaque, hwaddr offset, unsigned size)
     FM1PocState *m = opaque;
     unsigned port = offset / 0x40;
     offset %= 0x40;
-    if ((port != 0 && port != 2 && !(m->cpu->diag_fixture && (port == 1 || port == 3 || port == 7))) ||
+    if ((port != 0 && port != 2 && !((m->cpu->diag_fixture || m->cpu->felucca_fixture) && (port == 1 || port == 3 || port == 7))) ||
         offset >= sizeof(m->gpio[0])) {
         pi32v2_fail(&m->cpu->env, "unsupported GPIO register");
     }
     if (port == 2 || port == 3 || port == 7) {
-        if ((!m->cpu->display_fixture && !m->cpu->diag_fixture) || offset == 4) {
+        if ((!m->cpu->display_fixture && !m->cpu->diag_fixture && !m->cpu->felucca_fixture) || offset == 4) {
             pi32v2_fail(&m->cpu->env, "unsupported PC GPIO read");
         }
         return m->gpio[port][offset / 4];
@@ -211,12 +219,12 @@ static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
     FM1PocState *m = opaque;
     unsigned port = offset / 0x40;
     offset %= 0x40;
-    if ((port != 0 && port != 2 && !(m->cpu->diag_fixture && (port == 1 || port == 3 || port == 7))) ||
+    if ((port != 0 && port != 2 && !((m->cpu->diag_fixture || m->cpu->felucca_fixture) && (port == 1 || port == 3 || port == 7))) ||
         offset == 4 || offset >= sizeof(m->gpio[0])) {
         pi32v2_fail(&m->cpu->env, "unsupported PA GPIO write");
     }
     if (port != 0) {
-        if (!m->cpu->display_fixture && !m->cpu->diag_fixture) { pi32v2_fail(&m->cpu->env, "unsupported PC GPIO write"); }
+        if (!m->cpu->display_fixture && !m->cpu->diag_fixture && !m->cpu->felucca_fixture) { pi32v2_fail(&m->cpu->env, "unsupported PC GPIO write"); }
         m->gpio[port][offset / 4] = value;
         if (port == 2) { fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]); }
         else if (port == 3) { fm1_nor_set_pins(&m->nor, m->gpio[3][0], m->iomap_con0); }
@@ -233,19 +241,19 @@ static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
         m->latched = m->shift;
         m->latch_edges++;
     }
-    if (m->cpu->display_fixture || m->cpu->diag_fixture) {
+    if (m->cpu->display_fixture || m->cpu->diag_fixture || m->cpu->felucca_fixture) {
         fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
     }
 }
 static uint64_t iomap_read(void *opaque, hwaddr offset, unsigned size)
 {
     FM1PocState *m = opaque;
-    return m->cpu->diag_fixture && !offset ? m->iomap_con0 : m->iomap_con1;
+    return (m->cpu->diag_fixture || m->cpu->felucca_fixture) && !offset ? m->iomap_con0 : m->iomap_con1;
 }
 static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     FM1PocState *m = opaque;
-    if (m->cpu->diag_fixture && !offset) {
+    if ((m->cpu->diag_fixture || m->cpu->felucca_fixture) && !offset) {
         if (value & ~0x20ull) { pi32v2_fail(&m->cpu->env, "unsupported IOMAP_CON0 routing"); }
         m->iomap_con0 = value;
         fm1_nor_set_pins(&m->nor, m->gpio[3][0], m->iomap_con0);
@@ -258,7 +266,7 @@ static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
 static uint64_t irq_read(void *opaque, hwaddr offset, unsigned size)
 {
     FM1PocState *m = opaque;
-    if (m->cpu->diag_fixture && offset < 0x80 && !(offset & 3)) { return m->irq_configs[offset / 4]; }
+    if ((m->cpu->diag_fixture || m->cpu->felucca_fixture) && offset < 0x80 && !(offset & 3)) { return m->irq_configs[offset / 4]; }
     switch (offset) {
     case 0x1c: return m->cpu->env.irq_config;
     case 0x84: return m->timers[1].pending ? 0x80000000u : 0;
@@ -269,7 +277,7 @@ static uint64_t irq_read(void *opaque, hwaddr offset, unsigned size)
 static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     FM1PocState *m = opaque;
-    if (m->cpu->diag_fixture && offset < 0x80 && !(offset & 3)) {
+    if ((m->cpu->diag_fixture || m->cpu->felucca_fixture) && offset < 0x80 && !(offset & 3)) {
         /* Reset can disable every source. Only IRQ1 exception configuration
          * and the implemented TIMER5 IRQ63 may subsequently be enabled. */
         uint32_t allowed = offset == 0 ? 0xf0 : offset == 0x1c ? 0xf0000000u : 0;
@@ -286,7 +294,7 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         if (value > 7) { pi32v2_fail(&m->cpu->env, "invalid priority mask"); }
         m->cpu->env.priority_mask = value; break;
     case 0xa4:
-        if (!m->cpu->diag_fixture || value != 255) { pi32v2_fail(&m->cpu->env, "unsupported IRQ pending clear"); }
+        if ((!m->cpu->diag_fixture && !m->cpu->felucca_fixture) || value != 255) { pi32v2_fail(&m->cpu->env, "unsupported IRQ pending clear"); }
         if (m->timers[1].pending) { pi32v2_fail(&m->cpu->env, "IRQ clear requires TIMER5 device acknowledgment"); }
         break;
     default: pi32v2_fail(&m->cpu->env, "unsupported IRQ write");
@@ -331,6 +339,57 @@ static void save_lcd_ppm(FM1PocState *m, const char *path)
         }
     }
     if (fclose(f)) { pi32v2_fail(&m->cpu->env, "cannot close display frame PPM"); }
+}
+
+/* Private Felucca evidence uses device counters and whole SRAM, never the
+ * diagnostic's hard-coded guest result addresses. No guest memory is changed. */
+void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
+{
+    FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
+    if (!m || !m->cpu->felucca_fixture || m->saving_fault) { return; }
+    const char *dir = getenv("FM1_POC_STATE_DIR");
+    if (!dir) { return; }
+    m->saving_fault = true;
+    /* A failed evidence write must not recurse through the guest-fault path. */
+    g_autofree char *record = g_strdup_printf("%s/state.json", dir);
+    FILE *f = fopen(record, "w");
+    if (!f) { error_report("cannot save Felucca state"); exit(EXIT_FAILURE); }
+    g_autofree char *escaped = g_strescape(reason, NULL);
+    fprintf(f, "{\"profile\":\"felucca\",\"reason\":\"%s\",\"pc\":%u,"
+            "\"instructions\":%" PRIu64 ",\"virtual_ns\":%" PRId64
+            ",\"last_access\":{\"address\":%u,\"size\":%u,\"flags\":%u},"
+            "\"registers\":[", escaped, e->pc, e->instructions,
+            qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), m->last_access_address,
+            m->last_access_size, m->last_access_flags);
+    for (unsigned i = 0; i < 16; i++) { fprintf(f, "%s%u", i ? "," : "", e->gpr[i]); }
+    fprintf(f, "],\"specials\":[");
+    for (unsigned i = 0; i < 16; i++) { fprintf(f, "%s%u", i ? "," : "", e->spr[i]); }
+    fprintf(f, "],\"irq_entries\":%" PRIu64 ",\"rti_count\":%" PRIu64
+            ",\"in_irq\":%s,\"timer_expirations\":%" PRIu64
+            ",\"acknowledgments\":%" PRIu64 ",\"pending\":%s,"
+            "\"p33_transfers\":%" PRIu64 ",\"watchdog_arms\":%" PRIu64
+            ",\"watchdog_feeds\":%" PRIu64 ",\"watchdog_expirations\":%" PRIu64
+            ",\"guard_checks\":%" PRIu64 ",\"write_enable\":%u,"
+            "\"nor_transactions\":%" PRIu64 ",\"nor_read_bytes\":%" PRIu64
+            ",\"lcd\":{\"visible\":%s,\"busy\":%s,\"pixels_written\":%" PRIu64
+            ",\"commands\":%" PRIu64 ",\"dma_transfers\":%" PRIu64 "}}\n",
+            e->irq_entries, e->rti_count, e->in_irq ? "true" : "false",
+            m->timers[1].expirations, m->timers[1].acknowledgments,
+            m->timers[1].pending ? "true" : "false", m->system.p33_transfers,
+            m->system.watchdog_arms, m->system.watchdog_feeds,
+            m->system.watchdog_expirations, m->system.guard_checks,
+            m->system.write_enable, m->nor.transactions, m->nor.read_bytes,
+            fm1_lcd_visible(&m->lcd) ? "true" : "false", m->lcd.busy ? "true" : "false",
+            m->lcd.pixels_written, m->lcd.commands, m->lcd.dma_transfers);
+    if (fclose(f)) { error_report("cannot close Felucca state"); exit(EXIT_FAILURE); }
+    g_autofree char *ram_path = g_strdup_printf("%s/state.sram", dir);
+    if (!g_file_set_contents(ram_path, memory_region_get_ram_ptr(MACHINE(m)->ram),
+                             MACHINE(m)->ram_size, NULL)) {
+        error_report("cannot save Felucca SRAM"); exit(EXIT_FAILURE);
+    }
+    /* Only call the framebuffer writer after the JSON/SRAM files exist. */
+    g_autofree char *image = g_strdup_printf("%s/lcd.ppm", dir);
+    save_lcd_ppm(m, image);
 }
 
 static void display_key_toggle(void *opaque)
@@ -409,6 +468,10 @@ static G_NORETURN void hold_checkpoint(CPUPi32v2State *e)
 void fm1_poc_finish(CPUPi32v2State *e)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
+    if (m->cpu->felucca_fixture) {
+        fm1_poc_fault(e, "checkpoint reached");
+        exit(EXIT_SUCCESS);
+    }
     if (m->finished) { hold_checkpoint(e); }
     FM1TimerState *t = &m->timers[1];
     bool foundation = m->cpu->foundation_fixture;
@@ -530,6 +593,8 @@ static void machine_init(MachineState *ms)
     bool timer = !strcmp(ms->kernel_cmdline, "timer");
     bool display = !strcmp(ms->kernel_cmdline, "display");
     bool diag = !strcmp(ms->kernel_cmdline, "diag");
+    bool felucca = !strcmp(ms->kernel_cmdline, "felucca");
+    bool application = diag || felucca;
     const char *display_live = getenv("FM1_POC_DISPLAY_LIVE");
     if (display_live && (strcmp(display_live, "1") || !display)) {
         error_report("FM1_POC_DISPLAY_LIVE=1 requires the display fixture"); exit(EXIT_FAILURE);
@@ -542,22 +607,35 @@ static void machine_init(MachineState *ms)
     m->keep_open = keep_open != NULL;
     bool foundation = display || !strcmp(ms->kernel_cmdline, "foundation") ||
                       !strcmp(ms->kernel_cmdline, "foundation-released");
-    if (strcmp(ms->kernel_cmdline, "probe") && !timer && !foundation && !diag) {
-        error_report("select -append probe, timer, foundation, foundation-released, display or diag"); exit(EXIT_FAILURE);
+    if (strcmp(ms->kernel_cmdline, "probe") && !timer && !foundation && !application) {
+        error_report("select -append probe, timer, foundation, foundation-released, display, diag or felucca"); exit(EXIT_FAILURE);
     }
     if (!ms->kernel_filename) { error_report("a raw fixture must be supplied with -kernel"); exit(EXIT_FAILURE); }
+    if (felucca) {
+        g_autofree char *raw = NULL;
+        gsize length;
+        if (!g_file_get_contents(ms->kernel_filename, &raw, &length, NULL)) {
+            error_report("cannot read Felucca image"); exit(EXIT_FAILURE);
+        }
+        g_autofree char *sha = g_compute_checksum_for_data(G_CHECKSUM_SHA256,
+                                                         (uint8_t *)raw, length);
+        if (strcmp(sha, "12a4b4ea47248467f566ec3b6984b08f2f89d6ef5a8e9e494cab5184e8fadb36")) {
+            error_report("Felucca profile requires the pinned unchanged application"); exit(EXIT_FAILURE);
+        }
+    }
     m->cpu = PI32V2_CPU(cpu_create(TYPE_PI32V2_CPU));
     m->cpu->machine = m;
     m->cpu->timer_fixture = timer;
     m->cpu->foundation_fixture = foundation;
     m->cpu->display_fixture = display;
     m->cpu->diag_fixture = diag;
+    m->cpu->felucca_fixture = felucca;
     m->cpu->frame_pc = display ? 0x020004fa : 0;
     m->frame_dir = getenv("FM1_POC_FRAME_DIR");
     if (!m->frame_dir && !m->display_live) { m->frame_dir = "."; }
     m->cpu->boot_pc = timer ? 0x02000238 : 0x02000120;
     m->cpu->stop_pc = display ? 0x020002be : timer || foundation ? 0x020002ba : 0x0200013a;
-    if (diag) {
+    if (application) {
         const char *limit = getenv("FM1_POC_MAX_INSTRUCTIONS");
         const char *stop = getenv("FM1_POC_STOP_PC");
         const char *loop_irqs = getenv("FM1_POC_LOOP_IRQS");
@@ -581,6 +659,9 @@ static void machine_init(MachineState *ms)
             }
             m->cpu->stop_pc = parsed;
         }
+        if (loop_irqs && felucca) {
+            error_report("FM1_POC_LOOP_IRQS requires the diagnostic fixture"); exit(EXIT_FAILURE);
+        }
         if (loop_irqs) {
             errno = 0;
             parsed = g_ascii_strtoull(loop_irqs, &end, 0);
@@ -602,6 +683,17 @@ static void machine_init(MachineState *ms)
         memset(ram + 0x8020, 0xa5, 0x1ce0);
         memset(ram + 0x7fd80, 0xa5, 0x80);
     }
+    if (felucca) {
+        /* Selected artifact section bounds, checked against its pinned hash.
+         * Cold power-on .noinit and loader/vector area remain zero; guest
+         * startup must copy/clear the following poisoned sections itself. */
+        uint8_t *ram = memory_region_get_ram_ptr(ms->ram);
+        memset(ram, 0xa5, 0xb48);
+        memset(ram + 0x8000, 0xa5, 0x218);
+        memset(ram + 0x8220, 0xa5, 0xa60c);
+        memset(ram + 0x20000, 0xa5, 0x3f920);
+        memset(ram + 0x7fd80, 0xa5, 0x80);
+    }
     if (foundation) {
         /* Poison only the new startup fixture. Guest copies/clears must replace
          * this state; the existing probe/timer seed stays unchanged. */
@@ -609,7 +701,7 @@ static void machine_init(MachineState *ms)
         if (!strcmp(ms->kernel_cmdline, "foundation")) { m->matrix[0] = 1u << 4; }
     }
     m->latched = UINT16_MAX;
-    if (diag) {
+    if (application) {
         m->gpio[3][0] = 1;
         m->iomap_con0 = 0x20;
         fm1_nor_init(&m->nor, OBJECT(m), m->cpu, ms->kernel_filename);
@@ -630,19 +722,19 @@ static void machine_init(MachineState *ms)
                               i ? "fm1.timer5" : "fm1.timer4", 12);
         memory_region_add_subregion(get_system_memory(), 0x10800 + i * 0x100, &t->mmio);
     }
-    memory_region_init_io(&m->gpio_mmio, OBJECT(m), &gpio_ops, m, "fm1.gpio", diag ? 0x1e0 : display ? 0xa0 : sizeof(m->gpio[0]));
+    memory_region_init_io(&m->gpio_mmio, OBJECT(m), &gpio_ops, m, "fm1.gpio", application ? 0x1e0 : display ? 0xa0 : sizeof(m->gpio[0]));
     memory_region_add_subregion(get_system_memory(), 0x50000, &m->gpio_mmio);
     memory_region_init_io(&m->irq_mmio, OBJECT(m), &irq_ops, m, "fm1.irq63", 0xac);
     memory_region_add_subregion(get_system_memory(), 0x01eef100, &m->irq_mmio);
     m->irq = qdev_get_gpio_in(DEVICE(m->cpu), 0);
-    if (diag) {
+    if (application) {
         fm1_system_init(&m->system, OBJECT(m), m->cpu);
         fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
     }
-    if (display || diag) {
+    if (display || application) {
         fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
-        memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", diag ? 8 : 4);
-        memory_region_add_subregion(get_system_memory(), diag ? 0x5101c : 0x51020, &m->iomap_mmio);
+        memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", application ? 8 : 4);
+        memory_region_add_subregion(get_system_memory(), application ? 0x5101c : 0x51020, &m->iomap_mmio);
         fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
     }
     if (m->display_live) {

@@ -8,6 +8,7 @@
 
 void pi32v2_fail(CPUPi32v2State *env, const char *reason)
 {
+    fm1_poc_fault(env, reason);
     error_report("pi32v2 PoC: %s at PC 0x%08x after %" PRIu64 " instructions",
                  reason, env->pc, env->instructions);
     exit(EXIT_FAILURE);
@@ -36,7 +37,9 @@ void HELPER(pi32v2_diag_loop)(CPUPi32v2State *env)
 
 void HELPER(pi32v2_budget)(CPUPi32v2State *env)
 {
-    pi32v2_fail(env, "diagnostic instruction limit reached");
+    pi32v2_fail(env, PI32V2_CPU(env_cpu(env))->felucca_fixture ?
+                    "Felucca instruction limit reached" :
+                    "diagnostic instruction limit reached");
 }
 
 void HELPER(pi32v2_access)(CPUPi32v2State *env, uint32_t address, uint32_t size, uint32_t flags)

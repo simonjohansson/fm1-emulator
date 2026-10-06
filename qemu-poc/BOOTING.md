@@ -367,6 +367,40 @@ General nested conditional blocks remain unsupported.
 
 ## Scope and next target
 
+### Bounded Felucca application startup
+
+The private `-append felucca` profile now boots the unchanged application with
+SHA-256 `12a4b4ea47248467f566ec3b6984b08f2f89d6ef5a8e9e494cab5184e8fadb36`.
+It has separate observers and hash-bound SRAM section poisoning; diagnostic
+checkpoint addresses and result-memory fields are not used. The existing
+application-entry handoff supplies `r0 = 0x01c7fe08`, one CPU and erased NOR
+with the raw application at physical offset `0x4120`. Its selected ELF load
+segments match the raw binary; this establishes artifact identity, not a
+rebuild from the currently checked-out Felucca source.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/run_felucca.py
+mise exec python@3.13.15 -- python qemu-poc/run_felucca.py \
+  --label startup-copies --stop-pc 0x0200cc64 \
+  --expect-reason 'checkpoint reached'
+```
+
+The runner checks the binary, ELF and disassembly hashes and saves state,
+registers, last access, whole SRAM, actual LCD pixels, nearby disassembly,
+command, functional clock and executable hash under
+`.cache/felucca-validation/<label>/`. Unsupported behavior and instruction
+budget exhaustion exit explicitly; a host timeout retains partial logs.
+Default runs stop after at most 100 million instructions, using 8 ns per
+functional instruction, without diagnostic pause/hold mode.
+
+The first captured failure is the compact stack store `[sp+132] = r0` at
+`0x0200cd2a` (bytes `a0 21`), after 157,370 guest instructions. Before it,
+the copies checkpoint at `0x0200cc64` takes 157,321 instructions and verifies
+the guest's exact RAM-code/data copies, zero BSS/pool/mailbox, application
+handoff, installed fatal vectors and cold bootguard. Watchdog setup completes
+without expiry and the guest subsequently enables its protection guards.
+This milestone has no splash or running-home-screen claim.
+
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator
 integration and must not be flashed as updates. No connected hardware was
