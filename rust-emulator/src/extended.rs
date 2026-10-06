@@ -655,6 +655,9 @@ pub(crate) fn execute(
                     let mask = (1u32 << len) - 1;
                     cpu.r[n] = if h & 0x10 == 0 {
                         (cpu.r[n] & !(mask << pos)) | ((cpu.r[d] & mask) << pos)
+                    } else if x & 1 != 0 {
+                        // sextra: x bit 0 sign-extends the field (uextra leaves it clear).
+                        signed((cpu.r[d] >> pos) & mask, len) as u32
                     } else {
                         (cpu.r[d] >> pos) & mask
                     };

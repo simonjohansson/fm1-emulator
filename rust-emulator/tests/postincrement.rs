@@ -123,3 +123,23 @@ fn halfword_register_preincrement_loads_still_decode() {
         assert_eq!(c.r[2], RAM + 0x404);
     }
 }
+
+#[test]
+fn bit_field_extract_sign_extends_sextra_only() {
+    // Vendor assembler words: x bit 0 selects sextra (signed) over uextra.
+    for (h, x, src, input, expected) in [
+        (0xe1b0, 0x0745, 0, -132_210i32, -9i32), // r0 = sextra(r0, p:14, l:17) (eng_analog mulq15)
+        (0xe1b0, 0x0744, 0, -132_210, 131_063),  // r0 = uextra(r0, p:14, l:17)
+        (0xe1b0, 0xb021, 11, 0x80, -128),        // r0 = sextra(r11, p:0, l:8)
+        (0xe1b0, 0xb020, 11, 0x80, 128),         // r0 = uextra(r11, p:0, l:8)
+        (0xe1b5, 0x3f85, 3, i32::MIN, -1),       // r5 = sextra(r3, p:31, l:1)
+        (0xe1b5, 0x3f84, 3, i32::MIN, 1),        // r5 = uextra(r3, p:31, l:1)
+        (0xe1b5, 0x30fd, 3, -2, -1),             // r5 = sextra(r3, p:1, l:31)
+        (0xe1b0, 0x0745, 0, 0x3fff_c000, 65535), // positive field: sextra leaves it as is
+    ] {
+        let mut c = cpu(&[h, x]);
+        c.r[src] = input as u32;
+        c.step().unwrap();
+        assert_eq!(c.r[(h & 15) as usize] as i32, expected, "{h:04x} {x:04x}");
+    }
+}
