@@ -645,6 +645,8 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             }
         }
         next = here + 4;
+    } else if (op == 0x0410) {
+        push(d, spr[RETS]);
     } else if ((op & 0xfff0) == 0x0460 || (op & 0xfff0) == 0x0440) {
         unsigned boundary = op & 15;
         unsigned lo = boundary < 4 ? boundary : 4;

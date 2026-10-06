@@ -130,6 +130,46 @@ def main():
                        state["specials"][14] == 0x01c08080 and
                        state["registers"][2] == 0x22334455,
                        "RETS/range pop order, restored stack or sequential continuation differs")
+    state = fixture("stack-push-rets-single", [0xffee, 0x8008, 0x01c0,
+            *literal(0, 0x81234567), 0xe064, 0x0380, *literal(1, 0x89abcde5), 0xe064, 0x1580,
+            0x0410, 0x2002, *literal(3, 0x01c08000), 0x6034])
+    validate.check(state["specials"][14] == 0x01c08004 and state["specials"][3] == 0x81234567 and
+                   state["specials"][5] == 0x89abcde5 and state["registers"][2] == 0x81234567 and
+                   state["registers"][4] == 0xa5a5a5a5 and
+                   state["inspection"][:3] == [0xa5a5a5a5, 0x81234567, 0xa5a5a5a5],
+                   "standalone RETS push did not predecrement, preserve link/PSR or store exactly one word")
+    state = fixture("stack-push-rets-two-links", [0xffee, 0x800c, 0x01c0,
+            *literal(0, 0x01234567), 0xe064, 0x0380, 0x0410,
+            *literal(0, 0x89abcdef), 0xe064, 0x0380, 0x0410, 0x2002, 0x2103])
+    validate.check(state["specials"][14] == 0x01c08004 and state["specials"][3] == 0x89abcdef and
+                   state["registers"][2:4] == [0x89abcdef, 0x01234567] and
+                   state["inspection"][:4] == [0xa5a5a5a5, 0x89abcdef, 0x01234567, 0xa5a5a5a5],
+                   "successive standalone RETS pushes lost word width, link order or stack movement")
+    main_words = [0xffee, 0x8010, 0x01c0, *literal(4, 0x81234567),
+                  *literal(0, 0x89abcde5), 0xe064, 0x0580, *literal(1, 0)]
+    outer_call = len(main_words)
+    main_words += [0, 0, *literal(2, 0x22334455)]
+    stop = ENTRY + len(main_words) * 2
+    outer_pc = stop + 2
+    outer_words = [0x0410, 0xe8d8, 0x0010, *literal(4, 0xdeadbeef)]
+    inner_call = len(outer_words)
+    outer_words += [0, 0, *literal(3, 0x33445566), 0x0454]
+    inner_pc = outer_pc + len(outer_words) * 2
+    outer_return = ENTRY + (outer_call + 2) * 2
+    inner_return = outer_pc + (inner_call + 2) * 2
+    for words, index, target, return_pc in [(main_words, outer_call, outer_pc, outer_return),
+                                           (outer_words, inner_call, inner_pc, inner_return)]:
+        displacement = (target - return_pc) // 2
+        words[index:index + 2] = [0xea80 | ((displacement >> 16) & 63), displacement & 0xffff]
+    image = CACHE / "stack-push-rets-nested-call.bin"
+    words = [*main_words, 0, *outer_words, *literal(5, 0x55667788), 0x0080]
+    image.write_bytes(struct.pack("<" + "H" * len(words), *words) + b"\0" * 16)
+    state = compare(image.stem, image, stop)
+    validate.check(state["registers"][2:6] == [0x22334455, 0x33445566, 0x81234567, 0x55667788] and
+                   state["specials"][14] == 0x01c08010 and state["specials"][3] == inner_return and
+                   state["specials"][5] == 0x89abcde5 and state["instructions"] == 15 and
+                   state["inspection"][:4] == [0xa5a5a5a5, 0xa5a5a5a5, 0x81234567, outer_return],
+                   "nested CALL did not return through saved RETS, restore stack/register or preserve PSR")
     state = fixture("bundle-old-store", [0xe040, 0, 0xffc1, 0x8000, 0x01c0,
                                           0xf040, 0x4009, 0x6190])
     validate.check(state["inspection"][1] == 0 and state["registers"][0] == 0x4009,
