@@ -442,6 +442,45 @@ def main():
                    state["registers"][7] == 0 and state["registers"][4] == 0x01c08004 and
                    state["inspection"][0] == 0x007f80ff,
                    "unsigned byte post-increment load width, extension, writeback or memory differs")
+    for offset, value in [(0, 0xffffff00), (1, 0x123456ff), (2, 0xabcd1280),
+                          (3, 0xdeadbe7f), (4, 0x89abcde5)]:
+        state = fixture(f"byte-post-store-offset-{offset}", [*literal(3, 0x01c08000 + offset),
+                *literal(4, value), *literal(5, 0x89abcde5), 0xe064, 0x5580, 0x07b4])
+        expected = [0xa5a5a5a5] * 3
+        shift = (offset & 3) * 8
+        expected[offset // 4] = (expected[offset // 4] & ~(255 << shift)) | ((value & 255) << shift)
+        validate.check(state["inspection"][:3] == expected and
+                       state["registers"][3:5] == [0x01c08001 + offset, value] and
+                       state["specials"][5] == 0x89abcde5,
+                       "byte post-increment store width, neighbor bytes, source, base or PSR differ")
+    for offset, expected in [(1, 0xa5a501a5), (255, 0xffa5a5a5)]:
+        address = 0x01c08000 + offset
+        state = fixture(f"byte-post-store-source-base-alias-{offset}", [*literal(0, address & ~3),
+                *literal(3, address), 0x07b3, 0x6002])
+        validate.check(state["registers"][2] == expected and state["registers"][3] == address + 1,
+                       "aliased byte store did not write incoming base low byte before increment")
+    state = fixture("byte-post-memcpy-sequence", [*literal(0, 0x01c08000),
+            *literal(2, 0x007f80ff), 0x6082, *literal(1, 0x01c08000),
+            *literal(3, 0x01c08008), 0x0714, 0x07b4, 0x0714, 0x07b4,
+            0x0714, 0x07b4, 0x0714, 0x07b4])
+    validate.check(state["inspection"][:4] == [0x007f80ff, 0xa5a5a5a5, 0x007f80ff, 0xa5a5a5a5] and
+                   state["registers"][1] == 0x01c08004 and state["registers"][3:5] == [0x01c0800c, 0],
+                   "reached memcpy byte load/store sequence altered bytes or pointer progression")
+    state = fixture("byte-post-store-head-incoming-source", [*literal(3, 0x01c08001),
+            *literal(4, 0x89abcdef), 0xc7b4, 0xe044, 0x1234])
+    validate.check(state["inspection"][0] == 0xa5a5efa5 and
+                   state["registers"][3:5] == [0x01c08002, 0x1234],
+                   "parallel head byte store used overwritten source or incorrect base")
+    state = fixture("byte-post-store-tail-incoming-source", [*literal(0, 0x12345678),
+            *literal(3, 0x01c08001), *literal(4, 0x89abcdef), 0xd604, 0x07b4])
+    validate.check(state["inspection"][0] == 0xa5a5efa5 and
+                   state["registers"][3:5] == [0x01c08002, 0x12345678],
+                   "parallel byte store incorrectly writes source or lost incoming source")
+    state = fixture("byte-post-store-bundle-incoming-base", [*literal(3, 0x01c08000),
+            *literal(4, 0x123456ff), 0xd636, 0x07b4])
+    validate.check(state["inspection"][0] == 0xa5a5a5ff and
+                   state["registers"][3] == 0x01c08001 and state["registers"][6] == 0x01c08000,
+                   "parallel head consumed incremented byte-store base")
     for head, expected in [(0xd606, 0x12345678), (0xd646, 0x01c08000), (0xd616, 0x11223344)]:
         state = fixture(f"byte-post-unsigned-bundle-{head:04x}", [*literal(0, 0x01c08000),
                 *literal(2, 0x89abcdef), 0x6082, *literal(4, 0x01c08000),
