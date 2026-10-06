@@ -180,7 +180,23 @@ impl Firmware {
     }
 
     pub fn bus(&self) -> Result<crate::bus::Bus, String> {
+        self.bus_over(None)
+    }
+
+    /// Like `bus`, but the NOR starts as `image` (a raw 1 MiB dump) and the
+    /// package is installed over it, as a firmware install would.
+    pub fn bus_with_flash(&self, image: &[u8]) -> Result<crate::bus::Bus, String> {
+        if self.package.is_none() {
+            return Err("a flash image needs a .fwsc package to install over it".into());
+        }
+        self.bus_over(Some(image))
+    }
+
+    fn bus_over(&self, flash: Option<&[u8]>) -> Result<crate::bus::Bus, String> {
         let mut bus = crate::bus::Bus::new(self.image.clone())?;
+        if let Some(flash) = flash {
+            bus.set_flash_image(flash)?;
+        }
         if let Some(package) = &self.package {
             package.initialize(&mut bus)?;
         }

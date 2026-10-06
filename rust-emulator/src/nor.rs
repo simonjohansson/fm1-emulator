@@ -37,6 +37,18 @@ impl Default for Nor {
 }
 
 impl Nor {
+    /// Start from a raw full-chip dump; `load` then installs a package on top.
+    pub fn set_image(&mut self, image: &[u8]) -> Result<(), String> {
+        if image.len() != self.bytes.len() {
+            return Err(format!(
+                "flash image is {} bytes, expected {}",
+                image.len(),
+                self.bytes.len()
+            ));
+        }
+        self.bytes.copy_from_slice(image);
+        Ok(())
+    }
     pub fn load(&mut self, bytes: &[u8], key: u16) {
         self.bytes[..bytes.len()].copy_from_slice(bytes);
         let mut decoded = self.bytes[0x4000..].to_vec();
@@ -249,6 +261,21 @@ mod tests {
         let result = nor.read(0x11c08).unwrap();
         nor.chip_select(false);
         result
+    }
+
+    #[test]
+    fn package_installs_over_an_image_before_the_xip_decode() {
+        let mut nor = Nor::default();
+        assert!(nor.set_image(&[0; 0x1000]).is_err());
+        nor.set_image(&vec![0xa5; 0x100000]).unwrap();
+        nor.load(&vec![0x55; 0x4100], 0x980f);
+        assert!(nor.bytes[..0x4100].iter().all(|&byte| byte == 0x55));
+        assert!(nor.bytes[0x4100..].iter().all(|&byte| byte == 0xa5));
+        // Decoded after both are down: package bytes, then the image's.
+        let mut expected = vec![0x55; 0x100];
+        expected.resize(0x100000 - 0x4000, 0xa5);
+        crate::package::sfc(&mut expected, 0x980f);
+        assert_eq!(nor.decoded.as_deref(), Some(&expected[..]));
     }
 
     #[test]

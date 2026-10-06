@@ -23,7 +23,7 @@ fn address(firmware: &Firmware, value: &str) -> Result<u32, String> {
 fn main_run() -> Result<(), String> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.len() < 2 || !matches!(args[0].as_str(), "probe" | "boot") {
-        return Err("usage: fm1-emu <probe|boot> <application.elf|application.bin> [--entry ADDRESS] [--limit COUNT] [--trace PATH] [--until SYMBOL_OR_ADDRESS] [--inspect SYMBOL_OR_ADDRESS:WORDS] [--press COLUMN:ROW]".into());
+        return Err("usage: fm1-emu <probe|boot> <application.elf|application.bin> [--entry ADDRESS] [--limit COUNT] [--trace PATH] [--until SYMBOL_OR_ADDRESS] [--inspect SYMBOL_OR_ADDRESS:WORDS] [--press COLUMN:ROW] [--flash IMAGE]".into());
     }
     let mut entry = None;
     let mut limit = 100_000;
@@ -31,6 +31,7 @@ fn main_run() -> Result<(), String> {
     let mut until = None;
     let mut inspect = None;
     let mut keys = Vec::new();
+    let mut flash = None;
     let mut i = 2;
     while i < args.len() {
         let value = args
@@ -42,6 +43,7 @@ fn main_run() -> Result<(), String> {
             "--trace" => trace_path = Some(value),
             "--until" => until = Some(value),
             "--inspect" => inspect = Some(value),
+            "--flash" => flash = Some(value),
             "--press" => {
                 let (column, row) = value.split_once(':').ok_or("--press requires COLUMN:ROW")?;
                 keys.push((
@@ -81,7 +83,14 @@ fn main_run() -> Result<(), String> {
         firmware.entry
     };
     let image_bytes = firmware.image.len();
-    let mut cpu = Cpu::new(firmware.bus()?, entry);
+    let bus = match flash {
+        Some(path) => {
+            let image = std::fs::read(path).map_err(|error| format!("{path}: {error}"))?;
+            firmware.bus_with_flash(&image)?
+        }
+        None => firmware.bus()?,
+    };
+    let mut cpu = Cpu::new(bus, entry);
     for (column, row) in keys {
         cpu.bus.devices.gpio.press(column, row, true)?;
     }

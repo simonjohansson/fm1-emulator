@@ -21,9 +21,19 @@ fn location(symbols: &BTreeMap<String, u32>, pc: u32) -> String {
 }
 
 fn run() -> Result<(), String> {
-    let args: Vec<_> = env::args().skip(1).collect();
+    let mut args: Vec<_> = env::args().skip(1).collect();
+    let mut flash = None;
+    if let Some(i) = args.iter().position(|arg| arg == "--flash") {
+        if i + 1 >= args.len() {
+            return Err("missing value for --flash".into());
+        }
+        flash = Some(args.remove(i + 1));
+        args.remove(i);
+    }
     if !(1..=2).contains(&args.len()) {
-        return Err("usage: diagnose FIRMWARE.{fwsc,elf,bin} [INSTRUCTION_LIMIT]".into());
+        return Err(
+            "usage: diagnose [--flash IMAGE] FIRMWARE.{fwsc,elf,bin} [INSTRUCTION_LIMIT]".into(),
+        );
     }
     let limit: u64 = args
         .get(1)
@@ -32,7 +42,14 @@ fn run() -> Result<(), String> {
         .map_err(|_| "invalid instruction limit")?
         .unwrap_or(10_000_000);
     let firmware = Firmware::load(Path::new(&args[0]))?;
-    let mut cpu = Cpu::new(firmware.bus()?, firmware.entry);
+    let bus = match flash {
+        Some(path) => {
+            let image = std::fs::read(&path).map_err(|error| format!("{path}: {error}"))?;
+            firmware.bus_with_flash(&image)?
+        }
+        None => firmware.bus()?,
+    };
+    let mut cpu = Cpu::new(bus, firmware.entry);
     cpu.r[0] = 0x01c7_fe08;
     let mut recent = VecDeque::new();
     let mut serial_bytes = 0u64;

@@ -35,6 +35,14 @@ binary directly (the host needs the normal eframe OpenGL/windowing development
 libraries). macOS is visually verified; Linux is not tested here. The existing
 `fm1-emu probe|boot` CLI is unchanged and does not require a display server.
 
+To boot a `.fwsc` package over a device's saved data, pass a raw 1 MiB flash
+dump (`jl-uboot-tool read 0 0x100000`, FM-1-transporter `fm1t.py dump`):
+`fm1-emu boot|probe PACKAGE.fwsc --flash DUMP.bin` or
+`cargo run --release --example diagnose -- --flash DUMP.bin PACKAGE.fwsc`.
+The package is installed over the image as a firmware install would; every
+other byte (projects, settings, presets) comes from the dump. Changes the guest
+makes are not written back to the file.
+
 The panel is an original vector illustration drawn in Rust, using the device's
 [front-panel photograph](https://m.media-amazon.com/images/I/71fgwUHLJKL._AC_SL1500_.jpg)
 as a layout reference. No vendor product photo is bundled. Button identities

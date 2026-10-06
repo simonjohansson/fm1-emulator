@@ -110,6 +110,9 @@ impl Bus {
     pub(crate) fn core_control(&self, core: usize) -> u32 {
         self.cache.core_control(core)
     }
+    pub(crate) fn set_flash_image(&mut self, image: &[u8]) -> Result<(), String> {
+        self.nor.set_image(image)
+    }
     pub(crate) fn load_flash(&mut self, bytes: &[u8], key: u16) {
         self.nor.load(bytes, key);
         // SPL handoff values measured before peripheral initialization.
