@@ -225,6 +225,38 @@ def main():
     fixture("lcd-unsigned-div-min", [*literal(0, 0x80000000), *literal(1, 7),
             0xe1f4, 0x2100, 0xe435, 0x3020])
     fixture("lcd-post-half-store", [*literal(0, 0x01c08000), *literal(1, 0x12345678), 0x0681])
+    for index, dest in [(0, 3), (1, 0), (4, 1)]:
+        state = fixture(f"halfword-index-{index}-dest-{dest}", [*literal(0, 0x01c08000),
+                *literal(1, index), *literal(2, 0x89abcdef), 0xedd8, 0x2109,
+                0xedd8, (dest << 12) | 0x108])
+        expected = [0xa5a5a5a5] * 3
+        expected[index // 2] = 0xcdefa5a5 if index & 1 else 0xa5a5cdef
+        validate.check(state["registers"][dest] == 0xcdef and
+                       state["registers"][2] == 0x89abcdef and
+                       state["inspection"][:3] == expected,
+                       "indexed halfword load/store scale, alias, extension or neighboring bytes differ")
+    for source, index, expected in [(0, 2, 0x8000), (1, 0x8001, 0x8001)]:
+        state = fixture(f"halfword-index-store-source-{source}", [*literal(0, 0x01c08000),
+                *literal(1, index), 0xedd8, (source << 12) | 0x109, 0xedd8, 0x3108])
+        validate.check(state["registers"][3] == expected and
+                       state["registers"][:2] == [0x01c08000, index],
+                       "indexed halfword store did not use incoming base/index source")
+    for kind in [8, 9]:
+        image = CACHE / f"halfword-index-unaligned-{kind}.bin"
+        words = [*literal(0, 0x01c08001), *literal(1, 2), *literal(2, 0x12345678),
+                 0xedd8, 0x2100 | kind]
+        image.write_bytes(struct.pack("<" + "H" * len(words), *words) + b"\0" * 16)
+        fault_pc = ENTRY + (len(words) - 2) * 2
+        env = dict(os.environ, FM1_POC_STOP_PC=hex(ENTRY + len(words) * 2),
+                   FM1_POC_MAX_INSTRUCTIONS="1000000")
+        result = subprocess.run([*validate.COMMAND, "-kernel", str(image), "-append", "diag"],
+                                cwd=validate.ROOT, env=env, capture_output=True, text=True, timeout=15)
+        validate.check(result.returncode != 0 and "unaligned access" in result.stderr and
+                       f"PC 0x{fault_pc:08x}" in result.stderr,
+                       "unaligned indexed halfword operation did not fault at its instruction")
+        (CACHE / f"{image.stem}-negative.json").write_text(json.dumps(
+            {"fault_pc": fault_pc, "returncode": result.returncode, "stderr": result.stderr}, indent=2) + "\n")
+        print(f"PASS {image.stem}: explicit unaligned halfword access")
     fixture("lcd-pre-byte-store", [*literal(0, 0x01c08000), *literal(1, 0x12345678), 0xee5a, 0x1002])
     for value in [239, 240, 241, 0xffffffff, 520, 1099, 4095]:
         # Vendor literal forms ECB* differ from the pinned SLEIGH packed label.

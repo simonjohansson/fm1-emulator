@@ -553,6 +553,17 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_mov_i32(gpr[base], addr);
         load(d, gpr[dest], addr, MO_LEUL | MO_ALIGN);
         next = here + 4;
+    } else if (op == 0xedd8) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned kind = x & 15;
+        if (kind != 8 && kind != 9) { goto illegal; }
+        TCGv_i32 addr = tcg_temp_new_i32();
+        /* Felucca's palette loop EDD8 2108/2139 uses index << 1. */
+        tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), 1);
+        tcg_gen_add_i32(addr, addr, read_gpr(d, (x >> 4) & 15));
+        if (kind == 8) { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
+        else { store(d, read_gpr(d, x >> 12), addr, MO_LEUW | MO_ALIGN); }
+        next = here + 4;
     } else if ((op & 0xffc0) == 0xe100) {
         uint16_t x = fetch(d, here + 2);
         int32_t imm = x & 4095;
