@@ -175,6 +175,18 @@ def main():
     validate.check(state["registers"][6] == 0x01c08004 and
                    state["registers"][2] == 0x81234567,
                    "pre-increment word load did not use incoming base/increment")
+    values = [0x81234567, 0x89abcdef, 0x76543210]
+    for base, mask, registers in [(4, 0x0104, [2, 8]), (6, 0x0012, [1, 4]),
+                                  (0, 0xa100, [8, 13, 15])]:
+        words = literal(0, 0x01c08000)
+        for index, value in enumerate(values):
+            words += [*literal(1, value), 0x6081 | (index << 8)]
+        words += [*literal(base, 0x01c08000), 0xeb00 | base, mask]
+        state = fixture(f"word-bitmap-load-{base}-{mask:04x}", words)
+        validate.check([state["registers"][reg] for reg in registers] == values[:len(registers)] and
+                       state["registers"][base] == 0x01c08000 and
+                       state["inspection"][:3] == values,
+                       "bitmap word loads differ in order, width, base preservation or memory")
     for condition, op in [("ge", 0xf900), ("lt", 0xf980), ("gt", 0xfc00), ("le", 0xfc80)]:
         for value in [0, 1, 2, 0x80000000]:
             fixture(f"unsigned-{condition}-{value:08x}", [0xffc0, value & 0xffff, value >> 16,

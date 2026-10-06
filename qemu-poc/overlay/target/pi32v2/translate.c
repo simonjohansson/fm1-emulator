@@ -587,6 +587,21 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             for (int i = 0; i < 16; i++) { if (mask & (1 << i)) { pop(d, gpr[i]); } }
         }
         next = here + 4;
+    } else if ((op & 0xfff0) == 0xeb00) {
+        uint16_t mask = fetch(d, here + 2);
+        unsigned base = op & 15;
+        if (!mask || (mask & (1u << base))) { goto illegal; }
+        /* EB04 0104 reads r2 then r8 from consecutive words. SLEIGH's
+         * cursor and Felucca's later r4-relative accesses leave r4 intact. */
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_mov_i32(addr, read_gpr(d, base));
+        for (unsigned i = 0; i < 16; i++) {
+            if (mask & (1u << i)) {
+                load(d, gpr[i], addr, MO_LEUL | MO_ALIGN);
+                tcg_gen_addi_i32(addr, addr, 4);
+            }
+        }
+        next = here + 4;
     } else if ((op & 0xfff0) == 0x0460 || (op & 0xfff0) == 0x0440) {
         unsigned boundary = op & 15;
         unsigned lo = boundary < 4 ? boundary : 4;
