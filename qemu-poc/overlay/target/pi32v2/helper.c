@@ -132,4 +132,6 @@ void HELPER(pi32v2_rti)(CPUPi32v2State *env)
     env->spr[ICFG] = (env->spr[ICFG] & ~255u) | 0x600;
     env->return_icfg = env->spr[ICFG];
     env->rti_count++;
+    if (env->last_irq_source == 11) { env->irq11_rti_count++; }
+    else if (env->last_irq_source == 63) { env->irq63_rti_count++; }
 }

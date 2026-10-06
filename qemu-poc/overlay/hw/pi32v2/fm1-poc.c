@@ -113,6 +113,32 @@ static void update_irq(FM1PocState *m)
 {
     qemu_set_irq(m->irq, m->timers[1].pending || m->alnk_irq_level);
 }
+/* Private source selection for the reached audio/timer pair. Raw device
+ * levels remain pending until their guest acknowledgments. */
+bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *priority)
+{
+    FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
+    const unsigned sources[] = {11, 63};
+    const bool pending[] = {m->alnk_irq_level, m->timers[1].pending};
+    const unsigned config[] = {(m->irq_configs[1] >> 12) & 15,
+                               e->irq_config >> 28};
+    bool selected = false;
+    for (unsigned i = 0; i < G_N_ELEMENTS(sources); i++) {
+        unsigned level = config[i] >> 1;
+        if (!pending[i] || !(config[i] & 1) || level < e->priority_mask) {
+            continue;
+        }
+        if (selected && level == *priority) {
+            pi32v2_fail(e, "equal-priority audio/timer arbitration is unsupported");
+        }
+        if (!selected || level > *priority) {
+            *number = sources[i];
+            *priority = level;
+            selected = true;
+        }
+    }
+    return selected;
+}
 static void alnk_irq_input(void *opaque, int number, int level)
 {
     FM1PocState *m = opaque;
@@ -291,12 +317,14 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
 {
     FM1PocState *m = opaque;
     if ((m->cpu->diag_fixture || m->cpu->felucca_fixture) && offset < 0x80 && !(offset & 3)) {
-        /* Reset can disable every source. Only IRQ1 exception configuration
-         * and the implemented TIMER5 IRQ63 may subsequently be enabled. */
-        uint32_t allowed = offset == 0 ? 0xf0 : offset == 0x1c ? 0xf0000000u : 0;
+        /* The reached sources are fatal exception1, audio11 and TIMER5 63.
+         * Audio configuration is private to Felucca and its device probe. */
+        uint32_t allowed = offset == 0 ? 0xf0 : offset == 0x1c ? 0xf0000000u :
+                           offset == 4 && m->system.alnk_dma ? 0xf000 : 0;
         if (value & ~allowed) { pi32v2_fail(&m->cpu->env, "unsupported IRQ source enable"); }
         m->irq_configs[offset / 4] = value;
         if (offset == 0x1c) { m->cpu->env.irq_config = value; }
+        update_irq(m);
         return;
     }
     switch (offset) {
@@ -312,6 +340,7 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         break;
     default: pi32v2_fail(&m->cpu->env, "unsupported IRQ write");
     }
+    update_irq(m);
 }
 static const MemoryRegionOps timer_ops = {
     .read = timer_read, .write = timer_write, .endianness = DEVICE_LITTLE_ENDIAN,
@@ -397,6 +426,11 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
             fm1_lcd_visible(&m->lcd) ? "true" : "false", m->lcd.busy ? "true" : "false",
             m->lcd.pixels_written, m->lcd.commands, m->lcd.dma_transfers,
             m->lcd.completed_transfers);
+    fprintf(f, "\"last_irq_source\":%u,\"irq11_entries\":%" PRIu64
+            ",\"irq11_rti_count\":%" PRIu64 ",\"irq63_entries\":%" PRIu64
+            ",\"irq63_rti_count\":%" PRIu64 ",", e->last_irq_source,
+            e->irq11_entries, e->irq11_rti_count,
+            e->irq63_entries, e->irq63_rti_count);
     FM1PocALNK *a = &m->alnk;
     fprintf(f, "\"alnk\":{\"control0\":%u,\"control1\":%u,\"control3\":%u,"
             "\"pending\":%u,\"dma_address\":%u,\"half_words\":%u,"

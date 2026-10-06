@@ -61,15 +61,18 @@ static bool interrupt(CPUState *cs, int request)
 {
     if (PI32V2_CPU(cs)->display_held) { return false; }
     CPUPi32v2State *e = cpu_env(cs);
-    unsigned nibble = e->irq_config >> 28;
-    unsigned priority = nibble >> 1;
     if (!(request & CPU_INTERRUPT_HARD) || e->in_irq || e->predicate_end ||
-        (e->spr[ICFG] & 0x300) != 0x300 || !(nibble & 1) ||
-        priority < e->priority_mask) {
+        (e->spr[ICFG] & 0x300) != 0x300) {
         return false;
     }
-    fm1_poc_check_access(e, 0x01c7fefc, 4, 0);
-    uint32_t handler = cpu_ldl_data(e, 0x01c7fefc);
+    unsigned number, priority;
+    if (!fm1_poc_select_irq(e, &number, &priority)) { return false; }
+    if ((number != 11 && number != 63) || priority > 7) {
+        pi32v2_fail(e, "unsupported selected IRQ source or priority");
+    }
+    uint32_t vector = 0x01c7fe00 + number * 4;
+    fm1_poc_check_access(e, vector, 4, 0);
+    uint32_t handler = cpu_ldl_data(e, vector);
     /* A missing/unmapped vector fails through QEMU's memory access path. */
     /* The normal per-instruction fetch gate validates the selected handler. */
     e->last_irq_pc = e->pc;
@@ -78,11 +81,14 @@ static bool interrupt(CPUState *cs, int request)
     e->spr[USP] = e->spr[SP];
     e->spr[SP] = e->spr[SSP];
     e->spr[ICFG] = (e->spr[ICFG] & ~0x077f04ffu) |
-                   (63u << 16) | (priority << 24) | (1u << priority);
+                   (number << 16) | (priority << 24) | (1u << priority);
     e->entry_icfg = e->spr[ICFG];
     e->pc = handler;
     e->in_irq = true;
     e->irq_entries++;
+    e->last_irq_source = number;
+    if (number == 11) { e->irq11_entries++; }
+    else { e->irq63_entries++; }
     return true;
 }
 

@@ -486,9 +486,44 @@ half as `state.alnk`. The established diagnostic peripheral gate also passes.
 The unchanged boot then reached the parallel ADD/store bundle at
 `0x0200d380` (`01 f1 20 30 b9 60`), after 38,928,433 instructions; see
 `after-alnk-device/`. That observation precedes the IRQ11 enable and DMA
-start. Audio interrupt dispatch, ADC and sustained home operation are still
-subsequent milestones. Evidence is preserved in the worktree cache and the
-durable `.deps/qemu-felucca-2026-10-06/` directory described above.
+start. The subsequent halfword-store bundle classification fix advances to
+the real IRQ11 enable at `0x0200d3ee` (38,928,471 instructions).
+
+### First real Felucca audio interrupt
+
+Source selection now dispatches enabled pending ALNK11 and TIMER5 63 through
+their own guest vectors, selecting the higher priority and preserving each
+device latch until its acknowledgment. Existing global-enable, conditional
+block and nonnested interrupt gates remain; simultaneous equal priorities
+fail explicitly. Nesting has not been generalized or validated.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_felucca_irq.py
+```
+
+All ten focused cases pass: actual wrapper save/restore opcodes with
+instrumented disposable callees, both sources, simultaneous audio-first
+priority, mask/source-enable hold and release, global STI gating and two
+explicit faults. They verify all general registers, special return/stack
+state, canaries, independent acknowledgments and balanced per-source entry
+and return counts. Established foundation/probe/QMP checks also pass, as does
+the unchanged diagnostic through 6,173 balanced timer interrupts and its
+scheduled disconnected-USB retry.
+
+The unchanged Felucca binary now enters its own audio wrapper and C handler.
+It stops explicitly at the signed literal branch `FF0C/1FFF/0C48` at
+`0x020022aa`, after 43,278,840 instructions. The captured ICFG is `0x030b0308`
+and SP is `0x01c7be24`, exactly 28 wrapper + 52 callee-save + 396 local bytes
+below SSP. ALNK has completed five halves, coalesced four pending completions,
+and captured 2,560 zero sample words without skipped captures. Guard/error
+and watchdog-expiry fields are zero; the splash pixels remain unchanged.
+This establishes first real audio entry, not a completed audio ISR or home
+screen. ADC, sustained operation, physical inputs and the Felucca viewer
+remain unvalidated. See `after-irq-selection/` and the focused/regression
+records preserved in the worktree cache and durable `.deps` directory.
+
+Work is paused at the user's request; [../plan.md](../plan.md) contains the
+resume instructions and required subagent workflow.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator
