@@ -154,14 +154,19 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def capture_reference(firmware_dir):
-    REFERENCE.mkdir(parents=True, exist_ok=True)
+def capture_reference(firmware_dir, checkpoint=CHECKPOINT, label="startup-reference", limit=1000000):
+    check(re.fullmatch(r"[a-z0-9-]+", label), "reference evidence label must be lowercase")
+    checked_inputs(firmware_dir)
+    directory = HERE / ".cache/felucca-validation" / label
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in ("state.json", "state.sram", "lcd.ppm", "run.json"):
+        (directory / name).unlink(missing_ok=True)
     command = ["mise", "exec", "--", "cargo", "build", "--manifest-path",
                str(HERE / "reference/Cargo.toml"), "--locked", "--offline",
                "--message-format=json-render-diagnostics"]
     build = subprocess.run(command, cwd=HERE.parent, capture_output=True, text=True, timeout=180)
-    (REFERENCE / "build.stdout.jsonl").write_text(build.stdout)
-    (REFERENCE / "build.stderr.txt").write_text(build.stderr)
+    (directory / "build.stdout.jsonl").write_text(build.stdout)
+    (directory / "build.stderr.txt").write_text(build.stderr)
     check(build.returncode == 0, f"reference build failed: {build.stderr}")
     artifacts = [json.loads(line) for line in build.stdout.splitlines() if line.startswith("{")]
     executables = [Path(item["executable"]) for item in artifacts if
@@ -170,8 +175,8 @@ def capture_reference(firmware_dir):
     check(len(executables) == 1, "cargo did not identify exactly one reference executable")
     executable = executables[0]
     executable_sha = sha256(executable)
-    settings = {"FM1_REFERENCE_STATE_DIR": str(REFERENCE),
-                "FM1_POC_STOP_PC": hex(CHECKPOINT), "FM1_POC_MAX_INSTRUCTIONS": "1000000"}
+    settings = {"FM1_REFERENCE_STATE_DIR": str(directory),
+                "FM1_POC_STOP_PC": hex(checkpoint), "FM1_POC_MAX_INSTRUCTIONS": str(limit)}
     env = {key: value for key, value in os.environ.items() if not key.startswith("FM1_POC_") and
            key != "FM1_REFERENCE_STATE_DIR"}
     env.update(settings)
@@ -179,41 +184,43 @@ def capture_reference(firmware_dir):
                str(firmware_dir / "felucca.bin")]
     metadata = {"input_hashes": HASHES, "executable": str(executable),
                 "executable_sha256": executable_sha, "command": command,
-                "environment": settings, "checkpoint": CHECKPOINT}
+                "environment": settings, "checkpoint": checkpoint, "evidence_dir": str(directory)}
     try:
         result = subprocess.run(command, cwd=HERE.parent, env=env,
                                 capture_output=True, text=True, timeout=180)
     except subprocess.TimeoutExpired as error:
         for name, output in [("stdout.txt", error.stdout), ("stderr.txt", error.stderr)]:
             content = output.decode(errors="replace") if isinstance(output, bytes) else output or ""
-            (REFERENCE / name).write_text(content)
+            (directory / name).write_text(content)
         metadata.update(returncode=None, reason="host timeout")
-        (REFERENCE / "run.json").write_text(json.dumps(metadata, indent=2) + "\n")
-        raise SystemExit(f"reference host timeout; partial evidence: {REFERENCE}") from error
-    (REFERENCE / "stdout.txt").write_text(result.stdout)
-    (REFERENCE / "stderr.txt").write_text(result.stderr)
+        (directory / "run.json").write_text(json.dumps(metadata, indent=2) + "\n")
+        raise SystemExit(f"reference host timeout; partial evidence: {directory}") from error
+    (directory / "stdout.txt").write_text(result.stdout)
+    (directory / "stderr.txt").write_text(result.stderr)
     metadata.update(returncode=result.returncode,
                     executable_unchanged=sha256(executable) == executable_sha)
-    (REFERENCE / "run.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    (directory / "run.json").write_text(json.dumps(metadata, indent=2) + "\n")
     check(metadata["executable_unchanged"], "reference executable changed during capture")
     check(result.returncode == 0, f"reference startup failed: {result.stderr}")
+    checked_inputs(firmware_dir)
     return metadata
 
 
 def compare_reference(directory, reference_run):
     qemu = json.loads((directory / "state.json").read_text())
     qemu_run = json.loads((directory / "run.json").read_text())
-    reference = json.loads((REFERENCE / "state.json").read_text())
+    reference_dir = Path(reference_run["evidence_dir"])
+    reference = json.loads((reference_dir / "state.json").read_text())
     check(reference["profile"] == "felucca-reference" and reference["reason"] == "checkpoint reached" and
           reference["pc"] == qemu["pc"] == CHECKPOINT,
           "reference did not reach the same selected startup checkpoint")
     check(reference["registers"] == qemu["registers"] and
           reference["specials"] == qemu["specials"], "startup architectural registers differ")
     qemu_ram = (directory / "state.sram").read_bytes()
-    reference_ram = (REFERENCE / "state.sram").read_bytes()
+    reference_ram = (reference_dir / "state.sram").read_bytes()
     check(len(reference_ram) == 0x80000 and reference_ram == qemu_ram,
           "startup complete 512 KiB SRAM differs from the separate reference")
-    check((REFERENCE / "lcd.ppm").read_bytes() == (directory / "lcd.ppm").read_bytes(),
+    check((reference_dir / "lcd.ppm").read_bytes() == (directory / "lcd.ppm").read_bytes(),
           "pre-LCD framebuffer differs from the separate reference")
     summary = {"passed": True, "checkpoint": CHECKPOINT, "input_hashes": HASHES,
                "qemu_executable_sha256": qemu_run["qemu_binary_sha256"],

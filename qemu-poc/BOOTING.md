@@ -401,7 +401,8 @@ the copies checkpoint at `0x0200cc64` takes 157,321 instructions and verifies
 the guest's exact RAM-code/data copies, zero BSS/pool/mailbox, application
 handoff, installed fatal vectors and cold bootguard. Watchdog setup completes
 without expiry and the guest subsequently enables its protection guards.
-This milestone has no splash or running-home-screen claim.
+This startup checkpoint precedes LCD initialization; the completed splash
+milestone is recorded below.
 
 The compact stack offset decoder now includes its sixth unsigned word-offset
 bit. Boundary tests at 124, 128, 132 and 252 bytes, neighboring memory and
@@ -422,6 +423,40 @@ while mapping the raw application into XIP; QEMU also seeds the application
 bytes into physical NOR. These are equivalent for the selected startup
 checkpoint, before any NOR transaction, rather than a full flash comparison.
 No Rust implementation is linked or copied into QEMU.
+
+### Unchanged Felucca splash
+
+The application completes its own splash at `0x0200d0c2`, after both text
+boxes have synchronized their LCD transfers. Run the dedicated gate with:
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_felucca_splash.py
+```
+
+The selected binary remains byte-for-byte unchanged. QEMU completes the
+checkpoint after 38,257,079 instructions and 306,056,640 ns under the
+8 ns functional clock. The real SPI/DMA command stream produces 69,120
+pixel writes: the full background and both splash text boxes. The LCD is
+visible and idle, with 16 commands, 250 DMA transfers and 266 completed
+transfers. All 240 by 240 RGB pixels match the separate Rust process exactly
+(RGB SHA-256 `93f011c5d3a19e513c75ee4f7142e81513579b25255d157a73c81fe34db676c2`).
+
+The gate verifies guest PC, stack and write protection windows with no error
+bits, application SP `0x01c79eac` and supervisor SP `0x01c7c000`, intact RAM
+code/guard bands/mailbox/vectors and cold crash/debug state. The bootguard is
+`(0x42475244, 0, 1)`. NOR reads and watchdog/protection setup have occurred;
+LCD/P33 timeout and watchdog-expiry counters are zero. This checkpoint
+precedes interrupt startup. Different reference clocks leave polling
+registers and temporary stack values different; exact pixels and meaningful
+initialized state are compared without requiring equal instruction counts.
+
+Evidence is in `.cache/felucca-validation/splash/` and `splash-reference/`,
+with a durable copy in
+`/Users/simonjohansson/src/fm1-emulator/.deps/qemu-felucca-2026-10-06/`.
+After the splash, initialization next reaches the unsupported compact byte
+store `b[r3++=1] = r4` in `memcpy` at `0x02000ade` (38,257,636 instructions).
+Input, audio, ADC, interrupt startup and sustained home operation remain
+subsequent bring-up milestones.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator
@@ -467,7 +502,7 @@ The milestones are separate signed commits:
 
 All listed signatures were verified. The original tracked fixture binaries and
 recorded results remain unchanged. Current validation records and frame images
-also have durable ignored copies outside the temporary worktree:
+also have durable ignored copies alongside the persistent worktree:
 
 - Small fixtures:
   `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-boot-2026-10-05/`

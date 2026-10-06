@@ -372,7 +372,8 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
             ",\"guard_checks\":%" PRIu64 ",\"write_enable\":%u,"
             "\"nor_transactions\":%" PRIu64 ",\"nor_read_bytes\":%" PRIu64
             ",\"lcd\":{\"visible\":%s,\"busy\":%s,\"pixels_written\":%" PRIu64
-            ",\"commands\":%" PRIu64 ",\"dma_transfers\":%" PRIu64 "}}\n",
+            ",\"commands\":%" PRIu64 ",\"dma_transfers\":%" PRIu64
+            ",\"completed_transfers\":%" PRIu64 "},",
             e->irq_entries, e->rti_count, e->in_irq ? "true" : "false",
             m->timers[1].expirations, m->timers[1].acknowledgments,
             m->timers[1].pending ? "true" : "false", m->system.p33_transfers,
@@ -380,7 +381,26 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
             m->system.watchdog_expirations, m->system.guard_checks,
             m->system.write_enable, m->nor.transactions, m->nor.read_bytes,
             fm1_lcd_visible(&m->lcd) ? "true" : "false", m->lcd.busy ? "true" : "false",
-            m->lcd.pixels_written, m->lcd.commands, m->lcd.dma_transfers);
+            m->lcd.pixels_written, m->lcd.commands, m->lcd.dma_transfers,
+            m->lcd.completed_transfers);
+    FM1PocSystem *s = &m->system;
+    fprintf(f, "\"guards\":{\"emu_control\":%u,\"debug_enable\":%u,"
+            "\"debug_message\":%u,\"emu_message\":%u,\"debug_unlocked\":%s,"
+            "\"write_enable\":%u,\"write_windows\":[", s->emu_control,
+            s->debug_enable, s->debug_message, s->emu_message,
+            s->debug_unlocked ? "true" : "false", s->write_enable);
+    for (unsigned i = 0; i < 3; i++) {
+        fprintf(f, "%s[%u,%u]", i ? "," : "", s->write_low[i], s->write_high[i]);
+    }
+    fprintf(f, "],\"pc_windows\":[");
+    for (unsigned i = 0; i < 2; i++) {
+        fprintf(f, "%s[%u,%u]", i ? "," : "", s->pc_low[i], s->pc_high[i]);
+    }
+    fprintf(f, "],\"stack_windows\":[");
+    for (unsigned i = 0; i < 2; i++) {
+        fprintf(f, "%s[%u,%u]", i ? "," : "", s->stack_low[i], s->stack_high[i]);
+    }
+    fprintf(f, "]}}\n");
     if (fclose(f)) { error_report("cannot close Felucca state"); exit(EXIT_FAILURE); }
     g_autofree char *ram_path = g_strdup_printf("%s/state.sram", dir);
     if (!g_file_set_contents(ram_path, memory_region_get_ram_ptr(MACHINE(m)->ram),
