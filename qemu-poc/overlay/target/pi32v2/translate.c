@@ -482,6 +482,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (op & 128) { store(d, read_gpr(d, a), read_gpr(d, b), MO_LEUL | MO_ALIGN); }
         else { load(d, gpr[a], read_gpr(d, b), MO_LEUL | MO_ALIGN); }
         tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 4);
+    } else if ((op & 0xff88) == 0x0700) {
+        if (a == b) { goto illegal; }
+        load(d, gpr[a], read_gpr(d, b), MO_UB);
+        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 1);
     } else if ((op & 0xff88) == 0x0680) {
         store(d, read_gpr(d, a), read_gpr(d, b), MO_LEUW | MO_ALIGN);
         tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 2);
@@ -786,6 +790,10 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     if ((op & 0xff80) == 0x0500 || (op & 0xff80) == 0x0580) {
         if (op & 8) { return -1; }
         return (1u << ((op >> 4) & 7)) | (op & 128 ? 0 : 1u << (op & 7));
+    }
+    if ((op & 0xff88) == 0x0700) {
+        if ((op & 7) == ((op >> 4) & 7)) { return -1; }
+        return (1u << ((op >> 4) & 7)) | (1u << (op & 7));
     }
     if ((op & 0xe008) == 0x6000) { return op & 128 ? 0 : 1u << (op & 7); }
     if ((op & 0xe0c0) == 0x2040 || (op & 0xe0f8) == 0x2010 ||

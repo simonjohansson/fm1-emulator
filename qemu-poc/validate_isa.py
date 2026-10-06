@@ -368,6 +368,20 @@ def main():
             fixture(f"low-shift-{op:04x}-{count:08x}", [*literal(0, 0x81234567), *literal(1, count), op])
     fixture("byte-post-signed", [*literal(0, 0x01c08000), 0xe041, 0x12,
             0xee52, 0x100b, 0xeed4, 0x200b])
+    state = fixture("byte-post-unsigned-low-bank", [*literal(0, 0x01c08000),
+            *literal(1, 0x007f80ff), 0x6081, *literal(4, 0x01c08000),
+            0x0741, 0x0742, 0x0743, 0x0747])
+    validate.check(state["registers"][1:4] == [255, 128, 127] and
+                   state["registers"][7] == 0 and state["registers"][4] == 0x01c08004 and
+                   state["inspection"][0] == 0x007f80ff,
+                   "unsigned byte post-increment load width, extension, writeback or memory differs")
+    for head, expected in [(0xd606, 0x12345678), (0xd646, 0x01c08000), (0xd616, 0x11223344)]:
+        state = fixture(f"byte-post-unsigned-bundle-{head:04x}", [*literal(0, 0x01c08000),
+                *literal(2, 0x89abcdef), 0x6082, *literal(4, 0x01c08000),
+                *literal(0, 0x12345678), *literal(1, 0x11223344), head, 0x0741])
+        validate.check(state["registers"][6] == expected and state["registers"][1] == 0xef and
+                       state["registers"][4] == 0x01c08001,
+                       "parallel byte post-increment load did not preserve incoming base/source")
     fixture("byte-pre-unsigned", [*literal(0, 0x01c08000), 0xe041, 0x12,
             0xee52, 0x100b, 0xee58, 0x200b])
     for value in [0, 1, 0x80000000]:
