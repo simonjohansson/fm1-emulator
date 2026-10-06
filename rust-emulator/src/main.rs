@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-use fm1_emu::{cpu::Cpu, firmware::Firmware, NAMES};
+use fm1_emu::{cpu::Cpu, dump::Dump, firmware::Firmware, NAMES};
 use std::{env, fs::File, io::Write, path::Path, process::ExitCode};
 
 fn number(value: &str) -> Result<u32, String> {
@@ -23,13 +23,14 @@ fn address(firmware: &Firmware, value: &str) -> Result<u32, String> {
 fn main_run() -> Result<(), String> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.len() < 2 || !matches!(args[0].as_str(), "probe" | "boot") {
-        return Err("usage: fm1-emu <probe|boot> <application.elf|application.bin> [--entry ADDRESS] [--limit COUNT] [--trace PATH] [--until SYMBOL_OR_ADDRESS] [--inspect SYMBOL_OR_ADDRESS:WORDS] [--press COLUMN:ROW]".into());
+        return Err("usage: fm1-emu <probe|boot> <application.elf|application.bin> [--entry ADDRESS] [--limit COUNT] [--trace PATH] [--until SYMBOL_OR_ADDRESS] [--inspect SYMBOL_OR_ADDRESS:WORDS] [--dump ADDRESS:BYTES:FILE] [--press COLUMN:ROW]".into());
     }
     let mut entry = None;
     let mut limit = 100_000;
     let mut trace_path = None;
     let mut until = None;
     let mut inspect = None;
+    let mut dump_specs = Vec::new();
     let mut keys = Vec::new();
     let mut i = 2;
     while i < args.len() {
@@ -42,6 +43,7 @@ fn main_run() -> Result<(), String> {
             "--trace" => trace_path = Some(value),
             "--until" => until = Some(value),
             "--inspect" => inspect = Some(value),
+            "--dump" => dump_specs.push(value),
             "--press" => {
                 let (column, row) = value.split_once(':').ok_or("--press requires COLUMN:ROW")?;
                 keys.push((
@@ -57,6 +59,13 @@ fn main_run() -> Result<(), String> {
     }
     let firmware = Firmware::load(Path::new(&args[1]))?;
     let stop = until.map(|name| address(&firmware, name)).transpose()?;
+    let dumps = dump_specs
+        .iter()
+        .map(|spec| Dump::parse(spec, &firmware.symbols))
+        .collect::<Result<Vec<_>, _>>()?;
+    if args[0] == "probe" && !dumps.is_empty() {
+        return Err("--dump needs boot".into());
+    }
     let inspection = inspect
         .map(|request| {
             let (name, count) = request
@@ -107,8 +116,21 @@ fn main_run() -> Result<(), String> {
         // Application handoff, not a ROM/SPL emulator. Unknown initial CPU state
         // is zeroed; crt0 immediately supplies the application's own stacks.
         cpu.r[0] = 0x01c7_fe08;
-        cpu.run(stop, limit, trace_writer)
-            .map_err(|error| format!("after {} instructions: {error}", cpu.steps))?;
+        let run = cpu.run(stop, limit, trace_writer);
+        // Dump even after a fault: that is when a post-mortem is needed.
+        let dump_errors: Vec<String> = dumps
+            .iter()
+            .filter_map(|dump| dump.write(&cpu.bus).err())
+            .collect();
+        if let Err(error) = run {
+            for dump_error in dump_errors {
+                eprintln!("fm1-emu: {dump_error}");
+            }
+            return Err(format!("after {} instructions: {error}", cpu.steps));
+        }
+        if let Some(error) = dump_errors.into_iter().next() {
+            return Err(error);
+        }
         let values = if let Some((address, count)) = inspection {
             (0..count)
                 .map(|i| {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Bounded boot diagnostics using the same CPU/bus as the graphical emulator.
-use fm1_emu::{cpu::Cpu, firmware::Firmware};
+use fm1_emu::{cpu::Cpu, dump::Dump, firmware::Firmware};
 use std::{
     collections::{BTreeMap, VecDeque},
     env,
@@ -21,9 +21,18 @@ fn location(symbols: &BTreeMap<String, u32>, pc: u32) -> String {
 }
 
 fn run() -> Result<(), String> {
-    let args: Vec<_> = env::args().skip(1).collect();
+    let mut args = Vec::new();
+    let mut dump_specs = Vec::new();
+    let mut rest = env::args().skip(1);
+    while let Some(arg) = rest.next() {
+        if arg == "--dump" {
+            dump_specs.push(rest.next().ok_or("missing value for --dump")?);
+        } else {
+            args.push(arg);
+        }
+    }
     if !(1..=2).contains(&args.len()) {
-        return Err("usage: diagnose FIRMWARE.{fwsc,elf,bin} [INSTRUCTION_LIMIT]".into());
+        return Err("usage: diagnose [--dump ADDRESS:BYTES:FILE]... FIRMWARE.{fwsc,elf,bin} [INSTRUCTION_LIMIT]".into());
     }
     let limit: u64 = args
         .get(1)
@@ -32,6 +41,10 @@ fn run() -> Result<(), String> {
         .map_err(|_| "invalid instruction limit")?
         .unwrap_or(10_000_000);
     let firmware = Firmware::load(Path::new(&args[0]))?;
+    let dumps = dump_specs
+        .iter()
+        .map(|spec| Dump::parse(spec, &firmware.symbols))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut cpu = Cpu::new(firmware.bus()?, firmware.entry);
     cpu.r[0] = 0x01c7_fe08;
     let mut recent = VecDeque::new();
@@ -59,6 +72,12 @@ fn run() -> Result<(), String> {
         }
     }
     stdout.flush().map_err(|e| e.to_string())?;
+    // After a fault or the limit too; a failed dump is reported, not fatal.
+    for dump in &dumps {
+        if let Err(error) = dump.write(&cpu.bus) {
+            eprintln!("diagnose: {error}");
+        }
+    }
     eprintln!("application: {}", args[0]);
     eprintln!("executed: {} instructions", cpu.steps);
     eprintln!("stopped: {}", location(&firmware.symbols, cpu.pc));

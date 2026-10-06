@@ -168,6 +168,14 @@ Scheduled input events and UI encoder contacts remain future work.
 boot output reports the reached PC, executed instructions, IRQ entries, and
 inspected guest RAM. `--trace PATH` saves executed instructions as JSONL.
 
+`--dump ADDRESS:BYTES:FILE` (repeatable; ADDRESS a symbol or number, BYTES
+decimal or `0x` hex, at most 16 MiB) writes raw guest memory as the guest sees
+it. It is written when the run ends, also after a fault or the instruction
+limit, so a post-mortem has the state. The `diagnose` example takes the same
+option before its positional arguments: `diagnose --dump 0x01c00000:4096:ram.bin
+FIRMWARE [INSTRUCTION_LIMIT]`. An unreadable range reports its first bad
+address and writes no file.
+
 This ELF/raw application is for emulator tests. It has no updater or recovery
 and must not be installed on the FM-1. It is a historical unit-test fixture;
 use the shared hardware display build for device comparisons.

@@ -4,6 +4,8 @@ use crate::lcd::{Lcd, SPI};
 use crate::{RAM, RAM_SIZE, XIP, XIP_END};
 use std::fmt;
 
+pub const MAX_READ_BYTES: u32 = 16 << 20;
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct AccessFault {
     pub address: u32,
@@ -287,6 +289,19 @@ impl Bus {
 
     pub fn read(&self, address: u32, size: usize) -> Result<u32, AccessFault> {
         self.read_as(address, size, "read")
+    }
+
+    /// The guest's view of `len` bytes from `address`, read byte by byte.
+    pub fn read_bytes(&self, address: u32, len: u32) -> Result<Vec<u8>, AccessFault> {
+        if len > MAX_READ_BYTES {
+            return Err(Self::fault(address, 1, "read", "range exceeds 16 MiB"));
+        }
+        if len > 0 && address.checked_add(len - 1).is_none() {
+            return Err(Self::fault(address, 1, "read", "range wraps past 4 GiB"));
+        }
+        (0..len)
+            .map(|i| self.read(address + i, 1).map(|byte| byte as u8))
+            .collect()
     }
 
     pub fn fetch(&self, address: u32) -> Result<u16, AccessFault> {
