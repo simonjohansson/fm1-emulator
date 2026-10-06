@@ -285,6 +285,29 @@ def main():
         (CACHE / f"{image.stem}-negative.json").write_text(json.dumps(
             {"fault_pc": fault_pc, "returncode": result.returncode, "stderr": result.stderr}, indent=2) + "\n")
         print(f"PASS {image.stem}: explicit unaligned halfword access")
+    for offset, dest in [(0, 3), (232, 0), (254, 3), (256, 3), (510, 3)]:
+        operand = (dest << 12) | (((offset & 255) >> 4) << 8) | (offset & 14)
+        state = fixture(f"halfword-immediate-{offset}-dest-{dest}", [*literal(0, 0x01c08000),
+                *literal(1, offset // 2), *literal(2, 0xabcd8001), 0xedd8, 0x2109,
+                0xed50 | (offset >> 8), operand, *literal(4, 0x01c08000 + (offset & ~3)), 0x6045])
+        validate.check(state["registers"][dest] == 0x8001 and
+                       state["registers"][2] == 0xabcd8001 and
+                       state["registers"][5] == (0x8001a5a5 if offset & 2 else 0xa5a58001),
+                       "immediate halfword offset, zero extension, base alias or neighbor bytes differ")
+    image = CACHE / "halfword-immediate-unaligned.bin"
+    words = [*literal(0, 0x01c08001), 0xed51, 0x2f0e]
+    image.write_bytes(struct.pack("<" + "H" * len(words), *words) + b"\0" * 16)
+    fault_pc = ENTRY + (len(words) - 2) * 2
+    env = dict(os.environ, FM1_POC_STOP_PC=hex(ENTRY + len(words) * 2),
+               FM1_POC_MAX_INSTRUCTIONS="1000000")
+    result = subprocess.run([*validate.COMMAND, "-kernel", str(image), "-append", "diag"],
+                            cwd=validate.ROOT, env=env, capture_output=True, text=True, timeout=15)
+    validate.check(result.returncode != 0 and "unaligned access" in result.stderr and
+                   f"PC 0x{fault_pc:08x}" in result.stderr,
+                   "unaligned immediate halfword load did not fault at its instruction")
+    (CACHE / f"{image.stem}-negative.json").write_text(json.dumps(
+        {"fault_pc": fault_pc, "returncode": result.returncode, "stderr": result.stderr}, indent=2) + "\n")
+    print(f"PASS {image.stem}: explicit unaligned halfword access")
     fixture("lcd-pre-byte-store", [*literal(0, 0x01c08000), *literal(1, 0x12345678), 0xee5a, 0x1002])
     for value in [239, 240, 241, 0xffffffff, 520, 1099, 4095]:
         # Vendor literal forms ECB* differ from the pinned SLEIGH packed label.
