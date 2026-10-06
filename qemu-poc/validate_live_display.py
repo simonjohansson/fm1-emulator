@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Observe an uninterrupted display loop, timer pixels and physical keys."""
+import argparse
 import hashlib
 import json
 import os
@@ -20,13 +21,19 @@ HEADER = b"P6\n240 240\n255\n"
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cocoa", action="store_true", help="check pacing with the native window open")
+    parser.add_argument("--cycles", type=int, default=2, choices=range(2, 11))
+    args = parser.parse_args()
     CACHE.mkdir(parents=True, exist_ok=True)
     for filename, digest in FILES.items():
         validate.check(hashlib.sha256((validate.ROOT / filename).read_bytes()).hexdigest() == digest,
                        f"display fixture hash differs: {filename}")
     command = [*validate.COMMAND, "-kernel", str(validate.ROOT / "tests/fixtures/display/firmware.bin"),
                "-append", "display"]
-    command[command.index("-icount") + 1] = "shift=6,align=on,sleep=on"
+    command[command.index("-icount") + 1] = "shift=8,align=on,sleep=on"
+    if args.cocoa:
+        command[command.index("-display") + 1] = "cocoa,zoom-to-fit=on,zoom-interpolation=off"
     env = dict(os.environ, FM1_POC_DISPLAY_LIVE="1")
     for name in ["FM1_POC_KEEP_OPEN", "FM1_POC_STOP_PC", "FM1_POC_FRAME_DIR"]:
         env.pop(name, None)
@@ -71,7 +78,7 @@ def main():
                 started = time.monotonic()
                 deadline = started + 30
                 counters = set()
-                while len(transitions) < 5:
+                while len(transitions) < args.cycles * 2 + 1:
                     validate.check(process.poll() is None, "live guest exited; inspect stderr.txt")
                     validate.check(time.monotonic() < deadline, "live timer/key cycle timeout")
                     validate.check(request("query-status")["running"], "live guest paused")
@@ -113,7 +120,7 @@ def main():
                         transitions.append(pressed)
                         (CACHE / f"transition-{len(transitions)}.ppm").write_bytes(HEADER + image)
                     time.sleep(0.02)
-                validate.check(transitions == [False, True, False, True, False], "key cycle differs")
+                validate.check(transitions == [bool(i % 2) for i in range(args.cycles * 2 + 1)], "key cycle differs")
                 validate.check(samples[-1]["frame"] > 3 and len(counters) > 3,
                                "display did not keep repainting its timer after frame three")
                 guest_seconds = (samples[-1]["virtual_ns"] - samples[0]["virtual_ns"]) / 1e9
@@ -135,11 +142,11 @@ def main():
                     process.terminate()
                     process.wait(timeout=10)
     (CACHE / "validation.json").write_text(json.dumps({
-        "passed": True, "firmware_hashes": FILES, "transitions_pressed": transitions,
+        "passed": True, "cocoa": args.cocoa, "firmware_hashes": FILES, "transitions_pressed": transitions,
         "guest_seconds": guest_seconds, "wall_seconds": wall_seconds,
         "distinct_timer_images": len(counters), "samples": samples, "events": events,
     }, indent=2) + "\n")
-    print(f"PASS uninterrupted display: {samples[-1]['frame']} frames, two physical key cycles, "
+    print(f"PASS uninterrupted display: {samples[-1]['frame']} frames, {args.cycles} physical key cycles, "
           f"{len(counters)} changing timer images")
     print(f"Observed {guest_seconds:.3f} guest seconds in {wall_seconds:.3f} wall seconds; no pause")
     print(f"Evidence: {CACHE}")

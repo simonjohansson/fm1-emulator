@@ -25,8 +25,8 @@ mouse controls are not mapped; the key cycle is automatic.
 The build enables QEMU's built-in Cocoa display on macOS and automatically
 reconfigures an older headless build. No additional package installation is
 needed on the validated machine. The live launcher uses
-`-icount shift=6,align=on,sleep=on` to pace guest virtual time against host
-elapsed time. Live mode uses 64 ns per guest instruction, while the exact
+`-icount shift=8,align=on,sleep=on` to pace guest virtual time against host
+elapsed time. Live mode uses 256 ns per guest instruction, while the exact
 headless regressions retain 8 ns (`shift=3`). This reduces busy-loop polling
 between device events; modeled TIMER4 and SPI transfer rates are unchanged.
 A busy host may fall behind. This is functional emulation, not
@@ -44,15 +44,18 @@ screen and does not write guest RAM.
 Run the continuous-mode and unchanged three-frame checks with:
 
 ```sh
-mise exec python@3.13.15 -- python qemu-poc/validate_live_display.py
+mise exec python@3.13.15 -- python qemu-poc/validate_live_display.py --cocoa --cycles 6
 mise exec python@3.13.15 -- python qemu-poc/validate_display.py
 ```
 
 The live check observes execution past frame three, changing timer pixels,
-two press/release cycles, and QMP's running status without pausing the guest.
-The validated run completed 116 frames and two key cycles without a pause;
-1.916 seconds of guest time elapsed in 1.917 seconds of host time. It stores
-its evidence in `.cache/live-display-validation/`. The unchanged three-frame
+repeated press/release cycles, and QMP's running status without pausing the
+guest. The validated native-window run completed 252 frames and six key
+cycles without a pause; 5.838 seconds of guest time elapsed in 5.849 seconds
+of host time. It stores
+its evidence in `.cache/live-display-validation/`. Omit `--cocoa` for a
+headless check; the local QMP socket may need permission outside a restricted
+sandbox. The unchanged three-frame
 regression still passed with 15,581,968 guest instructions and matching
 reference pixels outside its timer band. The minimal
 build omits Pixman, so QMP `screendump` is unavailable; automated pixel checks

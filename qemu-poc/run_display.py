@@ -27,7 +27,7 @@ def main():
           flush=True)
     os.chdir(ROOT)
     os.execve(qemu, [str(qemu), "-name", "FM-1 timer and keys", "-M", "fm1-poc",
-                    "-accel", "tcg,thread=single", "-icount", "shift=6,align=on,sleep=on",
+                    "-accel", "tcg,thread=single", "-icount", "shift=8,align=on,sleep=on",
                     "-display", "cocoa,zoom-to-fit=on,zoom-interpolation=off",
                     "-serial", "none", "-monitor", "none", "-nodefaults",
                     "-kernel", str(ROOT / "tests/fixtures/display/firmware.bin"), "-append", "display"], env)
