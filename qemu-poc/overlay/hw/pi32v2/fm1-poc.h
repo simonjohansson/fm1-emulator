@@ -10,6 +10,7 @@
 #include "fm1-nor.h"
 #include "fm1-usb.h"
 #include "fm1-alnk.h"
+#include "fm1-syscon.h"
 
 #define TYPE_FM1_POC_MACHINE MACHINE_TYPE_NAME("fm1-poc")
 OBJECT_DECLARE_SIMPLE_TYPE(FM1PocState, FM1_POC_MACHINE)
@@ -37,6 +38,7 @@ struct FM1PocState {
     FM1PocNOR nor;
     FM1PocUSB usb;
     FM1PocALNK alnk;
+    FM1PocSyscon syscon;
     unsigned frames;
     const char *frame_dir;
     QEMUTimer *display_key_timer;

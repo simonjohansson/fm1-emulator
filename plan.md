@@ -118,8 +118,9 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   batching/performance remain unvalidated.
 - Current devices are mostly one-time initialized structs; watchdog reset
   terminates instead of resetting the machine.
-- USB and candidate UART configurations share CLK_CON1; shared words need a
-  syscon owner. Current timer/SPI/audio rates are functional assumptions.
+- Syscon now canonically owns CLK_CON1/CLK_CON2/IOMAP_CON5. Future UART and
+  other consumers must use that owner; extra words and a clock tree remain
+  unevidenced. Current timer/SPI/audio rates are functional assumptions.
 - ALNK captures a whole half and LCD a whole transfer at completion. This
   assumes stable source buffers; active-buffer mutation needs explicit tests
   and an evidenced consumption model before generic streaming claims.
@@ -194,6 +195,18 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   renamed default-loader replay matches captured state, sample and LCD bytes.
   Evidence: `.deps/qemu-postincrement-store-2026-10-07/` in the main repo.
   The current audio IRQ has not acknowledged or returned.
+
+- 2026-10-07: Stage 3 shared-word ownership extraction complete. A private
+  syscon owns exactly CLK_CON1/CLK_CON2/IOMAP_CON5 with existing addresses,
+  masks, widths, faults and names; ALNK validates active writes before canonical
+  assignment and reads getters. Duplicate USB/ALNK fields and mappings removed.
+  Existing capture keys and rates preserved. Independent source/validator review
+  found no blockers. New 28-case gate passes; ALNK, common maps, observer-off,
+  IRQ, peripheral/diagnostic USB and boot regressions pass. At the fixed EED2
+  CPU revision, unchanged and renamed generic captures match all state fields,
+  whole SRAM, samples and LCD bytes before/after extraction within each mode.
+  Evidence: `.deps/qemu-syscon-2026-10-07/`. Clock tree, resettable ALNK and
+  hardware/whole-machine reset remain open.
 
 ### QEMU version upgrade
 
@@ -333,7 +346,8 @@ Recent signed commits, all signatures verified:
 
 ## Current firmware blocker: packed multiply parallel head F1E0
 
-Latest unchanged boot: `.cache/felucca-validation/after-postincrement-store/`.
+Latest unchanged boot: `.cache/felucca-validation/after-syscon/`; CPU state
+matches the preceding `after-postincrement-store/` checkpoint exactly.
 Both indexed stores now execute through the shared CPU path. Execution fails
 explicitly at the next reached parallel bundle:
 
@@ -347,10 +361,10 @@ explicitly at the next reached parallel bundle:
   pending `0x80`, no acknowledgment. Splash intact, guard messages and watchdog
   expiry zero. This is not completed audio service, synthesis or a home screen.
 - QEMU SHA-256:
-  `b9d68d0825e23b2b0cb25d63c29017d6a8ba5baf3464f1eb0b080dc7851e525f`.
-- Generic replay: `.cache/felucca-validation/after-postincrement-store-generic/`.
-- Durable evidence: main repo `.deps/qemu-postincrement-store-2026-10-07/`;
-  earlier indexed-store, upgrade and architecture checkpoints are retained.
+  `d64ef1694c0f7b08c85573f51ff0643beb258d949395f59448d975d87cbdeae9`.
+- Generic replay: `.cache/felucca-validation/after-syscon-generic/`.
+- Durable evidence: main repo `.deps/qemu-syscon-2026-10-07/`; earlier
+  postincrement, indexed-store, upgrade and architecture evidence is retained.
 
 ### Resolved EED2 checkpoint
 
@@ -423,9 +437,9 @@ Next implementation sequence:
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new evidence label. Commit only
    validated changes. Repeat for each actual subsequent CPU/MMIO failure.
-4. Hardware path: centralize shared CLK_CON1/CLK_CON2/IOMAP_CON5 ownership
-   without changing masks or supported rates, then convert ALNK to the first
-   resettable QEMU device. Verify timer cancellation, pending IRQ clearing,
+4. Hardware path: shared CLK_CON1/CLK_CON2/IOMAP_CON5 ownership is complete.
+   Convert ALNK to the first resettable QEMU device, retaining canonical shared
+   words and rates. Verify timer cancellation, pending IRQ clearing,
    repeated reset and reconfiguration without resetting unrelated controllers.
    Whole-machine reset remains unsupported until all components participate.
 

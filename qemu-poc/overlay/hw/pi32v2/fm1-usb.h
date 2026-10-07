@@ -10,8 +10,8 @@
  * and retry. Responsive USB, enumeration and packet DMA are not modeled. */
 typedef struct FM1PocUSB {
     Pi32v2CPU *cpu;
-    MemoryRegion mmio, pads_mmio, clock_mmio;
-    uint32_t control, bridge, pads, clock_control;
+    MemoryRegion mmio, pads_mmio;
+    uint32_t control, bridge, pads;
     uint32_t endpoint_count[4], tx_address[4], rx_address[5];
     uint32_t recent_requests[6];
     uint64_t recent_polls[6];

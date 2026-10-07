@@ -6,6 +6,7 @@
 #include "hw/core/irq.h"
 #include "qemu/timer.h"
 #include "cpu.h"
+#include "fm1-syscon.h"
 
 #define FM1_ALNK_HALF_WORDS 512u
 #define FM1_ALNK_HALF_BYTES (FM1_ALNK_HALF_WORDS * 4u)
@@ -16,12 +17,13 @@
  * copied or linked into this GPL-2.0-or-later device. */
 typedef struct FM1PocALNK {
     Pi32v2CPU *cpu;
-    MemoryRegion mmio, clock_mmio, iomap_mmio;
+    FM1PocSyscon *syscon;
+    MemoryRegion mmio;
     QEMUTimer *timer;
     qemu_irq irq;
     uint16_t control0, control1, half_words;
     uint8_t pending, control3, active_half, last_half;
-    uint32_t dma_address, clock_control, iomap_control;
+    uint32_t dma_address;
     bool enabled, irq_level;
     int64_t epoch, deadline;
     uint64_t scheduled_halves, completions, acknowledgments;
@@ -32,6 +34,6 @@ typedef struct FM1PocALNK {
 } FM1PocALNK;
 
 void fm1_alnk_init(FM1PocALNK *alnk, Object *owner, Pi32v2CPU *cpu,
-                  qemu_irq irq);
+                  qemu_irq irq, FM1PocSyscon *syscon);
 
 #endif

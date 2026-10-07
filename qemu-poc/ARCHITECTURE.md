@@ -155,6 +155,16 @@ the code and renames identical-byte images, compares actual guest readbacks,
 and checks unsupported access faults. This gate does not establish further
 production firmware or all possible controller configurations.
 
+The syscon component now owns exactly three canonical words: CLK_CON1 at
+`0x10010` (mask `0x3`), CLK_CON2 at `0x10014` (mask `0xf00`) and IOMAP_CON5 at
+`0x51030` (mask `0xc0`). SoC composition maps each existing four-byte region.
+ALNK uses getters and precommit validators for active clock/routing changes;
+USB has no duplicate selector storage. Existing widths, names, faults and
+functional rates remain unchanged. `validate_syscon.py` covers 28 cases,
+including rejected writes before canonical assignment and preserved active
+ALNK phase/pending/samples. This is ownership extraction, not clock-tree or
+reset support.
+
 Known gaps remain: fixed functional timer/SPI/audio clocks rather than an
 evidenced clock tree; whole-transfer/half DMA capture assuming stable buffers;
 unvalidated skipped-callback captures; no persistent NOR program/erase; no
@@ -163,7 +173,8 @@ without nesting/equal-priority arbitration; no ADC, UART or connected USB
 MIDI/CDC; no validated audio endpoint or CoreAudio playback. The current USB
 scenario combines no host and unavailable SIE clock; it proves guest retry,
 not that cable absence necessarily disables SIE register access. Shared clock
-and routing words require one SoC owner before further controllers are added.
+and routing words now use one private SoC syscon owner; other words and a
+clock tree remain unimplemented.
 
 Use register/encoding/interface facts and fresh GPL-2.0-or-later implementation.
 Keep the GPL-3.0-only Rust reference in a separate executable through its public

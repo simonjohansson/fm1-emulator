@@ -113,7 +113,9 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
             ",\"deadline\":%" PRId64 "},", a->control0, a->control1, a->control3,
             a->pending, a->dma_address, a->half_words, a->active_half,
             a->enabled ? "true" : "false", a->irq_level ? "true" : "false",
-            a->clock_control, a->iomap_control, a->completions, a->acknowledgments,
+            fm1_syscon_get(a->syscon, FM1_SYSCON_CLK_CON2),
+            fm1_syscon_get(a->syscon, FM1_SYSCON_IOMAP_CON5),
+            a->completions, a->acknowledgments,
             a->coalesced_completions, a->skipped_captures, a->sample_words,
             a->sample_frames, a->nonzero_words, a->sample_digest, a->last_half,
             a->latest_half_bytes, a->epoch, a->deadline);

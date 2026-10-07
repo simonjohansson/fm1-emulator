@@ -13,8 +13,6 @@
 #include "fm1-alnk.h"
 
 #define ALNK_BASE 0x12e00u
-#define CLOCK_BASE 0x10014u
-#define IOMAP_BASE 0x51030u
 #define SRAM_BASE 0x01c00000u
 #define SRAM_END 0x01c80000u
 #define DMA_ENABLE 0x0800u
@@ -108,7 +106,8 @@ static void check_configuration(FM1PocALNK *a)
     if (a->control0 != (0x0180u | DMA_ENABLE) ||
         a->control1 != 0x5000u || a->control3 != 0x83u ||
         a->half_words != FM1_ALNK_HALF_WORDS ||
-        a->clock_control || a->iomap_control) {
+        fm1_syscon_get(a->syscon, FM1_SYSCON_CLK_CON2) ||
+        fm1_syscon_get(a->syscon, FM1_SYSCON_IOMAP_CON5)) {
         alnk_fail(a, "unsupported ALNK0 enabled configuration");
     }
     if ((a->dma_address & 3) || a->dma_address < SRAM_BASE ||
@@ -219,42 +218,22 @@ static void alnk_write(void *opaque, hwaddr offset, uint64_t value,
     g_assert_not_reached();
 }
 
-static uint64_t clock_read(void *opaque, hwaddr offset, unsigned size)
+static void validate_clock_write(void *opaque, uint32_t old_value,
+                                 uint32_t new_value)
 {
     FM1PocALNK *a = opaque;
-    if (offset || size != 4) { alnk_fail(a, "unsupported ALNK0 clock read or width"); }
-    return a->clock_control;
-}
-
-static void clock_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
-{
-    FM1PocALNK *a = opaque;
-    if (offset || size != 4 || value & ~0xf00ull) {
-        alnk_fail(a, "unsupported ALNK0 clock configuration");
-    }
-    if (a->enabled && value != a->clock_control) {
+    if (a->enabled && new_value != old_value) {
         alnk_fail(a, "ALNK0 clock changed while DMA is enabled");
     }
-    a->clock_control = value;
 }
 
-static uint64_t iomap_read(void *opaque, hwaddr offset, unsigned size)
+static void validate_iomap_write(void *opaque, uint32_t old_value,
+                                 uint32_t new_value)
 {
     FM1PocALNK *a = opaque;
-    if (offset || size != 4) { alnk_fail(a, "unsupported ALNK0 routing read or width"); }
-    return a->iomap_control;
-}
-
-static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
-{
-    FM1PocALNK *a = opaque;
-    if (offset || size != 4 || value & ~0xc0ull) {
-        alnk_fail(a, "unsupported ALNK0 pin routing configuration");
-    }
-    if (a->enabled && value != a->iomap_control) {
+    if (a->enabled && new_value != old_value) {
         alnk_fail(a, "ALNK0 routing changed while DMA is enabled");
     }
-    a->iomap_control = value;
 }
 
 static const MemoryRegionOps alnk_ops = {
@@ -263,28 +242,19 @@ static const MemoryRegionOps alnk_ops = {
     .valid = {.min_access_size = 1, .max_access_size = 4},
     .impl = {.min_access_size = 1, .max_access_size = 4},
 };
-#define WORD_OPS(name) \
-static const MemoryRegionOps name##_ops = { \
-    .read = name##_read, .write = name##_write, \
-    .endianness = DEVICE_LITTLE_ENDIAN, \
-    .valid = {.min_access_size = 4, .max_access_size = 4}, \
-    .impl = {.min_access_size = 4, .max_access_size = 4}, \
-}
-WORD_OPS(clock);
-WORD_OPS(iomap);
-
 void fm1_alnk_init(FM1PocALNK *a, Object *owner, Pi32v2CPU *cpu,
-                  qemu_irq irq)
+                  qemu_irq irq, FM1PocSyscon *syscon)
 {
     a->cpu = cpu;
+    a->syscon = syscon;
     a->irq = irq;
+    fm1_syscon_set_validator(syscon, FM1_SYSCON_CLK_CON2,
+                              validate_clock_write, a);
+    fm1_syscon_set_validator(syscon, FM1_SYSCON_IOMAP_CON5,
+                              validate_iomap_write, a);
     a->sample_digest = 2166136261u;
     a->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, completed, a);
     memory_region_init_io(&a->mmio, owner, &alnk_ops, a, "fm1.alnk0", 0x24);
     memory_region_add_subregion(get_system_memory(), ALNK_BASE, &a->mmio);
-    memory_region_init_io(&a->clock_mmio, owner, &clock_ops, a, "fm1.alnk-clock", 4);
-    memory_region_add_subregion(get_system_memory(), CLOCK_BASE, &a->clock_mmio);
-    memory_region_init_io(&a->iomap_mmio, owner, &iomap_ops, a, "fm1.alnk-routing", 4);
-    memory_region_add_subregion(get_system_memory(), IOMAP_BASE, &a->iomap_mmio);
     update_irq(a);
 }

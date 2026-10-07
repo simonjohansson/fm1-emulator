@@ -338,8 +338,15 @@ static void machine_init(MachineState *ms)
     memory_region_add_subregion(get_system_memory(), 0x01eef100, &m->irq_mmio);
     m->irq = qdev_get_gpio_in(DEVICE(m->cpu), 0);
     fm1_system_init(&m->system, OBJECT(m), m->cpu);
+    fm1_syscon_init(&m->syscon, OBJECT(m), m->cpu);
+    memory_region_add_subregion(get_system_memory(), 0x10010,
+                               &m->syscon.mmio[FM1_SYSCON_CLK_CON1]);
+    memory_region_add_subregion(get_system_memory(), 0x10014,
+                               &m->syscon.mmio[FM1_SYSCON_CLK_CON2]);
+    memory_region_add_subregion(get_system_memory(), 0x51030,
+                               &m->syscon.mmio[FM1_SYSCON_IOMAP_CON5]);
     m->alnk_irq = qemu_allocate_irq(alnk_irq_input, m, 11);
-    fm1_alnk_init(&m->alnk, OBJECT(m), m->cpu, m->alnk_irq);
+    fm1_alnk_init(&m->alnk, OBJECT(m), m->cpu, m->alnk_irq, &m->syscon);
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
     fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
     memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 8);

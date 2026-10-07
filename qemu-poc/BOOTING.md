@@ -59,6 +59,29 @@ The unchanged startup/splash/diagnostic gates remain acceptance tests. New
 layout and filename independence. A common one-instruction translation-block
 boundary preserves conditional completion; this is not a throughput claim.
 
+## Shared clock and routing ownership
+
+The private SoC syscon canonically owns CLK_CON1 (`0x10010`, mask `0x3`),
+CLK_CON2 (`0x10014`, mask `0xf00`) and IOMAP_CON5 (`0x51030`, mask `0xc0`).
+The same three word-only regions, names, faults and functional rates are
+preserved. ALNK checks active changes before canonical assignment and reads
+shared getters; USB/ALNK no longer hold duplicate shared values. Existing
+capture JSON keys remain unchanged.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_syscon.py
+```
+
+All 28 focused cases pass, including independent field readbacks, masks/widths,
+active precommit faults and preserved ALNK phase, pending state and samples.
+Existing ALNK, common-map, observer-off, IRQ, peripheral/diagnostic USB and boot
+gates pass. At the fixed EED2 CPU revision, unchanged Felucca and renamed
+generic runs exactly match their own pre-extraction state, all SRAM, sample
+and LCD bytes. The F1E0 stop below remains unchanged. Labels are `after-syscon`
+and `after-syscon-generic`; main repo `.deps/qemu-syscon-2026-10-07/` retains
+baselines, comparisons and gates. Resettable ALNK and an evidenced clock tree
+remain open.
+
 ## Watch the timer and key matrix in a macOS window
 
 ```sh

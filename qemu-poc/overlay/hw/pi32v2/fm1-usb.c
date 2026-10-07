@@ -12,7 +12,6 @@
 
 #define USB_BASE 0x11800u
 #define USB_PADS_BASE 0x51000u
-#define USB_CLOCK_BASE 0x10010u
 #define USB_SIE_ON 4u
 #define USB_SOF_ACK 0x1000u
 #define USB_SIE_READ 0x4000u
@@ -169,18 +168,6 @@ static void pads_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
     usb->pads = value;
 }
 
-static uint64_t clock_read(void *opaque, hwaddr offset, unsigned size)
-{
-    return ((FM1PocUSB *)opaque)->clock_control;
-}
-
-static void clock_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
-{
-    FM1PocUSB *usb = opaque;
-    if (value & ~3ull) { usb_fail(usb, "unsupported USB clock selector fields"); }
-    usb->clock_control = value;
-}
-
 #define USB_OPS(name) \
 static const MemoryRegionOps name##_ops = { \
     .read = name##_read, .write = name##_write, .endianness = DEVICE_LITTLE_ENDIAN, \
@@ -189,7 +176,6 @@ static const MemoryRegionOps name##_ops = { \
 }
 USB_OPS(usb);
 USB_OPS(pads);
-USB_OPS(clock);
 
 void fm1_usb_init(FM1PocUSB *usb, Object *owner, Pi32v2CPU *cpu)
 {
@@ -200,6 +186,4 @@ void fm1_usb_init(FM1PocUSB *usb, Object *owner, Pi32v2CPU *cpu)
     memory_region_add_subregion(get_system_memory(), USB_BASE, &usb->mmio);
     memory_region_init_io(&usb->pads_mmio, owner, &pads_ops, usb, "fm1.usb-pads", 4);
     memory_region_add_subregion(get_system_memory(), USB_PADS_BASE, &usb->pads_mmio);
-    memory_region_init_io(&usb->clock_mmio, owner, &clock_ops, usb, "fm1.usb-clock", 4);
-    memory_region_add_subregion(get_system_memory(), USB_CLOCK_BASE, &usb->clock_mmio);
 }
