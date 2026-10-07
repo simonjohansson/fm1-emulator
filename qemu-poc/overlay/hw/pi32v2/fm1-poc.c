@@ -346,7 +346,11 @@ static void machine_init(MachineState *ms)
     memory_region_add_subregion(get_system_memory(), 0x51030,
                                &m->syscon.mmio[FM1_SYSCON_IOMAP_CON5]);
     m->alnk_irq = qemu_allocate_irq(alnk_irq_input, m, 11);
-    fm1_alnk_init(&m->alnk, OBJECT(m), m->cpu, m->alnk_irq, &m->syscon);
+    object_initialize_child(OBJECT(m), "alnk0", &m->alnk, TYPE_FM1_ALNK);
+    fm1_alnk_bind(&m->alnk, m->cpu, &m->syscon);
+    sysbus_realize(SYS_BUS_DEVICE(&m->alnk), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(&m->alnk), 0, 0x12e00);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&m->alnk), 0, m->alnk_irq);
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
     fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
     memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 8);

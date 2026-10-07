@@ -79,8 +79,37 @@ gates pass. At the fixed EED2 CPU revision, unchanged Felucca and renamed
 generic runs exactly match their own pre-extraction state, all SRAM, sample
 and LCD bytes. The F1E0 stop below remains unchanged. Labels are `after-syscon`
 and `after-syscon-generic`; main repo `.deps/qemu-syscon-2026-10-07/` retains
-baselines, comparisons and gates. Resettable ALNK and an evidenced clock tree
-remain open.
+baselines, comparisons and gates. The later ALNK lifecycle milestone below adds local reset; an evidenced clock
+tree remains open.
+
+## Local audio-device reset lifecycle
+
+ALNK is now a private SysBus child, with the existing mapping/rates/IRQ wiring.
+Resettable enter cancels its completion timer and clears local DMA/registers,
+pending and capture history; hold lowers the ALNK IRQ through its connector.
+Shared syscon words, SRAM, CPU state and other controllers are preserved.
+Unrealize unregisters owned syscon callbacks; finalization frees the timer.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_alnk_reset.py
+```
+
+Eighteen cases pass: nine functional cases and nine schedule rejections. They
+attest cold/configured/repeated reset, cancellation before completion, clearing
+pending, passage beyond old deadlines, fresh phase after reconfiguration and
+actual surviving TIMER5 IRQ63 delivery/ack/RTI. Opt-in test-only
+`FM1_POC_ALNK_RESETS_NS` schedules up to 16 sorted positive absolute virtual
+nanoseconds (equal times permitted) and requires `FM1_POC_STATE_DIR`.
+Pre/post evidence goes to separate `alnk-reset.jsonl`; existing capture JSON
+is unchanged. No firmware identity or guest PC triggers device reset.
+
+Syscon, ALNK, maps, profiles, IRQ, peripherals, diagnostics and boot gates pass.
+With CPU fixed at 0ba8792, unchanged fixture and renamed generic runs exactly
+match all pre-lifecycle state fields, whole SRAM, sample and LCD bytes within
+each mode. The EDD8 stop below is unchanged. Caches use `after-alnk-lifecycle`
+and its `-generic` label; main repo `.deps/qemu-alnk-lifecycle-2026-10-07/`
+retains baselines, sidecars and gates. Whole-machine/watchdog/physical reset
+and runtime unrealize/re-realize remain unvalidated.
 
 ## Watch the timer and key matrix in a macOS window
 
@@ -749,7 +778,7 @@ Whole SRAM is not compared across loader modes. Caches use
 logs, including the repaired test capture-profile failure. Home and synthesis
 remain unverified.
 
-### Compact multiply bundle and latest checkpoint
+### Compact multiply bundle checkpoint
 
 The existing scalar 1B00 multiply now has a parallel-head destination mask.
 This is one classifier entry; scalar arithmetic, incoming register reads,
@@ -764,7 +793,7 @@ Nonzero products, incoming aliases, every register field, square/overflow
 boundaries, PSR, conditional sizing and retirement are checked. Hardware fault
 state remains unverified. Full ISA, 98 profiles, ten IRQ cases and boot pass.
 
-Unchanged Felucca stops at EDD8/302A, PC `0x02001c58`, after 43,279,913
+After this milestone, unchanged Felucca stopped at EDD8/302A, PC `0x02001c58`, after 43,279,913
 instructions and 346,239,312 virtual ns: 168 instructions beyond DB01.
 Vendor disassembly shows `r3 = h[r2+r0<<1] (s)`, followed by the alias form
 `r0 = h[r2+r0<<1] (s)`. IRQ11 still has no ack/return, five captured halves
@@ -773,8 +802,9 @@ state except the profile label and all sample/LCD bytes; whole SRAM is not
 compared across loader modes. Caches use `after-parallel-register-multiply`
 and its `-generic` label; main repo
 `.deps/qemu-parallel-register-multiply-2026-10-07/` retains probes and gates.
-Home and synthesis remain unverified. CPU changes are held for the next
-local ALNK reset lifecycle milestone.
+Home and synthesis remain unverified. The subsequent ALNK lifecycle milestone preserves this checkpoint exactly.
+The latest unchanged/generic labels are `after-alnk-lifecycle` and its
+`-generic` counterpart.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

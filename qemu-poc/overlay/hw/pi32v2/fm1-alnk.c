@@ -9,10 +9,13 @@
  * implemented. All other register/configuration accesses fail explicitly. */
 #include "qemu/osdep.h"
 #include "qemu/bswap.h"
+#include "qemu/module.h"
+#include "qapi/error.h"
+#include "hw/core/irq.h"
+#include "hw/core/resettable.h"
 #include "system/address-spaces.h"
 #include "fm1-alnk.h"
 
-#define ALNK_BASE 0x12e00u
 #define SRAM_BASE 0x01c00000u
 #define SRAM_END 0x01c80000u
 #define DMA_ENABLE 0x0800u
@@ -242,19 +245,115 @@ static const MemoryRegionOps alnk_ops = {
     .valid = {.min_access_size = 1, .max_access_size = 4},
     .impl = {.min_access_size = 1, .max_access_size = 4},
 };
-void fm1_alnk_init(FM1PocALNK *a, Object *owner, Pi32v2CPU *cpu,
-                  qemu_irq irq, FM1PocSyscon *syscon)
+static void alnk_reset_enter(Object *obj, ResetType type)
 {
+    FM1PocALNK *a = FM1_ALNK(obj);
+
+    /* Only local state belongs to enter. Keep the QOM object, bindings,
+     * shared syscon words, guest SRAM and IRQ connection intact. */
+    timer_del(a->timer);
+    a->control0 = a->control1 = a->half_words = 0;
+    a->pending = a->control3 = a->active_half = a->last_half = 0;
+    a->dma_address = 0;
+    a->enabled = a->irq_level = false;
+    a->epoch = a->deadline = 0;
+    a->scheduled_halves = a->completions = a->acknowledgments = 0;
+    a->coalesced_completions = a->skipped_captures = 0;
+    a->sample_words = a->sample_frames = a->nonzero_words = 0;
+    a->sample_digest = 2166136261u;
+    a->latest_half_bytes = 0;
+    memset(a->latest_half, 0, sizeof(a->latest_half));
+}
+
+static void alnk_reset_hold(Object *obj, ResetType type)
+{
+    FM1PocALNK *a = FM1_ALNK(obj);
+    qemu_irq_lower(a->irq);
+}
+
+static void alnk_instance_init(Object *obj)
+{
+    FM1PocALNK *a = FM1_ALNK(obj);
+    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
+
+    a->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, completed, a);
+    a->sample_digest = 2166136261u;
+    memory_region_init_io(&a->mmio, obj, &alnk_ops, a, "fm1.alnk0", 0x24);
+    sysbus_init_mmio(sbd, &a->mmio);
+    sysbus_init_irq(sbd, &a->irq);
+}
+
+static void alnk_realize(DeviceState *dev, Error **errp)
+{
+    FM1PocALNK *a = FM1_ALNK(dev);
+
+    if (!a->cpu || !a->syscon) {
+        error_setg(errp, "ALNK requires composition-owned CPU and syscon bindings");
+        return;
+    }
+    fm1_syscon_set_validator(a->syscon, FM1_SYSCON_CLK_CON2,
+                              validate_clock_write, a);
+    fm1_syscon_set_validator(a->syscon, FM1_SYSCON_IOMAP_CON5,
+                              validate_iomap_write, a);
+    a->validators_registered = true;
+}
+
+static void alnk_unrealize(DeviceState *dev)
+{
+    FM1PocALNK *a = FM1_ALNK(dev);
+
+    device_cold_reset(dev);
+    if (a->validators_registered) {
+        fm1_syscon_clear_validator(a->syscon, FM1_SYSCON_CLK_CON2,
+                                    validate_clock_write, a);
+        fm1_syscon_clear_validator(a->syscon, FM1_SYSCON_IOMAP_CON5,
+                                    validate_iomap_write, a);
+        a->validators_registered = false;
+    }
+}
+
+static void alnk_instance_finalize(Object *obj)
+{
+    FM1PocALNK *a = FM1_ALNK(obj);
+
+    /* Qdev unparent unrealizes a realized child before finalization. */
+    g_assert(!a->validators_registered);
+    timer_free(a->timer);
+}
+
+static void alnk_class_init(ObjectClass *klass, const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    ResettableClass *rc = RESETTABLE_CLASS(klass);
+
+    dc->realize = alnk_realize;
+    dc->unrealize = alnk_unrealize;
+    /* CPU/syscon bindings and physical wiring are supplied by composition;
+     * this private controller cannot be created independently with -device. */
+    dc->user_creatable = false;
+    dc->hotpluggable = false;
+    rc->phases.enter = alnk_reset_enter;
+    rc->phases.hold = alnk_reset_hold;
+}
+
+static const TypeInfo alnk_info = {
+    .name = TYPE_FM1_ALNK,
+    .parent = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(FM1PocALNK),
+    .instance_init = alnk_instance_init,
+    .instance_finalize = alnk_instance_finalize,
+    .class_init = alnk_class_init,
+};
+
+static void alnk_register_types(void)
+{
+    type_register_static(&alnk_info);
+}
+type_init(alnk_register_types)
+
+void fm1_alnk_bind(FM1PocALNK *a, Pi32v2CPU *cpu, FM1PocSyscon *syscon)
+{
+    g_assert(!DEVICE(a)->realized && !a->cpu && !a->syscon);
     a->cpu = cpu;
     a->syscon = syscon;
-    a->irq = irq;
-    fm1_syscon_set_validator(syscon, FM1_SYSCON_CLK_CON2,
-                              validate_clock_write, a);
-    fm1_syscon_set_validator(syscon, FM1_SYSCON_IOMAP_CON5,
-                              validate_iomap_write, a);
-    a->sample_digest = 2166136261u;
-    a->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, completed, a);
-    memory_region_init_io(&a->mmio, owner, &alnk_ops, a, "fm1.alnk0", 0x24);
-    memory_region_add_subregion(get_system_memory(), ALNK_BASE, &a->mmio);
-    update_irq(a);
 }

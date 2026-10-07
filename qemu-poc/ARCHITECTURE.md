@@ -163,12 +163,24 @@ USB has no duplicate selector storage. Existing widths, names, faults and
 functional rates remain unchanged. `validate_syscon.py` covers 28 cases,
 including rejected writes before canonical assignment and preserved active
 ALNK phase/pending/samples. This is ownership extraction, not clock-tree or
-reset support.
+reset support; local ALNK reset is recorded below.
+
+ALNK is now a composition-owned private SysBus child, with the same MMIO
+address, widths, rates and IRQ connector. Resettable enter cancels local work
+and clears ALNK registers/capture history; hold lowers its IRQ. Canonical
+syscon words, SRAM, CPU and unrelated controllers remain intact. Unrealize
+clears only its owned validators and finalization frees its one timer.
+`validate_alnk_reset.py` passes 18 cases with test-only virtual-time injection
+and separate pre/post sidecars. Actual pending TIMER5 delivery/ack/RTI survives.
+At fixed CPU revision 0ba8792, complete captured firmware state, SRAM, samples
+and LCD bytes match before/after within fixture and generic modes. Local reset
+is model validation; physical/whole-machine/watchdog reset and runtime
+unrealize/re-realize are unvalidated. Existing capture schemas stay unchanged.
 
 Known gaps remain: fixed functional timer/SPI/audio clocks rather than an
 evidenced clock tree; whole-transfer/half DMA capture assuming stable buffers;
-unvalidated skipped-callback captures; no persistent NOR program/erase; no
-device reset lifecycle or hardware reset dispatch; only IRQ11/63 selection,
+unvalidated skipped-callback captures; no persistent NOR program/erase; remaining
+controller lifecycles and hardware reset dispatch; only IRQ11/63 selection,
 without nesting/equal-priority arbitration; no ADC, UART or connected USB
 MIDI/CDC; no validated audio endpoint or CoreAudio playback. The current USB
 scenario combines no host and unavailable SIE clock; it proves guest retry,

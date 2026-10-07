@@ -116,8 +116,9 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
 - Profile-dependent CPU behavior/device maps were removed in Stage 2. All
   images use one instruction per translation block for conditional correctness;
   batching/performance remain unvalidated.
-- Current devices are mostly one-time initialized structs; watchdog reset
-  terminates instead of resetting the machine.
+- ALNK is now a private resettable SysBus device. Other controllers remain
+  mostly one-time initialized structs; watchdog reset still terminates.
+  Local ALNK reset is tested; whole-machine and physical reset remain open.
 - Syscon now canonically owns CLK_CON1/CLK_CON2/IOMAP_CON5. Future UART and
   other consumers must use that owner; extra words and a clock tree remain
   unevidenced. Current timer/SPI/audio rates are functional assumptions.
@@ -233,6 +234,18 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   samples and LCD match. Evidence:
   `.deps/qemu-parallel-register-multiply-2026-10-07/`. CPU changes are held
   during the next resettable ALNK acceptance milestone.
+
+- 2026-10-07: Stage 3 ALNK lifecycle conversion complete and independently
+  reviewed. Private SysBus child retains the same MMIO/rates/IRQ connector;
+  Resettable enter cancels timer/local DMA/capture state, hold lowers only
+  ALNK's IRQ. Syscon words, SRAM, CPU and other controllers are preserved.
+  Eighteen reset/schedule cases pass, including cancellation, pending clearing,
+  repeated reset, fresh phase and surviving real TIMER5 IRQ63 ack/RTI.
+  Syscon, ALNK, maps, profiles, IRQ, peripherals, diagnostics and boot pass.
+  At fixed CPU revision 0ba8792, fixture and renamed generic captures match
+  all state fields, whole SRAM, sample and LCD bytes before/after. Evidence:
+  `.deps/qemu-alnk-lifecycle-2026-10-07/`. Whole-machine/watchdog/hardware
+  reset and runtime unrealize/re-realize remain unvalidated.
 
 ### QEMU version upgrade
 
@@ -372,7 +385,7 @@ Recent signed commits, all signatures verified:
 
 ## Current firmware blocker: signed indexed halfword load EDD8
 
-Latest unchanged boot: `.cache/felucca-validation/after-parallel-register-multiply/`.
+Latest unchanged boot: `.cache/felucca-validation/after-alnk-lifecycle/`.
 The compact multiply bundle now executes with existing shared CPU arithmetic.
 Execution fails explicitly at the signed sine-table lookup:
 
@@ -384,11 +397,11 @@ Execution fails explicitly at the signed sine-table lookup:
 - ALNK: five completions, four coalesced, zero skipped, 2,560 zero sample words;
   pending `0x80`, no acknowledgment. Splash intact, guard messages and watchdog
   expiry zero. Audio service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `f824623ca5fbdb2dbbd9042ffa42868badadb663cf389f4d87302427bb3962b7`.
-- Generic replay:
-  `.cache/felucca-validation/after-parallel-register-multiply-generic/`.
-- Durable evidence: main repo `.deps/qemu-parallel-register-multiply-2026-10-07/`;
+- QEMU SHA-256: `63ff120e46d998267576f35ed01db1cf84d3406134cfa3105a10cae8bb258598`.
+- Generic replay: `.cache/felucca-validation/after-alnk-lifecycle-generic/`.
+- Durable evidence: main repo `.deps/qemu-alnk-lifecycle-2026-10-07/`;
   preceding CPU, syscon, upgrade and architecture checkpoints are retained.
+  Firmware state and bytes exactly match the pre-lifecycle CPU checkpoint.
 
 ### Resolved DB01 compact multiply parallel head
 
@@ -501,23 +514,19 @@ preserved separately. The old `after-irq-selection/` and
 
 Next implementation sequence:
 
-1. Preserve the QEMU 11.1.2 upgrade gate and source pin above while continuing
-   reached instruction and device bring-up.
-2. Keep the CPU revision fixed while converting ALNK to a resettable QEMU
-   device. Verify local reset cancellation, pending IRQ clearing, repeated
-   reset/reconfiguration and preservation of syscon, SRAM and unrelated
-   controllers. Compare unchanged fixture/generic captures before and after.
-3. Then assign EDD8 signed indexed halfword load to the CPU worker. Establish
-   exact size/shift/register fields independently; test sign extension,
-   address wrapping, incoming aliases, PSR/retirement, conditionals and faults.
-4. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
-   repeat unchanged bounded boot under a new evidence label. Commit only
-   validated changes. Repeat for each actual subsequent CPU/MMIO failure.
-5. Hardware path: shared CLK_CON1/CLK_CON2/IOMAP_CON5 ownership is complete.
-   Convert ALNK to the first resettable QEMU device, retaining canonical shared
-   words and rates. Verify timer cancellation, pending IRQ clearing,
-   repeated reset and reconfiguration without resetting unrelated controllers.
-   Whole-machine reset remains unsupported until all components participate.
+1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
+   reached instruction and device bring-up. Shared syscon ownership and local
+   resettable ALNK are now complete; whole-machine reset remains open.
+2. Assign EDD8 signed indexed halfword load to the CPU worker. Establish exact
+   size/shift/register fields independently; preserve the SLEIGH body/comment
+   scaling discrepancy separately. Test sign extension, address wrapping,
+   incoming aliases, PSR/retirement, conditionals and explicit faults.
+3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
+   repeat unchanged bounded boot under a new label and renamed generic replay.
+   Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
+4. Continue controller lifecycle extraction when reached behavior needs it,
+   preserving canonical shared words, register-driven configurations and
+   unaffected controllers. Whole-machine reset requires all components.
 
 ## Next milestones after the blocker
 

@@ -4,6 +4,7 @@
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
+#include "qemu/main-loop.h"
 #include "qapi/error.h"
 #include "hw/core/boards.h"
 #include "hw/core/loader.h"
@@ -354,6 +355,134 @@ static const Pi32v2ObserverOps observers = {
     .frame = fm1_poc_frame, .loop = fm1_poc_diag_loop,
 };
 
+static void alnk_reset_snapshot(FILE *f, FM1PocState *m)
+{
+    FM1PocALNK *a = &m->alnk;
+    CPUPi32v2State *e = &m->cpu->env;
+    FM1TimerState *t = &m->timers[1];
+    g_autofree char *sram_sha = g_compute_checksum_for_data(G_CHECKSUM_SHA256,
+        memory_region_get_ram_ptr(MACHINE(m)->ram), MACHINE(m)->ram_size);
+    g_autofree char *sample_sha = g_compute_checksum_for_data(G_CHECKSUM_SHA256,
+        a->latest_half, a->latest_half_bytes);
+
+    fprintf(f, "{\"alnk\":{\"control0\":%u,\"control1\":%u,\"control3\":%u,"
+            "\"pending\":%u,\"dma_address\":%u,\"half_words\":%u,"
+            "\"active_half\":%u,\"last_half\":%u,\"enabled\":%s,\"irq_level\":%s,"
+            "\"epoch\":%" PRId64 ",\"deadline\":%" PRId64
+            ",\"scheduled_halves\":%" PRIu64 ",\"completions\":%" PRIu64
+            ",\"acknowledgments\":%" PRIu64 ",\"coalesced_completions\":%" PRIu64
+            ",\"skipped_captures\":%" PRIu64 ",\"sample_words\":%" PRIu64
+            ",\"sample_frames\":%" PRIu64 ",\"nonzero_words\":%" PRIu64
+            ",\"sample_digest\":%u,\"latest_half_bytes\":%u,"
+            "\"latest_half_sha256\":\"%s\",\"realized\":%s,\"validators_registered\":%s},"
+            "\"alnk_timer_pending\":%s,\"syscon\":[%u,%u,%u],"
+            "\"sram_sha256\":\"%s\",\"cpu_hard_irq\":%s,"
+            "\"cpu\":{\"pc\":%u,\"instructions\":%" PRIu64 ",\"in_irq\":%s,"
+            "\"irq_entries\":%" PRIu64 ",\"rti_count\":%" PRIu64 ",\"registers\":[",
+            a->control0, a->control1, a->control3, a->pending, a->dma_address,
+            a->half_words, a->active_half, a->last_half,
+            a->enabled ? "true" : "false", a->irq_level ? "true" : "false",
+            a->epoch, a->deadline, a->scheduled_halves, a->completions,
+            a->acknowledgments, a->coalesced_completions, a->skipped_captures,
+            a->sample_words, a->sample_frames, a->nonzero_words, a->sample_digest,
+            a->latest_half_bytes, sample_sha, DEVICE(a)->realized ? "true" : "false",
+            a->validators_registered ? "true" : "false",
+            timer_pending(a->timer) ? "true" : "false",
+            fm1_syscon_get(&m->syscon, FM1_SYSCON_CLK_CON1),
+            fm1_syscon_get(&m->syscon, FM1_SYSCON_CLK_CON2),
+            fm1_syscon_get(&m->syscon, FM1_SYSCON_IOMAP_CON5), sram_sha,
+            (CPU(m->cpu)->interrupt_request & CPU_INTERRUPT_HARD) ? "true" : "false",
+            e->pc, e->instructions, e->in_irq ? "true" : "false",
+            e->irq_entries, e->rti_count);
+    for (unsigned i = 0; i < 16; i++) {
+        fprintf(f, "%s%u", i ? "," : "", e->gpr[i]);
+    }
+    fprintf(f, "],\"specials\":[");
+    for (unsigned i = 0; i < 16; i++) {
+        fprintf(f, "%s%u", i ? "," : "", e->spr[i]);
+    }
+    fprintf(f, "]},\"timer5\":{\"control\":%u,\"counter\":%u,\"period\":%u,"
+            "\"pending\":%s,\"epoch\":%" PRId64 ",\"deadline\":%" PRId64
+            ",\"expirations\":%" PRIu64 ",\"acknowledgments\":%" PRIu64
+            ",\"timer_pending\":%s},\"unrelated\":{"
+            "\"p33_transfers\":%" PRIu64 ",\"p33_transactions\":%" PRIu64
+            ",\"watchdog_arms\":%" PRIu64 ",\"watchdog_feeds\":%" PRIu64
+            ",\"watchdog_expirations\":%" PRIu64 ",\"watchdog_deadline\":%" PRId64
+            ",\"guard_checks\":%" PRIu64 ",\"write_enable\":%u,"
+            "\"nor_transactions\":%" PRIu64 ",\"nor_transfers\":%" PRIu64
+            ",\"nor_completed_transfers\":%" PRIu64 ",\"nor_read_bytes\":%" PRIu64
+            ",\"nor_control\":%u,\"nor_sfc_control\":%u,"
+            "\"usb_control\":%u,\"usb_bridge\":%u,\"usb_requests\":%" PRIu64
+            ",\"usb_polls\":%" PRIu64 ",\"usb_dma_packets\":%" PRIu64
+            ",\"lcd_control\":%u,\"lcd_pixels_written\":%" PRIu64
+            ",\"lcd_commands\":%" PRIu64 ",\"lcd_dma_transfers\":%" PRIu64
+            ",\"lcd_completed_transfers\":%" PRIu64 "}}",
+            t->control, t->counter, t->period, t->pending ? "true" : "false",
+            t->epoch, t->deadline, t->expirations, t->acknowledgments,
+            timer_pending(t->timer) ? "true" : "false", m->system.p33_transfers,
+            m->system.p33_transactions, m->system.watchdog_arms,
+            m->system.watchdog_feeds, m->system.watchdog_expirations,
+            m->system.watchdog_deadline, m->system.guard_checks, m->system.write_enable,
+            m->nor.transactions, m->nor.transfers, m->nor.completed_transfers,
+            m->nor.read_bytes, m->nor.control, m->nor.sfc_control,
+            m->usb.control, m->usb.bridge, m->usb.requests, m->usb.bridge_poll_reads,
+            m->usb.dma_packets, m->lcd.control, m->lcd.pixels_written,
+            m->lcd.commands, m->lcd.dma_transfers, m->lcd.completed_transfers);
+}
+
+static void alnk_test_reset(void *opaque)
+{
+    BQL_LOCK_GUARD();
+    FM1PocState *m = opaque;
+    g_autofree char *path = g_strdup_printf("%s/alnk-reset.jsonl",
+                                           getenv("FM1_POC_STATE_DIR"));
+    FILE *f = fopen(path, "a");
+    if (!f) { error_report("cannot append ALNK reset evidence"); exit(EXIT_FAILURE); }
+    fprintf(f, "{\"index\":%u,\"total\":%u,\"scheduled_ns\":%" PRId64
+            ",\"actual_ns\":%" PRId64 ",\"before\":", m->alnk_reset_index,
+            m->alnk_reset_count,
+            m->alnk_reset_times[m->alnk_reset_index],
+            qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+    alnk_reset_snapshot(f, m);
+    device_cold_reset(DEVICE(&m->alnk));
+    fprintf(f, ",\"after\":");
+    alnk_reset_snapshot(f, m);
+    fprintf(f, "}\n");
+    if (fclose(f)) { error_report("cannot close ALNK reset evidence"); exit(EXIT_FAILURE); }
+    m->alnk_reset_index++;
+    if (m->alnk_reset_index < m->alnk_reset_count) {
+        timer_mod_ns(m->alnk_reset_timer, m->alnk_reset_times[m->alnk_reset_index]);
+    }
+}
+
+static void configure_alnk_test_resets(FM1PocState *m)
+{
+    const char *schedule = getenv("FM1_POC_ALNK_RESETS_NS");
+    if (!schedule) { return; }
+    if (!getenv("FM1_POC_STATE_DIR") || !*getenv("FM1_POC_STATE_DIR")) {
+        error_report("FM1_POC_ALNK_RESETS_NS requires FM1_POC_STATE_DIR");
+        exit(EXIT_FAILURE);
+    }
+    g_auto(GStrv) entries = g_strsplit(schedule, ",", FM1_POC_MAX_ALNK_RESETS + 1);
+    unsigned count = g_strv_length(entries);
+    if (!count || count > FM1_POC_MAX_ALNK_RESETS) {
+        error_report("FM1_POC_ALNK_RESETS_NS requires 1 to 16 sorted positive nanoseconds");
+        exit(EXIT_FAILURE);
+    }
+    for (unsigned i = 0; i < count; i++) {
+        char *end = NULL;
+        errno = 0;
+        uint64_t ns = g_ascii_strtoull(entries[i], &end, 0);
+        if (errno || !*entries[i] || *entries[i] == '-' || *end || !ns ||
+            ns > INT64_MAX || (i && ns < (uint64_t)m->alnk_reset_times[i - 1])) {
+            error_report("FM1_POC_ALNK_RESETS_NS requires 1 to 16 sorted positive nanoseconds");
+            exit(EXIT_FAILURE);
+        }
+        m->alnk_reset_times[i] = ns;
+    }
+    m->alnk_reset_count = count;
+}
+
 void fm1_test_reset_state(CPUPi32v2State *e)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
@@ -404,6 +533,7 @@ void fm1_test_configure(FM1PocState *m, MachineState *ms)
     m->display_fixture = display;
     m->diag_fixture = diag || m->alnk_probe;
     m->felucca_fixture = felucca;
+    configure_alnk_test_resets(m);
     m->cpu->frame_pc = display ? 0x020004fa : 0;
     m->frame_dir = getenv("FM1_POC_FRAME_DIR");
     if (!m->frame_dir && !m->display_live) { m->frame_dir = "."; }
@@ -498,6 +628,16 @@ void fm1_test_seed_ram(FM1PocState *m)
 
 void fm1_test_start(FM1PocState *m)
 {
+    if (m->alnk_reset_count) {
+        g_autofree char *path = g_strdup_printf("%s/alnk-reset.jsonl",
+                                               getenv("FM1_POC_STATE_DIR"));
+        FILE *f = fopen(path, "w");
+        if (!f || fclose(f)) {
+            error_report("cannot initialize ALNK reset evidence"); exit(EXIT_FAILURE);
+        }
+        m->alnk_reset_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, alnk_test_reset, m);
+        timer_mod_ns(m->alnk_reset_timer, m->alnk_reset_times[0]);
+    }
     if (m->display_live) {
         m->display_key_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, display_key_toggle, m);
         m->display_key_deadline = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 500000000;

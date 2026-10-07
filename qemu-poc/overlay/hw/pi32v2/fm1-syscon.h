@@ -33,5 +33,8 @@ uint32_t fm1_syscon_get(const FM1PocSyscon *syscon, FM1SysconWord word);
  * not change state themselves. Register once during controller wiring. */
 void fm1_syscon_set_validator(FM1PocSyscon *syscon, FM1SysconWord word,
                               FM1SysconValidateWrite validate, void *opaque);
+/* Remove only the matching consumer's callback during device unrealize. */
+void fm1_syscon_clear_validator(FM1PocSyscon *syscon, FM1SysconWord word,
+                                FM1SysconValidateWrite validate, void *opaque);
 
 #endif

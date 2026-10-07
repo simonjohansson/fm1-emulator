@@ -105,3 +105,13 @@ void fm1_syscon_set_validator(FM1PocSyscon *s, FM1SysconWord word,
     s->validators[word] = validate;
     s->validator_opaque[word] = opaque;
 }
+
+void fm1_syscon_clear_validator(FM1PocSyscon *s, FM1SysconWord word,
+                                FM1SysconValidateWrite validate, void *opaque)
+{
+    g_assert((unsigned)word < FM1_SYSCON_WORD_COUNT);
+    g_assert(validate && s->validators[word] == validate &&
+             s->validator_opaque[word] == opaque);
+    s->validators[word] = NULL;
+    s->validator_opaque[word] = NULL;
+}

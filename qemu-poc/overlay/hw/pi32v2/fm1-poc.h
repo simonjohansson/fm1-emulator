@@ -13,6 +13,7 @@
 #include "fm1-syscon.h"
 
 #define TYPE_FM1_POC_MACHINE MACHINE_TYPE_NAME("fm1-poc")
+#define FM1_POC_MAX_ALNK_RESETS 16
 OBJECT_DECLARE_SIMPLE_TYPE(FM1PocState, FM1_POC_MACHINE)
 typedef struct FM1TimerState {
     FM1PocState *machine;
@@ -43,6 +44,10 @@ struct FM1PocState {
     const char *frame_dir;
     QEMUTimer *display_key_timer;
     int64_t display_key_deadline;
+    /* Optional test-only local reset schedule, never guest hardware state. */
+    QEMUTimer *alnk_reset_timer;
+    int64_t alnk_reset_times[FM1_POC_MAX_ALNK_RESETS];
+    unsigned alnk_reset_count, alnk_reset_index;
     uint16_t shift, latched;
     uint8_t matrix[11];
     uint64_t shift_edges, latch_edges;
