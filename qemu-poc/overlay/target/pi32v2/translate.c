@@ -705,7 +705,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_andi_i32(masked, read_gpr(d, x >> 12), packed_mask(x));
         next = here + 6;
         count(d); branch(d, next + (int16_t)displacement * 2, next, masked, op & 1);
-    } else if (op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09) {
+    } else if (op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09 || op == 0xff0c) {
         uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
         TCGCond cond;
         switch (op & 15) {
@@ -714,11 +714,16 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         case 2: cond = TCG_COND_GEU; break;
         case 3: cond = TCG_COND_LTU; break;
         case 8: cond = TCG_COND_GTU; break;
+        case 12: cond = TCG_COND_GT; break;
         default: cond = TCG_COND_LEU; break;
         }
         next = here + 6;
+        if (op == 0xff0c) {
+            gen_helper_pi32v2_signed_branch_end(tcg_env, tcg_constant_i32(next));
+        }
         count(d); compare_branch(d, next + (int16_t)displacement * 2, next, cond,
-                                 read_gpr(d, x >> 12), tcg_constant_i32(x & 4095));
+                                 read_gpr(d, x >> 12),
+                                 tcg_constant_i32(op == 0xff0c ? sext(x & 4095, 12) : x & 4095));
     } else if ((op & 0xfff0) == 0xe800 || (op & 0xfff0) == 0xe880 ||
                (op & 0xfff0) == 0xe900 || (op & 0xfff0) == 0xe980 ||
                (op & 0xfff0) == 0xec00 || (op & 0xfff0) == 0xec80) {
@@ -833,7 +838,7 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
 static unsigned operation_size(uint16_t op)
 {
     if ((op & 0xffc0) == 0xffc0 || (op & 0xfff0) == 0xffe0 || op == 0xff80 ||
-        op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09 ||
+        op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09 || op == 0xff0c ||
         op == 0xff60 || op == 0xff61) { return 6; }
     return op >> 13 == 7 ? 4 : 2;
 }

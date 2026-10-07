@@ -21,16 +21,16 @@ Splash success and first audio entry do not complete this objective.
 
 The user clarified after pausing that the emulator must target all firmware
 for the synth. Felucca is an acceptance workload; its successful boot is not
-the final compatibility boundary. Follow the architecture stages below before
-continuing the previously recorded instruction blocker.
+the final compatibility boundary. The generic boundary gate is complete; reached instruction bring-up has
+resumed through the shared CPU/hardware paths.
 
-Before further firmware-specific integration, audit and separate the present
-fixture machinery from the production CPU/board model. CPU execution and
+Preserve the completed separation of fixture machinery from the production
+CPU/board model during further integration. CPU execution and
 peripheral availability must not depend on firmware names, hashes or guest
 PCs. Keep firmware hashes, section poisoning, checkpoint PCs and guest symbol
-observations in optional test/validation harnesses. Current profile flags also
-select CPU conditional-completion handling and device maps, so this requires
-more than renaming the Felucca launcher.
+observations in optional test/validation harnesses. The former profile-dependent
+CPU conditional-completion handling and device maps now use common behavior;
+fixture loading and observations remain optional.
 
 Make hardware behavior register-driven: support evidenced audio clock/buffer
 configurations and interrupt sources independently of the loaded application.
@@ -90,7 +90,7 @@ stable Rust API changes or physical flashing are authorized by this plan.
   before overlapping controllers are added. Define reset, power cycle and
   storage erase separately. Test pending IRQ/DMA/timer cancellation, clock
   transitions and mid-transfer buffer mutation. Complete reached CPU/device
-  gaps, including the recorded FF0C blocker, then real audio IRQ return,
+  gaps, including the current ECDC blocker, then real audio IRQ return,
   sustained home frames, 30 guest seconds and physical input acceptance.
 - [ ] **4. Demonstrate compatibility.** Inventory and attempt unchanged
   Felucca plus available stock/other firmware using the same machine. Record
@@ -113,8 +113,9 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
 
 ### Known feasibility limits
 
-- Current profiles change CPU conditional completion, reset seeds, GPIO maps
-  and ALNK presence. Removing flags mechanically would break correctness.
+- Profile-dependent CPU behavior/device maps were removed in Stage 2. All
+  images use one instruction per translation block for conditional correctness;
+  batching/performance remain unvalidated.
 - Current devices are mostly one-time initialized structs; watchdog reset
   terminates instead of resetting the machine.
 - USB and candidate UART configurations share CLK_CON1; shared words need a
@@ -152,8 +153,29 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   and pixels. Evidence: `.deps/qemu-architecture-2026-10-07/` in the main repo.
   The common one-instruction TB boundary is intentional; performance and
   pending-IRQ-at-conditional-boundary/page-crossing coverage remain follow-up.
-  Stage 3 now begins with the independently reviewed narrow FF0C semantics;
-  resettable controllers/shared syscon and deeper DMA contracts remain open.
+  Saved as signed commit `bb671f9`; signature verified.
+- 2026-10-07: Stage 3 narrow FF0C signed-literal greater-than branch implemented
+  and independently reviewed. Full ISA, 98 CPU profile runs and 10 IRQ cases
+  pass. Focused validation passes 27 separate-reference comparisons, two
+  independent six-byte conditional skips and six explicit faults. The reference
+  has a conditional scanning/completion discrepancy; final selected THEN with
+  ELSE fails explicitly pending evidence. Unchanged Felucca now reaches ECDC
+  at `0x020023be`, 31 instructions later. The renamed image under the default
+  generic loader matches every captured state field except the profile label;
+  LCD pixels match exactly. Whole SRAM is not compared because fixture poisoning
+  differs. Resettable controllers/shared syscon and DMA contracts remain open.
+
+### QEMU version decision
+
+The POC inherited pinned QEMU 10.0.0; no documented CPU/hardware requirement
+for version 10 was found. Build and regression evidence bind that version.
+In response to the user's version question, recommend a separate upgrade
+milestone before expanding device infrastructure. The official download page
+listed 11.1.2 on 2026-10-07: <https://www.qemu.org/download/>.
+The question did not authorize changing the pin. Keep the tested version until
+the upgrade is selected; then adapt required internal interfaces and run the
+full architecture, ISA, diagnostic, startup, splash and reached-boot gates.
+Preserve both baselines to distinguish upgrade regressions from new behavior.
 
 ## Permanent workspace and checkpoint
 
@@ -261,7 +283,8 @@ public interfaces**. Never copy/link its implementation into QEMU.
   loops, 1,029 guest ms, 12 SIE requests and 240,000 guest polls.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
-  firmware execution still reaches the recorded FF0C blocker below.
+  the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
+  latest firmware blocker is ECDC, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -271,43 +294,61 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Recorded firmware blocker: resume after generic boundary work
+## Current firmware blocker: indexed store ECDC
 
-Latest unchanged boot: `.cache/felucca-validation/after-irq-selection/`.
-It enters the **real** audio wrapper at `0x0200047e` and handler at
-`0x02002266`, then fails explicitly:
+Latest unchanged boot: `.cache/felucca-validation/after-signed-literal-branch/`.
+It enters the real audio wrapper at `0x0200047e` and handler at `0x02002266`,
+passes the former FF0C blocker, then fails explicitly:
 
-- PC: `0x020022aa`
-- Bytes: `0c ff ff 1f 48 0c` (`FF0C/1FFF/0C48`)
-- Disassembly: `ifs (r1 > -1) goto 6288`, target `0x02003b40`
-- Instructions: 43,278,840; virtual time: 346,230,728 ns
-- IRQ11 entries: 1; IRQ11 returns: 0; IRQ63 entries/returns: 0
-- ICFG: `0x030b0308`; USP: `0x01c79eac`
-- SP: `0x01c7be24`, exactly SSP minus 28 wrapper + 52 callee-save + 396 local bytes
-- ALNK: 5 completions, 4 coalesced, 0 skipped captures, 2,560 actual zero sample
-  words, pending `0x80`; no acknowledgment yet
-- Guard/error fields and watchdog expiry are zero; splash pixels are intact.
-- Evidence binds QEMU SHA-256
-  `4684980ab108f88e99193c1b74d08b757e69c15d1450b86c18aad4b57fa5789e`.
+- PC: `0x020023be`; opcode words `ECDC/5013`.
+- Vendor disassembly: `[++r1=r0] = r5`. Establish exact addressing, writeback,
+  aliasing and fault ordering from independent evidence before implementing.
+- Instructions: 43,278,871; virtual time: 346,230,976 ns.
+- IRQ11 entries: 1; IRQ11 returns: 0; IRQ63 entries/returns: 0.
+- ICFG: `0x030b0308`; USP: `0x01c79eac`; SP: `0x01c7be24`.
+- ALNK: five completions, four coalesced, zero skipped, 2,560 zero sample words;
+  pending `0x80`, no acknowledgment. Splash intact, guard messages and watchdog
+  expiry zero. This is not completed audio service, synthesis or a home screen.
+- QEMU SHA-256:
+  `89f59afe7a71604ac51b7ba5a410482720edebdba891a706acdc88b73ab64d81`.
+- Generic replay: `.cache/application-validation/after-signed-literal-branch/`.
+- Durable evidence: main repo `.deps/qemu-architecture-2026-10-07/`.
 
-This is first audio entry, **not** a completed audio ISR, rendered audio or a
-home screen. No Felucca live viewer has been launched.
+No Felucca live viewer has been launched.
 
-The CPU worker's read-only finding: existing long-literal decoder/size logic
-omits FF0C; operand `1FFF` specifies r1 and signed 12-bit literal -1, and the
-signed word displacement is relative to PC+6. This is a proposed narrow
-signed-GT long-literal extension, not implemented or tested yet.
+### Resolved FF0C checkpoint and conditional limitation
 
-After the Stage 2 boundary gate, continue this established bring-up sequence:
+The previous stop at `0x020022aa` (`FF0C/1FFF/0C48`) was a six-byte signed
+literal branch: r1 > -1, displacement relative to PC+6. The narrow
+implementation sign-extends the 12-bit literal and 16-bit word displacement,
+preserves PSR/RETS and retires once. Existing unsigned forms retain their
+semantics. `validate_long_signed_branch.py` tests boundaries, register
+selection, conditional sizing and unsupported neighboring opcodes.
 
-1. Assign FF0C to the CPU worker. Add only the reached semantics and six-byte
-   size. Test taken/not-taken values around -1, signed extremes, literal and
-   displacement boundaries, PSR preservation, instruction length/retirement,
-   and invalid neighboring forms; use the separate oracle where supported.
-2. Obtain review; build and run focused/full ISA gates; repeat the unchanged
-   bounded boot under a **new evidence label**. Commit only validated changes.
-3. Repeat for each actual subsequent CPU/MMIO failure. Do not invent missing
-   devices, broaden instruction families speculatively or hide failures.
+Black-box Rust reference runs disagree on conditional scanning/completion for
+FF0C: skipped arms land on its displacement word, while a final selected THEN
+with ELSE executes ELSE unexpectedly. Independent six-byte skip expectations
+are tested; final selected THEN with ELSE is explicitly unsupported before
+retirement/branch effects. Do not copy the reference implementation or claim
+hardware validation for this unresolved combination. Disagreement evidence is
+preserved separately. The old `after-irq-selection/` and
+`after-generic-boundaries/` checkpoints remain historical evidence.
+
+Next implementation sequence:
+
+1. Resolve the QEMU upgrade recommendation above before expanding device
+   infrastructure; the current pin is unchanged.
+2. Assign the reached ECDC store to the CPU worker for independent encoding
+   and semantics analysis. Implement only evidenced behavior with focused
+   aliasing, addressing, width/alignment, guard/fault and retirement tests.
+3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
+   repeat unchanged bounded boot under a new evidence label. Commit only
+   validated changes. Repeat for each actual subsequent CPU/MMIO failure.
+4. Hardware path: centralize shared CLK_CON1/CLK_CON2/IOMAP_CON5 ownership
+   without changing masks or supported rates, then convert ALNK to the first
+   resettable QEMU device. Verify timer cancellation, pending IRQ clearing,
+   repeated reset and reconfiguration without resetting unrelated controllers.
+   Whole-machine reset remains unsupported until all components participate.
 
 ## Next milestones after the blocker
 

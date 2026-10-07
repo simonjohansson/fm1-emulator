@@ -524,8 +524,8 @@ and return counts. Established foundation/probe/QMP checks also pass, as does
 the unchanged diagnostic through 6,173 balanced timer interrupts and its
 scheduled disconnected-USB retry.
 
-The unchanged Felucca binary now enters its own audio wrapper and C handler.
-It stops explicitly at the signed literal branch `FF0C/1FFF/0C48` at
+At the IRQ-selection milestone, unchanged Felucca entered its own audio
+wrapper and C handler. It stopped explicitly at the signed literal branch `FF0C/1FFF/0C48` at
 `0x020022aa`, after 43,278,840 instructions. The captured ICFG is `0x030b0308`
 and SP is `0x01c7be24`, exactly 28 wrapper + 52 callee-save + 396 local bytes
 below SSP. ALNK has completed five halves, coalesced four pending completions,
@@ -536,8 +536,39 @@ screen. ADC, sustained operation, physical inputs and the Felucca viewer
 remain unvalidated. See `after-irq-selection/` and the focused/regression
 records preserved in the worktree cache and durable `.deps` directory.
 
-Work is paused at the user's request; [../plan.md](../plan.md) contains the
-resume instructions and required subagent workflow.
+Work resumed with user authorization on 2026-10-07. The generic boundary
+extraction and signed-literal branch milestone below supersede that checkpoint;
+[../plan.md](../plan.md) contains the current sequence and subagent workflow.
+
+### Signed-literal branch and latest checkpoint
+
+FF0C now implements signed greater-than against a signed 12-bit literal with
+a signed 16-bit word displacement from PC+6. All images share this CPU path;
+existing unsigned branch forms are unchanged. Validate with:
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_long_signed_branch.py
+```
+
+The focused gate passes 27 comparisons against the separate reference, two
+independent six-byte conditional-skip checks and six explicit faults. The
+reference's conditional scanner/completion disagrees for this opcode. Final
+selected THEN with ELSE is conservatively rejected before retirement; this
+combination needs independent hardware/ISA evidence. These checks are host
+validation only. Full ISA, 98 CPU-profile runs and ten IRQ cases also pass.
+
+Unchanged Felucca now stops at unsupported `ECDC/5013`, PC `0x020023be`, after
+43,278,871 instructions (346,230,976 virtual ns): 31 instructions beyond the
+previous branch. The vendor disassembly calls this `[++r1=r0] = r5`; exact
+addressing/writeback semantics remain to be established. Audio still has one
+IRQ entry and no return or acknowledgment, with five captured zero halves.
+The splash is intact. Generic default loading of a renamed identical image
+matches all captured state fields apart from the profile label; LCD pixels
+match exactly. The differently initialized whole SRAM images are not compared.
+Evidence is under `after-signed-literal-branch/` in both the Felucca and generic
+application caches, copied to the main repo's
+`.deps/qemu-architecture-2026-10-07/`. This does not establish completed audio
+service, synthesis or a home screen.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

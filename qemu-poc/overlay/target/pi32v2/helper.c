@@ -120,6 +120,16 @@ uint32_t HELPER(pi32v2_call_return)(CPUPi32v2State *env, uint32_t next)
     return HELPER(pi32v2_advance)(env, next);
 }
 
+/* This new branch is established outside conditional blocks. The reference
+ * disagrees for a final selected THEN with ELSE, and hardware evidence for
+ * that combination is absent. Reject it before any retirement/branch effect. */
+void HELPER(pi32v2_signed_branch_end)(CPUPi32v2State *env, uint32_t next)
+{
+    if (env->predicate_from && next == env->predicate_end) {
+        pi32v2_fail(env, "final THEN signed-literal branch with ELSE is unsupported");
+    }
+}
+
 /* Fresh implementation of the four observed condition bits. No Rust code
  * is linked or copied. The probe validates values, not all flag semantics. */
 uint32_t HELPER(pi32v2_alu)(CPUPi32v2State *env, uint32_t a, uint32_t b,
