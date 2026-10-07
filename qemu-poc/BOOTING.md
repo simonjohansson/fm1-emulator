@@ -873,7 +873,7 @@ completion and neighboring memory encodings retain their behavior.
 
 `validate_signed_register_branch.py` passes 70 separate-reference cases
 (54 ordinary, 16 conditional), one generic replay and16 model faults at that
-checkpoint (15 after EE80 admission retires its obsolete EE8E negative).
+checkpoint (14 after EE80/ED80 admission retires their obsolete negatives).
 Register fields, signed boundaries, displacement endpoints, aliases, PSR,
 conditional sizing and retirement are checked. Second-word bits11:9 are
 rejected as conservative decoder policy; primary evidence leaves them
@@ -1140,7 +1140,7 @@ firmware advances one instruction to EE80; renamed generic loading matches
 captured state except profile and all sample/LCD bytes. Whole SRAM is not
 compared across different initialization modes.
 
-Latest stop: EE80/1004 at `0x020039a0`, 43,289,451
+At this milestone: EE80/1004 at `0x020039a0`, 43,289,451
 instructions and 346,315,616 ns. Vendor `ifs (r1 <= r0) goto 0x020039ac` uses a signed9 word displacement
 from PC+4. The exact Apache progflow constructor286..290 supports signed LE.
 Extend only this canonical register-branch family; preserve inherited predicate
@@ -1153,7 +1153,7 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_maximum.py
 ```
 
-### EE80 signed register less-or-equal branch and latest checkpoint
+### EE80 signed register less-or-equal branch checkpoint
 
 Exact EE80/FFF0 compares signed32 second-word bits12..15 against opcode
 bits0..3 with LE and signed9 word displacement from PC+4. Apache progflow
@@ -1162,7 +1162,8 @@ Only admission and condition change; count/branch recording, common predicate
 advance, helpers and classifiers remain fixed.
 
 `validate_signed_register_le_branch.py` passes 70 reference cases (54 ordinary,
-16 balanced conditional), one generic replay and 15 model faults: seven unused
+16 balanced conditional), one generic replay and 15 model faults at the EE80
+milestone (14 after ED80 admission): seven unused
 bit policy faults, two deferred families, two PC guards and four inherited
 outgoing-arm faults. Fields/aliases, signed boundaries/equality, displacement
 endpoints, full PSR/RETS, memory and retirement are checked. Taken exits retain
@@ -1190,6 +1191,44 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_le_branch.py
+```
+
+### ED80 signed register less-than branch and latest checkpoint
+
+Exact ED80/FFF0 compares signed32 second-word bits12..15 against opcode
+bits0..3 using LT and signed9 word displacement from PC+4. Apache progflow
+constructor266..270 and vendor ED81/0019 agree. Only admission and condition
+change; canonical operand policy, count/recording, predicate advance, helpers
+and classifiers remain fixed.
+
+The new LT gate and both updated GT/LE gates each pass 70 reference cases,
+one generic replay and 14 model faults. Each retains 54 ordinary and 16 balanced
+conditional cases, seven unused-bit policy faults, one deferred family, two PC
+guards and four inherited outgoing-arm faults. Both older gates remove only
+ED8E and its counts, preserving all functions and positive generation.
+Signed equality distinguishes LT from LE. Fields/aliases, signed boundaries,
+displacement endpoints, PSR/RETS, memory and retirement remain checked.
+
+Taken exits retain the predicate and fault at the following IF after branch
+retirement; separate reference completion disagreements remain recorded.
+IRQ blocking is source inspection only. Primary leaves unused bits unconstrained;
+canonical rejection remains model policy, with one reference-accepted pattern4
+and six reference errors. Hardware validity/fault state and PC32 wrap remain
+unverified. Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware
+advances seven instructions to EDDC; renamed state except profile and sample/LCD
+bytes match. Whole SRAM is not compared across initialization modes.
+
+Latest stop: EDDC/3312 at `0x020039fc`, 43,289,460
+instructions and 346,315,688 ns. Vendor `r3 = h[++r1=r3] (s)` is reached in the table lookup.
+Establish exact halfword indexing, sign extension and writeback from pinned
+load/store facts plus independent probes. Preserve existing word/indexed forms,
+explicit alias limitations and fault ordering until evidence supports changes.
+Caches use `after-signed-register-lt-branch` and its `-generic` label; main repo
+`.deps/qemu-signed-register-lt-branch-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 1/0; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_lt_branch.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
