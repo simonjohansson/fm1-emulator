@@ -1,8 +1,12 @@
-# Felucca QEMU resume plan
+# Generic FM-1 QEMU implementation plan
 
-Paused at the user's request on 2026-10-06 because credits were running low.
-The current IRQ checkpoint is tested and committed. Resume only when the
-user asks to continue; do not start new bring-up work from this document alone.
+Resumed with explicit user authorization on 2026-10-07 after reviewing the
+three-layer architecture against the POC. The user approved updating this
+plan and working through it. The 2026-10-06 pause is superseded.
+
+Main agent: **Astra high**. Every subagent: **Sol 6.1 Extra high**, configured
+explicitly as described below. Target **macOS only** initially; Linux and
+Windows are deferred. Keep the existing Cocoa frontend initially.
 
 ## Objective still to complete
 
@@ -17,7 +21,8 @@ Splash success and first audio entry do not complete this objective.
 
 The user clarified after pausing that the emulator must target all firmware
 for the synth. Felucca is an acceptance workload; its successful boot is not
-the final compatibility boundary. Keep implementation paused until resumed.
+the final compatibility boundary. Follow the architecture stages below before
+continuing the previously recorded instruction blocker.
 
 Before further firmware-specific integration, audit and separate the present
 fixture machinery from the production CPU/board model. CPU execution and
@@ -37,12 +42,108 @@ Preserve the required subagents, independent review and serialized signed
 milestones described below. This clarification does not authorize changes to
 the stable Rust implementation or physical flashing.
 
+## Accepted architecture and scope
+
+Three logical layers share QEMU's execution, memory and virtual-time runtime;
+they are not separate processes:
+
+1. **CPU:** pi32v2 architectural state, instructions, memory operations and
+   exception/interrupt entry and return. No firmware names, hashes, symbols,
+   checkpoint addresses or board wiring may select architectural behavior.
+2. **Hardware:** separate reusable JieLi SoC controllers/composition from
+   FM-1 board wiring and attached components. SoC composition owns address
+   decoding, shared syscon/pinmux/clock words and interrupt routing. Controllers
+   own registers, transfers and IRQ outputs. Board composition owns evidenced
+   flash/LCD/control/audio connections. Do not infer unverified components.
+3. **Host interface:** Cocoa display and physical controls, QEMU/CoreAudio
+   playback, CoreMIDI adapters, console and session controls. Exchange actual
+   pixels, samples and physical/transport events; never modify guest variables
+   to fabricate behavior. Headless execution uses the same hardware.
+
+Optional validation instrumentation is outside the production behavior
+contract. Hashes, poisoned sections, fixed observation PCs and symbol reads
+remain valid test tools. Separate architectural reset from an explicit,
+documented application-entry loader. Full ROM/SPL/flash boot is a distinct
+capability requiring the necessary inputs and hardware evidence.
+
+Preserve the working overlay and pinned QEMU build during extraction; a
+repository-wide fork/layout migration is not a prerequisite. Preserve the
+separate-process Rust reference and licensing boundary. No firmware patches,
+stable Rust API changes or physical flashing are authorized by this plan.
+
+### Ordered stages and completion gates
+
+- [ ] **1. Establish contracts and baseline.** Inventory available firmware
+  artifacts and supported entry modes. Record hardware assumptions and
+  fixture dependencies. Re-run the full ISA baseline (last full run predates
+  IRQ changes) before changing CPU behavior. Preserve existing boot evidence.
+- [ ] **2. Establish generic boundaries.** Isolate test observers and loader
+  state. Make CPU semantics and hardware availability independent of fixture
+  selection. Preserve conditional-call completion and IRQ admission before
+  attempting larger translation blocks. Preserve explicit protection faults
+  and cached-code invalidation; plain QEMU ROM mappings can discard writes
+  rather than reproducing the current fault. Gate on ISA, startup, splash,
+  diagnostic and interrupt regressions, plus differently laid-out test images
+  executing through the same hardware/CPU configuration.
+- [ ] **3. Continue hardware bring-up through those boundaries.** Introduce
+  resettable QEMU devices incrementally; centralize shared clock/routing words
+  before overlapping controllers are added. Define reset, power cycle and
+  storage erase separately. Test pending IRQ/DMA/timer cancellation, clock
+  transitions and mid-transfer buffer mutation. Complete reached CPU/device
+  gaps, including the recorded FF0C blocker, then real audio IRQ return,
+  sustained home frames, 30 guest seconds and physical input acceptance.
+- [ ] **4. Demonstrate compatibility.** Inventory and attempt unchanged
+  Felucca plus available stock/other firmware using the same machine. Record
+  identities, entry contracts and precise unsupported behavior. Different
+  layouts/diagnostics are regression coverage, not proof of all-firmware
+  support. Missing hardware behavior must not be replaced by image-specific
+  runtime branches. Full hardware boot has its own acceptance gate.
+- [ ] **5. Complete the macOS host.** Retain Cocoa; add actual controls,
+  QEMU/CoreAudio output, CoreMIDI and the appropriate UART/USB transport.
+  Confirm transport evidence before making serial a prerequisite. Define
+  bounded queues, callback ownership, pause/rebase/late-event/overflow policy
+  and release handling. Host callbacks must not mutate guest state. Separate
+  host underruns from guest FIFO/DMA failures. Test signed-app TCG early and
+  bundle non-system dependencies; release must not require Homebrew/mise.
+
+Stage 3 evolves devices incrementally alongside reached behavior; it does not
+require speculative implementation of the entire SoC before the next boot.
+A small early packaging smoke test can proceed independently once scoped,
+but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred.
+
+### Known feasibility limits
+
+- Current profiles change CPU conditional completion, reset seeds, GPIO maps
+  and ALNK presence. Removing flags mechanically would break correctness.
+- Current devices are mostly one-time initialized structs; watchdog reset
+  terminates instead of resetting the machine.
+- USB and candidate UART configurations share CLK_CON1; shared words need a
+  syscon owner. Current timer/SPI/audio rates are functional assumptions.
+- ALNK captures a whole half and LCD a whole transfer at completion. This
+  assumes stable source buffers; active-buffer mutation needs explicit tests
+  and an evidenced consumption model before generic streaming claims.
+- NOR supports reads but not persistent write/erase or full hardware boot.
+  ADC, UART and connected USB MIDI/CDC remain missing. Current build captures
+  audio samples but does not enable CoreAudio playback.
+- Saved results prove unchanged splash and first audio IRQ entry, not a
+  completed audio ISR, synthesis or real-time throughput. Keep controlled
+  single-threaded tests separate from interactive timing. The proposal's
+  2x offline synthesis and 30-minute live targets are unmeasured goals;
+  benchmark fresh guest-produced frames, not merely a WAV sink or UI pacing.
+
+### Current work ledger
+
+- 2026-10-07: architecture reviewed with Sol 6.1 Extra high CPU, hardware and
+  macOS reviewers. User authorized implementation. Updating the plan and
+  establishing Stage 1 evidence precede the first Stage 2 extraction.
+
 ## Permanent workspace and checkpoint
 
 - Worktree: `/Users/simonjohansson/src/fm1-qemu-poc`
 - Branch: `codex/qemu-poc`
 - Last implementation commit: `74f2ce6` — Dispatch the reached Felucca audio interrupt.
-- This plan is a subsequent signed documentation commit.
+- Architecture review baseline: `268e562`; later milestones are recorded in
+  the work ledger and Git history.
 - Main repository: `/Users/simonjohansson/src/fm1-emulator`
 - Felucca repository: `/Users/simonjohansson/src/Felucca`
 - Durable evidence: `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-felucca-2026-10-06/`
@@ -151,7 +252,7 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Exact current blocker: start here
+## Recorded firmware blocker: resume after generic boundary work
 
 Latest unchanged boot: `.cache/felucca-validation/after-irq-selection/`.
 It enters the **real** audio wrapper at `0x0200047e` and handler at
@@ -177,6 +278,8 @@ The CPU worker's read-only finding: existing long-literal decoder/size logic
 omits FF0C; operand `1FFF` specifies r1 and signed 12-bit literal -1, and the
 signed word displacement is relative to PC+6. This is a proposed narrow
 signed-GT long-literal extension, not implemented or tested yet.
+
+After the Stage 2 boundary gate, continue this established bring-up sequence:
 
 1. Assign FF0C to the CPU worker. Add only the reached semantics and six-byte
    size. Test taken/not-taken values around -1, signed extremes, literal and
@@ -315,4 +418,5 @@ No hardware access/flashing is needed or authorized by this plan.
 The permanent path may be outside a future session's default writable roots.
 Use a properly scoped escalation citing the original attached bring-up request
 and the relocation authorization if required; do not bypass sandbox review.
-The current session's shared runs are complete and workers are holding.
+On resume, inspect worker state and assign explicit ownership before edits.
+Record completed checks and the next concrete action in the work ledger.
