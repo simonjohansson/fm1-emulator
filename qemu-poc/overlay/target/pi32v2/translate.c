@@ -487,6 +487,16 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         else { load(d, gpr[x >> 12], addr, kind == 4 ? MO_SB : MO_UB); }
         if (kind == 8 || kind == 10) { tcg_gen_mov_i32(gpr[base], addr); }
         next = here + 4;
+    } else if (op == 0xeed2) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, source = x >> 12;
+        unsigned stride = (x & 15) | ((x >> 8) & 15) * 16;
+        /* Vendor EED2 2510 stores b[r1++=80] = r2. Store the incoming
+         * low byte at the old base, including source==base, then advance
+         * by the unsigned byte stride. A failed store leaves base intact. */
+        store(d, read_gpr(d, source), read_gpr(d, base), MO_UB);
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), stride);
+        next = here + 4;
     } else if (op == 0xeed4) {
         uint16_t x = fetch(d, here + 2);
         unsigned base = (x >> 4) & 15, dest = x >> 12;

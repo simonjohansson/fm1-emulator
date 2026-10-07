@@ -24,7 +24,8 @@ TCG diagnostics now print three instruction metadata words; the parsers check
 PC/zero/zero while retaining the common one-instruction TB assertion.
 
 At upgrade acceptance, unchanged Felucca and a renamed image through the
-default generic loader stopped at ECDC, `0x020023be`, 43,278,871 instructions and 346,230,976 ns. Within
+default generic loader stopped at ECDC, `0x020023be`, 43,278,871 instructions
+and 346,230,976 ns. Within
 each loader mode, every captured state field, whole SRAM, sample bytes and LCD
 pixels match QEMU 10 exactly. The generic and fixture runs also match every
 state field except the profile label; sample and LCD bytes match too. Their
@@ -595,10 +596,12 @@ selected THEN with ELSE is conservatively rejected before retirement; this
 combination needs independent hardware/ISA evidence. These checks are host
 validation only. Full ISA, 98 CPU-profile runs and ten IRQ cases also pass.
 
-After this branch milestone, unchanged Felucca stopped at unsupported `ECDC/5013`, PC `0x020023be`, after
+After this branch milestone, unchanged Felucca stopped at unsupported
+`ECDC/5013`, PC `0x020023be`, after
 43,278,871 instructions (346,230,976 virtual ns): 31 instructions beyond the
 previous branch. The vendor disassembly calls this `[++r1=r0] = r5`; exact
-addressing/writeback semantics were established in the next milestone below. Audio still has one
+addressing/writeback semantics were established in the next milestone below.
+Audio still has one
 IRQ entry and no return or acknowledgment, with five captured zero halves.
 The splash is intact. Generic default loading of a renamed identical image
 matches all captured state fields apart from the profile label; LCD pixels
@@ -608,7 +611,7 @@ application caches, copied to the main repo's
 `.deps/qemu-architecture-2026-10-07/`. This does not establish completed audio
 service, synthesis or a home screen.
 
-### Preindex word store and latest checkpoint
+### Preindex word store checkpoint
 
 ECDC kind 3 now stores a word at the wrapping, unscaled sum of the incoming
 base and index and writes that sum back to the base. This common CPU behavior
@@ -625,9 +628,9 @@ Fault-state writeback follows the existing model policy; hardware fault-state
 ordering is unverified. Full ISA, 98 CPU-profile cases, ten IRQ cases and
 foundation/probe/QMP/fault regressions also pass after this change.
 
-Unchanged Felucca now reaches `EED2/2510`, PC `0x0200249e`, after 43,279,178
+After the preindex milestone, unchanged Felucca reached `EED2/2510`, PC `0x0200249e`, after 43,279,178
 instructions and 346,233,432 virtual ns. The vendor disassembly calls it
-`b[r1++=80] = r2`; exact postincrement semantics need independent evidence.
+`b[r1++=80] = r2`; its semantics are established in the next milestone below.
 It advances 307 instructions beyond ECDC. Audio still has one IRQ entry,
 no acknowledgment/return and five captured zero halves; the splash is intact.
 A renamed unchanged image under the default generic loader matches all
@@ -637,6 +640,35 @@ Evidence labels are `after-indexed-store` and `after-indexed-store-generic`,
 saved to main repo `.deps/qemu-indexed-store-2026-10-07/` with focused gates
 and raw oracle disagreement evidence. This is not completed audio service,
 synthesis or a home screen.
+
+### Postincrement byte store and latest checkpoint
+
+Exact EED2 now stores the incoming source low byte at the old base, then adds
+the unsigned eight-bit immediate stride to that base. Source==base uses the
+incoming pointer byte, matching the pinned SLEIGH and separate reference.
+The behavior is shared by every image; neighboring opcodes are unchanged.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_postincrement_store.py
+```
+
+The focused gate passes 49 reference comparisons, one generic replay and nine
+fault cases. It verifies stride/byte boundaries, every GPR field and alias,
+PSR, conditional selection/skip, retirement and fault-before-writeback model
+state. Hardware fault state and successful 32-bit wrapping writeback remain
+unverified. Full ISA, ECDC, 98 profiles, ten IRQ cases and boot gates pass.
+
+Unchanged Felucca now stops at `F1E0/1EB3` at `0x02002776`, after 43,279,574
+instructions and 346,236,600 virtual ns. The existing packed multiply needs
+parallel-head destination classification: the vendor bundle is
+`r0 = r1 * 0x598` with `[sp+76] = r1`. The EED2 milestone advances another
+396 instructions; audio still has one IRQ entry without acknowledgment/return,
+five captured zero halves and an intact splash. The renamed default-loader
+replay matches captured state except the profile label, sample bytes and LCD
+pixels. Whole SRAM is not compared across different initialization modes.
+Caches use `after-postincrement-store` and `after-postincrement-store-generic`;
+durable logs, focused gates and raw reference probes are in the main repo's
+`.deps/qemu-postincrement-store-2026-10-07/`. Home and synthesis remain unverified.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

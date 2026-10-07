@@ -90,7 +90,7 @@ stable Rust API changes or physical flashing are authorized by this plan.
   before overlapping controllers are added. Define reset, power cycle and
   storage erase separately. Test pending IRQ/DMA/timer cancellation, clock
   transitions and mid-transfer buffer mutation. Complete reached CPU/device
-  gaps, including the current EED2 blocker, then real audio IRQ return,
+  gaps, including the current F1E0 bundle blocker, then real audio IRQ return,
   sustained home frames, 30 guest seconds and physical input acceptance.
 - [ ] **4. Demonstrate compatibility.** Inventory and attempt unchanged
   Felucca plus available stock/other firmware using the same machine. Record
@@ -186,6 +186,14 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   Evidence and raw oracle disagreements are saved durably in the main repo's
   `.deps/qemu-indexed-store-2026-10-07/`. Audio acknowledgment/return and the
   home screen remain open.
+
+- 2026-10-07: Stage 3 exact EED2 postincrement byte store implemented and
+  independently reviewed. Focused gate passes 49 reference comparisons, one
+  generic replay and nine faults; full ISA, ECDC, 98 profiles, ten IRQ cases
+  and boot gates pass. Unchanged Felucca advances to F1E0 at `0x02002776`;
+  renamed default-loader replay matches captured state, sample and LCD bytes.
+  Evidence: `.deps/qemu-postincrement-store-2026-10-07/` in the main repo.
+  The current audio IRQ has not acknowledged or returned.
 
 ### QEMU version upgrade
 
@@ -313,7 +321,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is EED2, recorded below.
+  latest firmware blocker is F1E0, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -323,26 +331,45 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: postincrement byte store EED2
+## Current firmware blocker: packed multiply parallel head F1E0
 
-Latest unchanged boot: `.cache/felucca-validation/after-indexed-store/`.
-The generic preindex word store now clears the handler's SRAM work areas,
-then execution fails explicitly at the next reached instruction:
+Latest unchanged boot: `.cache/felucca-validation/after-postincrement-store/`.
+Both indexed stores now execute through the shared CPU path. Execution fails
+explicitly at the next reached parallel bundle:
 
-- PC: `0x0200249e`; opcode words `EED2/2510`.
-- Vendor disassembly: `b[r1++=80] = r2`. Establish exact stride encoding,
-  source/base aliasing and fault ordering independently before implementing.
-- Instructions: 43,279,178; virtual time: 346,233,432 ns.
+- PC: `0x02002776`; head words `F1E0/1EB3`; compact tail `3381`.
+- Vendor disassembly: `r0 = r1 * 0x598`, paired with `[sp+76] = r1`.
+  The nonparallel packed multiply is already implemented; independently verify
+  destination classification and incoming-value capture for the bundle.
+- Instructions: 43,279,574; virtual time: 346,236,600 ns.
 - IRQ11 entries: 1; IRQ11 returns: 0; IRQ63 entries/returns: 0.
-- ICFG: `0x030b0308`; USP: `0x01c79eac`; SP: `0x01c7be24`.
 - ALNK: five completions, four coalesced, zero skipped, 2,560 zero sample words;
   pending `0x80`, no acknowledgment. Splash intact, guard messages and watchdog
   expiry zero. This is not completed audio service, synthesis or a home screen.
 - QEMU SHA-256:
-  `1fa22840f18fb0f0aaa27aa78c83b0c3476d90120972e34302c07449a473a44e`.
-- Generic replay: `.cache/felucca-validation/after-indexed-store-generic/`.
-- Durable evidence: main repo `.deps/qemu-indexed-store-2026-10-07/`;
-  earlier upgrade and architecture checkpoints remain in their own directories.
+  `b9d68d0825e23b2b0cb25d63c29017d6a8ba5baf3464f1eb0b080dc7851e525f`.
+- Generic replay: `.cache/felucca-validation/after-postincrement-store-generic/`.
+- Durable evidence: main repo `.deps/qemu-postincrement-store-2026-10-07/`;
+  earlier indexed-store, upgrade and architecture checkpoints are retained.
+
+### Resolved EED2 checkpoint
+
+`EED2/2510` at `0x0200249e` stores the incoming source's low byte at the old
+base, then advances the base by the unsigned eight-bit immediate stride.
+Source==base stores the old pointer byte; all register fields use common CPU
+behavior. The exact opcode was added without changing neighboring operations
+or the parallel classifier.
+
+`validate_postincrement_store.py` passes 49 separate-reference comparisons,
+one generic-loader replay and nine explicit faults. It verifies stride
+boundaries, byte truncation/neighbor preservation, all GPR fields/aliases,
+PSR, conditional sizing, retirement, guards and fault-before-writeback model
+state. Hardware fault state is unverified; a successful 32-bit wrapping
+writeback cannot be observed in the available memory map. Full ISA, ECDC,
+98 CPU-profile runs, ten IRQ cases and boot/fault/QMP gates pass. Unchanged
+Felucca advances another 396 instructions to F1E0; its renamed default-loader
+replay matches all captured state fields except the profile label and all
+sample/LCD bytes. Whole SRAM is not compared across loader initialization modes.
 
 ### Resolved ECDC checkpoint and alias limitation
 
@@ -389,9 +416,10 @@ Next implementation sequence:
 
 1. Preserve the QEMU 11.1.2 upgrade gate and source pin above while continuing
    reached instruction and device bring-up.
-2. Assign the reached EED2 store to the CPU worker for independent encoding
-   and semantics analysis. Implement only evidenced behavior with focused
-   aliasing, addressing, width/alignment, guard/fault and retirement tests.
+2. Assign the reached F1E0 parallel multiply head to the CPU worker. Inspect
+   the existing multiply and bundle patterns before extending destination
+   classification. Test incoming-value aliases, conflicts, sizing/retirement,
+   PSR and explicit bundle faults; do not change existing multiply arithmetic.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new evidence label. Commit only
    validated changes. Repeat for each actual subsequent CPU/MMIO failure.
