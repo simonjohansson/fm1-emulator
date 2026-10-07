@@ -540,13 +540,19 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0xecdc) {
         uint16_t x = fetch(d, here + 2);
         unsigned base = (x >> 4) & 15, dest = x >> 12;
-        /* Vendor ECDC 1162 at Felucca 0x020049fa loads r1 from
-         * [++r6=r1]. Capture the incoming increment before loading r1. */
-        if ((x & 15) != 2 || base == dest) { goto illegal; }
+        unsigned kind = x & 15;
+        /* Vendor ECDC 1162 loads r1 from [++r6=r1]; ECDC 5013 stores
+         * r5 to [++r1=r0]. Both use an unscaled incoming register sum.
+         * Source==base stores disagree between pinned SLEIGH and the
+         * separate oracle; reject that unresolved alias before effects. */
+        if ((kind != 2 && kind != 3) || base == dest) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
         tcg_gen_add_i32(addr, read_gpr(d, base), read_gpr(d, (x >> 8) & 15));
+        /* Keep the existing pre-index writeback-before-access policy.
+         * Hardware state after an access fault has not been established. */
         tcg_gen_mov_i32(gpr[base], addr);
-        load(d, gpr[dest], addr, MO_LEUL | MO_ALIGN);
+        if (kind == 3) { store(d, read_gpr(d, dest), addr, MO_LEUL | MO_ALIGN); }
+        else { load(d, gpr[dest], addr, MO_LEUL | MO_ALIGN); }
         next = here + 4;
     } else if (op == 0xedd0) {
         uint16_t x = fetch(d, here + 2);

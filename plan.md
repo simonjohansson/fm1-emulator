@@ -90,7 +90,7 @@ stable Rust API changes or physical flashing are authorized by this plan.
   before overlapping controllers are added. Define reset, power cycle and
   storage erase separately. Test pending IRQ/DMA/timer cancellation, clock
   transitions and mid-transfer buffer mutation. Complete reached CPU/device
-  gaps, including the current ECDC blocker, then real audio IRQ return,
+  gaps, including the current EED2 blocker, then real audio IRQ return,
   sustained home frames, 30 guest seconds and physical input acceptance.
 - [ ] **4. Demonstrate compatibility.** Inventory and attempt unchanged
   Felucca plus available stock/other firmware using the same machine. Record
@@ -175,6 +175,17 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   ten key cycles without pausing; native window visual inspection was unavailable
   through the app inventory. Review found no new guest semantics. Old build
   and evidence are retained; the build rejects reuse of another release's cache.
+
+- 2026-10-07: Stage 3 ECDC preindex word store implemented and independently
+  reviewed. Full ISA, 98 CPU-profile runs, ten IRQ cases and boot/fault/QMP
+  regressions pass. Focused gate passes 14 separate-reference comparisons,
+  one generic replay and 15 faults. Disputed source/base aliases stay explicit
+  faults; access-fault writeback is model policy, not hardware validation.
+  Unchanged Felucca advances 307 instructions to EED2 at `0x0200249e`.
+  Renamed default-loader replay matches captured state, sample and LCD bytes.
+  Evidence and raw oracle disagreements are saved durably in the main repo's
+  `.deps/qemu-indexed-store-2026-10-07/`. Audio acknowledgment/return and the
+  home screen remain open.
 
 ### QEMU version upgrade
 
@@ -302,7 +313,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is ECDC, recorded below.
+  latest firmware blocker is EED2, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -312,27 +323,47 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: indexed store ECDC
+## Current firmware blocker: postincrement byte store EED2
 
-Latest unchanged boot: `.cache/felucca-validation/upgrade-qemu-11-1-2/`
-on QEMU 11.1.2; it matches the preceding QEMU 10 checkpoint exactly.
-It enters the real audio wrapper at `0x0200047e` and handler at `0x02002266`,
-passes the former FF0C blocker, then fails explicitly:
+Latest unchanged boot: `.cache/felucca-validation/after-indexed-store/`.
+The generic preindex word store now clears the handler's SRAM work areas,
+then execution fails explicitly at the next reached instruction:
 
-- PC: `0x020023be`; opcode words `ECDC/5013`.
-- Vendor disassembly: `[++r1=r0] = r5`. Establish exact addressing, writeback,
-  aliasing and fault ordering from independent evidence before implementing.
-- Instructions: 43,278,871; virtual time: 346,230,976 ns.
+- PC: `0x0200249e`; opcode words `EED2/2510`.
+- Vendor disassembly: `b[r1++=80] = r2`. Establish exact stride encoding,
+  source/base aliasing and fault ordering independently before implementing.
+- Instructions: 43,279,178; virtual time: 346,233,432 ns.
 - IRQ11 entries: 1; IRQ11 returns: 0; IRQ63 entries/returns: 0.
 - ICFG: `0x030b0308`; USP: `0x01c79eac`; SP: `0x01c7be24`.
 - ALNK: five completions, four coalesced, zero skipped, 2,560 zero sample words;
   pending `0x80`, no acknowledgment. Splash intact, guard messages and watchdog
   expiry zero. This is not completed audio service, synthesis or a home screen.
 - QEMU SHA-256:
-  `8f124ef41577968b9816a34f61a4dddf002dc4a5b57d86bc5f3e976b986828eb`.
-- Generic replay: `.cache/application-validation/upgrade-qemu-11-1-2/`.
-- Durable evidence: main repo `.deps/qemu-11.1.2-upgrade-2026-10-07/`;
-  prior architecture/FF0C checkpoints remain in `.deps/qemu-architecture-2026-10-07/`.
+  `1fa22840f18fb0f0aaa27aa78c83b0c3476d90120972e34302c07449a473a44e`.
+- Generic replay: `.cache/felucca-validation/after-indexed-store-generic/`.
+- Durable evidence: main repo `.deps/qemu-indexed-store-2026-10-07/`;
+  earlier upgrade and architecture checkpoints remain in their own directories.
+
+### Resolved ECDC checkpoint and alias limitation
+
+`ECDC/5013` at `0x020023be` is an unscaled wrapping preindex word store:
+base receives the incoming base+index, then the source word is stored there.
+The opcode applies to every image through the common CPU path. Incoming
+source==index and base==index aliases are supported. Source==base (including
+all-equal) remains explicitly unsupported before effects: the pinned Apache
+SLEIGH and separate public reference disagree on the value to store.
+
+`validate_indexed_store.py` passes 14 separate-reference comparisons, one
+generic-loader replay and 15 explicit faults. Tests cover wraparound,
+register selection, supported aliases, conditional skip/selection, PSR,
+word width, neighboring memory, guards, access faults and retirement. Access
+fault writeback tests verify the existing model policy; the reference exposes
+no fault state, so hardware fault-state ordering and priority are unverified.
+Full ISA, 98 CPU-profile runs, ten IRQ cases and foundation/probe/QMP/fault
+checks pass. Renamed unchanged Felucca under the default generic loader
+matches all captured state fields except the profile label and all sample/LCD
+bytes at the new EED2 stop. Whole SRAM is not compared across differently
+initialized loader modes. No MMIO behavior or firmware bytes changed.
 
 No Felucca live viewer has been launched.
 
@@ -358,7 +389,7 @@ Next implementation sequence:
 
 1. Preserve the QEMU 11.1.2 upgrade gate and source pin above while continuing
    reached instruction and device bring-up.
-2. Assign the reached ECDC store to the CPU worker for independent encoding
+2. Assign the reached EED2 store to the CPU worker for independent encoding
    and semantics analysis. Implement only evidenced behavior with focused
    aliasing, addressing, width/alignment, guard/fault and retirement tests.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
