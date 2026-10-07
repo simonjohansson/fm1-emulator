@@ -90,7 +90,7 @@ stable Rust API changes or physical flashing are authorized by this plan.
   before overlapping controllers are added. Define reset, power cycle and
   storage erase separately. Test pending IRQ/DMA/timer cancellation, clock
   transitions and mid-transfer buffer mutation. Complete reached CPU/device
-  gaps, including the current arithmetic-right-shift blocker, then real audio IRQ return,
+  gaps, including the current signed register-branch blocker, then real audio IRQ return,
   sustained home frames, 30 guest seconds and physical input acceptance.
 - [ ] **4. Demonstrate compatibility.** Inventory and attempt unchanged
   Felucca plus available stock/other firmware using the same machine. Record
@@ -256,6 +256,14 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   are preserved in `.deps/qemu-signed-indexed-halfword-load-2026-10-07/`.
   Existing FDD8 branch behavior is retained. Audio service remains open.
 
+- 2026-10-08: Stage 3 compact signed-right immediate shift complete and
+  independently reviewed. Only two scalar decoder lines change; logical
+  shifts/classifier retained. Focused gate passes 126 reference cases, one
+  generic replay and five faults; full ISA/profile/IRQ/boot pass. Unchanged
+  firmware advances five instructions to EE01 at `0x02002f8e`; renamed
+  generic state/sample/LCD match. Evidence:
+  `.deps/qemu-arithmetic-shift-2026-10-08/`. Audio service remains open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -382,7 +390,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is AF88, recorded below.
+  latest firmware blocker is EE01, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -392,20 +400,38 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: arithmetic right immediate shift AF88
+## Current firmware blocker: signed register greater-than branch EE01
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-indexed-halfword-load/`.
-Signed sine-table reads now execute through shared CPU behavior. Next stop:
+Latest unchanged boot: `.cache/felucca-validation/after-arithmetic-shift/`.
+Signed immediate right shifts now execute through shared CPU behavior. Next stop:
 
-- PC `0x02001c70`, opcode `AF88`: vendor `r0 = r0 >>> 15`.
-- Instructions 43,279,921; virtual time 346,239,376 ns.
+- PC `0x02002f8e`, words `EE01/0019`: vendor `ifs (r0 > r1) goto 50`,
+  target `0x02002fc4`. Establish exact EE00 register family independently.
+- Instructions 43,279,926; virtual time 346,239,416 ns.
 - One IRQ11 entry, no acknowledgment/return; no IRQ63 entries/returns.
 - Five ALNK completions, four coalesced, 2,560 zero sample words; pending
   `0x80`. Splash intact, guard messages and watchdog expiry zero. Audio
   service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `99dc22db2c93d15f67409abc40a34d187b8e0be7e860e226f58123c1c6c8ced6`.
-- Generic replay: `after-signed-indexed-halfword-load-generic`.
-- Durable evidence: main repo `.deps/qemu-signed-indexed-halfword-load-2026-10-07/`.
+- QEMU SHA-256: `2d434476a5f60f088e4d65681e3267344b5e270bf48619f717797e06e76dcec4`.
+- Generic replay: `after-arithmetic-shift-generic`.
+- Durable evidence: main repo `.deps/qemu-arithmetic-shift-2026-10-08/`.
+
+### Resolved immediate arithmetic right shift
+
+The compact signed-right family uses mask `0xe088`, value `0xa088`, low
+three-bit source/destination fields and an unsigned five-bit count. Count
+zero preserves input; 31 replicates its sign. PSR remains unchanged. Only
+the two-line scalar path is added; logical shifts and parallel classification
+retain their behavior for every image.
+
+`validate_arithmetic_shift.py` passes 126 separate-reference cases, one
+generic replay and five faults. All 32 counts, all 8x8 register pairs,
+aliases/sign boundaries, full PSR, conditional two-byte sizing, retirement
+and unchanged memory are checked. Deferred left/register/tail forms and
+PC guards verify existing model policy; hardware fault state is unverified.
+Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged Felucca advances
+five instructions to EE01; renamed generic state except profile and sample/
+LCD bytes match. Whole SRAM is not compared across initialization modes.
 
 ### Resolved EDD8 signed indexed halfword load
 
@@ -540,11 +566,12 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign the reached arithmetic right immediate shift AF88 to the CPU
-   worker. Establish exact valid bits/register/shift fields and PSR behavior
-   independently; preserve existing logical shifts and bundle classification.
-   Test negative values, zero/31 shifts, fields/aliases, PSR/count, conditionals,
-   generic replay and unsupported neighboring encodings.
+2. Assign the reached EE01 signed register greater-than branch to the CPU
+   worker. Establish exact opcode mask, register fields and signed displacement
+   independently; preserve existing branch/memory forms. Probe conditional
+   completion separately from the FF0C six-byte limitation. Test signed
+   boundaries/equality, fields/aliases, displacements, PSR/RETS/count,
+   conditionals, generic replay and explicit model faults.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.

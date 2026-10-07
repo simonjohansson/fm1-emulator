@@ -806,7 +806,7 @@ Home and synthesis remain unverified. The subsequent ALNK lifecycle milestone pr
 The latest unchanged/generic labels are `after-alnk-lifecycle` and its
 `-generic` counterpart.
 
-### Signed indexed halfword load and latest checkpoint
+### Signed indexed halfword load checkpoint
 
 Exact EDD8 operand kind A loads a signed little-endian halfword at wrapping
 incoming base+(index<<1), without writeback or PSR changes. Existing unsigned
@@ -835,6 +835,34 @@ has no ack/return; captured halves are zero and the splash is intact. Caches
 use `after-signed-indexed-halfword-load` and its `-generic` label; main repo
 `.deps/qemu-signed-indexed-halfword-load-2026-10-07/` retains raw evidence,
 acceptance and repaired test failures. Home and synthesis remain unverified.
+
+### Immediate arithmetic right shift and latest checkpoint
+
+The compact signed-right family uses mask `0xe088`, value `0xa088`, low
+three-bit source/destination fields and an unsigned five-bit count. Count
+zero preserves input; 31 replicates its sign. PSR remains unchanged. Only
+the two-line scalar path is added; logical shifts and parallel classification
+retain their behavior for every image.
+
+`validate_arithmetic_shift.py` passes 126 separate-reference cases, one
+generic replay and five faults. All 32 counts, all 8x8 register pairs,
+aliases/sign boundaries, full PSR, conditional two-byte sizing, retirement
+and unchanged memory are checked. Deferred left/register/tail forms and
+PC guards verify existing model policy; hardware fault state is unverified.
+Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged Felucca advances
+five instructions to EE01; renamed generic state except profile and sample/
+LCD bytes match. Whole SRAM is not compared across initialization modes.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_arithmetic_shift.py
+```
+
+Latest stop: EE01/0019 at `0x02002f8e`, 43,279,926 instructions and
+346,239,416 ns. Vendor `ifs (r0 > r1) goto 50` targets `0x02002fc4`.
+IRQ11 still has no ack/return; captured halves are zero and the splash intact.
+Caches use `after-arithmetic-shift` and its `-generic` label; main repo
+`.deps/qemu-arithmetic-shift-2026-10-08/` retains primary/reference evidence
+and acceptance. Home and synthesis remain unverified.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

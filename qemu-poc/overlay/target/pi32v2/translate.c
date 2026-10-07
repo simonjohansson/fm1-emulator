@@ -448,6 +448,8 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xe008) == 0xa000) {
         if (op & 128) { tcg_gen_shri_i32(gpr[a], read_gpr(d, b), (op >> 8) & 31); }
         else { tcg_gen_shli_i32(gpr[a], read_gpr(d, b), (op >> 8) & 31); }
+    } else if ((op & 0xe088) == 0xa088) {
+        tcg_gen_sari_i32(gpr[a], read_gpr(d, b), (op >> 8) & 31);
     } else if ((op & 0xe000) == 0x6000) {
         TCGv_i32 addr = tcg_temp_new_i32();
         MemOp size = op & 8 ? MO_LEUW | MO_ALIGN : MO_LEUL | MO_ALIGN;
