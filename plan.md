@@ -90,7 +90,7 @@ stable Rust API changes or physical flashing are authorized by this plan.
   before overlapping controllers are added. Define reset, power cycle and
   storage erase separately. Test pending IRQ/DMA/timer cancellation, clock
   transitions and mid-transfer buffer mutation. Complete reached CPU/device
-  gaps, including the current signed register-branch blocker, then real audio IRQ return,
+  gaps, including the current packed-add parallel blocker, then real audio IRQ return,
   sustained home frames, 30 guest seconds and physical input acceptance.
 - [ ] **4. Demonstrate compatibility.** Inventory and attempt unchanged
   Felucca plus available stock/other firmware using the same machine. Record
@@ -264,6 +264,15 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   generic state/sample/LCD match. Evidence:
   `.deps/qemu-arithmetic-shift-2026-10-08/`. Audio service remains open.
 
+- 2026-10-08: Stage 3 exact EE00 signed register greater-than complete and
+  independently reviewed. Only admission and signed condition change. Focused
+  gate passes 70 reference cases, one generic replay and 16 model faults;
+  full ISA/profile/IRQ/boot pass. Unchanged firmware advances ten instructions
+  to F0E0 at `0x02002fde`; renamed generic state/sample/LCD match. Inherited
+  taken-exit predicate completion/IRQ limitation and conservative unused-bit
+  policy are recorded explicitly. Evidence:
+  `.deps/qemu-signed-register-branch-2026-10-08/`. Audio service remains open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -390,7 +399,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is EE01, recorded below.
+  latest firmware blocker is F0E0, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -400,21 +409,49 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: signed register greater-than branch EE01
+## Current firmware blocker: packed-add parallel head F0E0
 
-Latest unchanged boot: `.cache/felucca-validation/after-arithmetic-shift/`.
-Signed immediate right shifts now execute through shared CPU behavior. Next stop:
+Latest unchanged boot: `.cache/felucca-validation/after-signed-register-branch/`.
+Signed register greater-than now executes through shared CPU behavior. Next stop:
 
-- PC `0x02002f8e`, words `EE01/0019`: vendor `ifs (r0 > r1) goto 50`,
-  target `0x02002fc4`. Establish exact EE00 register family independently.
-- Instructions 43,279,926; virtual time 346,239,416 ns.
+- PC `0x02002fde`, words `F0E0/BC00 + 3580`: vendor `r0 = r11 + 0x8000`
+  paired with `[sp+84] = incoming r0`. Check the existing scalar E0E0
+  operation's parallel destination classification independently.
+- Instructions 43,279,936; virtual time 346,239,496 ns.
 - One IRQ11 entry, no acknowledgment/return; no IRQ63 entries/returns.
 - Five ALNK completions, four coalesced, 2,560 zero sample words; pending
   `0x80`. Splash intact, guard messages and watchdog expiry zero. Audio
   service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `2d434476a5f60f088e4d65681e3267344b5e270bf48619f717797e06e76dcec4`.
-- Generic replay: `after-arithmetic-shift-generic`.
-- Durable evidence: main repo `.deps/qemu-arithmetic-shift-2026-10-08/`.
+- QEMU SHA-256: `7d69214d604c9130f5460e80ce0d7774c42c94a6ab14e8c5fe6e6a3df61d6965`.
+- Generic replay: `after-signed-register-branch-generic`.
+- Durable evidence: main repo `.deps/qemu-signed-register-branch-2026-10-08/`.
+
+### Resolved EE00 signed register greater-than branch
+
+Exact `(op & 0xfff0) == 0xee00` compares signed32 second-word bits15:12
+against opcode bits3:0, with signed9 word displacement from PC+4. Only
+admission and the signed-GT condition are added. FF0C, common predicate
+completion and neighboring memory encodings retain their behavior.
+
+`validate_signed_register_branch.py` passes 70 separate-reference cases
+(54 ordinary, 16 conditional), one generic replay and 16 model faults.
+Register fields, signed boundaries, displacement endpoints, aliases, PSR,
+conditional sizing and retirement are checked. Second-word bits11:9 are
+rejected as conservative decoder policy; primary evidence leaves them
+unconstrained, and the reference accepts one pattern. True PC32 wrapping
+and hardware fault state remain unverified.
+
+Four taken exits beyond a conditional arm retain the model's predicate state
+and fault at the following IF, after branch retirement; the reference completes
+those exits. Source inspection shows retained state also blocks IRQ admission.
+This inherited limitation is preserved explicitly, not claimed as valid ISA
+behavior. Generic predicate completion and interrupt admission need a separate
+evidenced milestone; broadening common advance/call behavior is not part of
+this change. Full ISA, 98 profiles, ten IRQ cases and boot pass.
+
+Unchanged Felucca advances ten instructions to F0E0; renamed default loading
+matches captured state except profile and all sample/LCD bytes. Whole SRAM
+is not compared across initialization modes.
 
 ### Resolved immediate arithmetic right shift
 

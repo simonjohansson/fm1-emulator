@@ -836,7 +836,7 @@ use `after-signed-indexed-halfword-load` and its `-generic` label; main repo
 `.deps/qemu-signed-indexed-halfword-load-2026-10-07/` retains raw evidence,
 acceptance and repaired test failures. Home and synthesis remain unverified.
 
-### Immediate arithmetic right shift and latest checkpoint
+### Immediate arithmetic right shift checkpoint
 
 The compact signed-right family uses mask `0xe088`, value `0xa088`, low
 three-bit source/destination fields and an unsigned five-bit count. Count
@@ -857,12 +857,50 @@ LCD bytes match. Whole SRAM is not compared across initialization modes.
 mise exec python@3.13.15 -- python qemu-poc/validate_arithmetic_shift.py
 ```
 
-Latest stop: EE01/0019 at `0x02002f8e`, 43,279,926 instructions and
+At this milestone: EE01/0019 at `0x02002f8e`, 43,279,926 instructions and
 346,239,416 ns. Vendor `ifs (r0 > r1) goto 50` targets `0x02002fc4`.
 IRQ11 still has no ack/return; captured halves are zero and the splash intact.
 Caches use `after-arithmetic-shift` and its `-generic` label; main repo
 `.deps/qemu-arithmetic-shift-2026-10-08/` retains primary/reference evidence
 and acceptance. Home and synthesis remain unverified.
+
+### Signed register greater-than and latest checkpoint
+
+Exact `(op & 0xfff0) == 0xee00` compares signed32 second-word bits15:12
+against opcode bits3:0, with signed9 word displacement from PC+4. Only
+admission and the signed-GT condition are added. FF0C, common predicate
+completion and neighboring memory encodings retain their behavior.
+
+`validate_signed_register_branch.py` passes 70 separate-reference cases
+(54 ordinary, 16 conditional), one generic replay and 16 model faults.
+Register fields, signed boundaries, displacement endpoints, aliases, PSR,
+conditional sizing and retirement are checked. Second-word bits11:9 are
+rejected as conservative decoder policy; primary evidence leaves them
+unconstrained, and the reference accepts one pattern. True PC32 wrapping
+and hardware fault state remain unverified.
+
+Four taken exits beyond a conditional arm retain the model's predicate state
+and fault at the following IF, after branch retirement; the reference completes
+those exits. Source inspection shows retained state also blocks IRQ admission.
+This inherited limitation is preserved explicitly, not claimed as valid ISA
+behavior. Generic predicate completion and interrupt admission need a separate
+evidenced milestone; broadening common advance/call behavior is not part of
+this change. Full ISA, 98 profiles, ten IRQ cases and boot pass.
+
+Unchanged Felucca advances ten instructions to F0E0; renamed default loading
+matches captured state except profile and all sample/LCD bytes. Whole SRAM
+is not compared across initialization modes.
+
+Latest stop: F0E0/BC00 +3580 at `0x02002fde`, 43,279,936
+instructions and 346,239,496 ns. Vendor pairs `r0 = r11 + 0x8000`
+with `[sp+84] = incoming r0`. IRQ11 still has no ack/return; captured halves
+are zero and the splash intact. Caches use `after-signed-register-branch`
+and its `-generic` label; main repo `.deps/qemu-signed-register-branch-2026-10-08/`
+retains primary/reference disagreements and acceptance. Home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_branch.py
+```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

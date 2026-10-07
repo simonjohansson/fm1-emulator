@@ -756,7 +756,8 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                                  tcg_constant_i32(op == 0xff0c ? sext(x & 4095, 12) : x & 4095));
     } else if ((op & 0xfff0) == 0xe800 || (op & 0xfff0) == 0xe880 ||
                (op & 0xfff0) == 0xe900 || (op & 0xfff0) == 0xe980 ||
-               (op & 0xfff0) == 0xec00 || (op & 0xfff0) == 0xec80) {
+               (op & 0xfff0) == 0xec00 || (op & 0xfff0) == 0xec80 ||
+               (op & 0xfff0) == 0xee00) {
         uint16_t x = fetch(d, here + 2);
         if (x & 0x0e00) { goto illegal; }
         TCGCond cond;
@@ -766,6 +767,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         case 0x90: cond = TCG_COND_GEU; break;
         case 0x98: cond = TCG_COND_LTU; break;
         case 0xc0: cond = TCG_COND_GTU; break;
+        case 0xe0: cond = TCG_COND_GT; break;
         default: cond = TCG_COND_LEU; break;
         }
         next = here + 4;
