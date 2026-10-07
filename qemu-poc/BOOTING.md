@@ -693,7 +693,7 @@ Caches use `after-postincrement-store` and `after-postincrement-store-generic`;
 durable logs, focused gates and raw reference probes are in the main repo's
 `.deps/qemu-postincrement-store-2026-10-07/`. Home and synthesis remain unverified.
 
-### Packed multiply bundle and latest checkpoint
+### Packed multiply bundle checkpoint
 
 The existing E1E0 packed multiply is now classified as writing its low-nibble
 destination when used as a parallel head. Scalar arithmetic, packed literals
@@ -709,7 +709,7 @@ PSR, six/eight-byte conditional sizing and retirement are checked. Hardware
 fault state and inherited unused packed-literal discrepancies remain unverified.
 Full ISA, 98 profiles, ten IRQ cases and boot gates pass.
 
-Unchanged Felucca now stops at `ED54/63BC`, PC `0x02002782`, after 43,279,576
+After this milestone, unchanged Felucca stopped at `ED54/63BC`, PC `0x02002782`, after 43,279,576
 instructions and 346,236,616 virtual ns. The vendor disassembly shows
 `r6 = h[r11+60] (s)`, followed by `ED55/52FC`, `r5 = h[r15+300] (s)`.
 This advances two bundles beyond the preceding stop. IRQ11 still has no
@@ -719,6 +719,34 @@ profile label and all sample/LCD bytes. Whole SRAM is not compared across
 loader modes. Caches use `after-parallel-packed-multiply` and its `-generic`
 label; main repo `.deps/qemu-parallel-packed-multiply-2026-10-07/` preserves
 focused gates, actual boot captures and reference probes. Home and synthesis
+remain unverified.
+
+### Signed halfword loads and latest checkpoint
+
+Exact ED54/55 now load signed little-endian halfwords using an even unsigned
+offset of 0..510 and the incoming base. Destination/base aliases and PSR are
+preserved. Odd operand bit zero and ED56/57 remain explicitly unsupported;
+the existing unsigned load and parallel paths are unchanged.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_halfword_load.py
+```
+
+The gate passes 68 reference comparisons, one generic replay and eight faults.
+It covers sign/offset boundaries, all GPR fields and aliases, readable regions,
+guards, PSR, conditional sizing and retirement. Fault state is a model check,
+not hardware validation. Full ISA, 98 profiles, ten IRQ cases and boot pass.
+
+Unchanged Felucca stops at DB01, PC `0x02002eba`, after 43,279,745 instructions
+and 346,237,968 virtual ns: 169 instructions beyond ED54. The vendor bundle is
+`r1 *= r0 #` paired with `[sp+64] = r3`; scalar multiply already exists, but
+its parallel-head destination is not classified. IRQ11 still has no ack/return,
+five captured halves are zero and the splash is intact. Renamed generic loading
+matches captured state except the profile label and all sample/LCD bytes.
+Whole SRAM is not compared across loader modes. Caches use
+`after-signed-halfword-load` and its `-generic` label; main repo
+`.deps/qemu-signed-halfword-load-2026-10-07/` retains raw probes and acceptance
+logs, including the repaired test capture-profile failure. Home and synthesis
 remain unverified.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

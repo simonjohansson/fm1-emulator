@@ -593,6 +593,17 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (x & 1) { store(d, read_gpr(d, x >> 12), addr, MO_LEUW | MO_ALIGN); }
         else { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
         next = here + 4;
+    } else if ((op & 0xfffe) == 0xed54) {
+        uint16_t x = fetch(d, here + 2);
+        if (x & 1) { goto illegal; }
+        unsigned offset = (op & 1) * 256 + ((x >> 8) & 15) * 16 + (x & 14);
+        TCGv_i32 addr = tcg_temp_new_i32();
+        /* Vendor ED54/63BC and ED55/52FC load signed halfwords at byte
+         * offsets 60 and 300, with no base writeback. Odd operands and
+         * ED56/57 remain unverified and explicitly unsupported. */
+        tcg_gen_addi_i32(addr, read_gpr(d, (x >> 4) & 15), offset);
+        load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN);
+        next = here + 4;
     } else if ((op & 0xffc0) == 0xe100) {
         uint16_t x = fetch(d, here + 2);
         int32_t imm = x & 4095;
