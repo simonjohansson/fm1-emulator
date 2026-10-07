@@ -299,6 +299,14 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   Primary packed-token discrepancy and inherited predicate limits are retained.
   Evidence: `.deps/qemu-signed-literal-le-if-2026-10-08/`. Audio remains open.
 
+- 2026-10-08: Stage 3 ED10 signed-register greater-or-equal IF complete and
+  independently reviewed. Focused gate passes 158 reference cases, one generic
+  replay and 20 faults; full ISA/profile/IRQ/boot pass. Unchanged firmware
+  advances two instructions to E435 at `0x02003686`; renamed generic state/
+  sample/LCD match. Canonical low-byte/reference disagreement and precise
+  reached-body retirement are retained. Evidence:
+  `.deps/qemu-signed-register-if-2026-10-08/`. Audio service remains open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -425,7 +433,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is ED13, recorded below.
+  latest firmware blocker is E435, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -435,14 +443,14 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: signed register greater-or-equal IF ED13
+## Current firmware blocker: signed minimum E435
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-literal-le-if/`.
-Vendor `ifs (r3 >= r1)` selects two THEN instructions. Establish exact ED10
-signed-register fields and unused-low-byte admission policy independently.
+Latest unchanged boot: `.cache/felucca-validation/after-signed-register-if/`.
+Vendor `r0 = smin(r3, r0)` is selected after the signed IF and literal.
+Establish exact E435 mode1 signed minimum while preserving mode0 unsigned minimum.
 
-- PC `0x0200367e`, words `ED13/4100`.
-- Instructions 43,281,042; virtual time 346,248,344 ns.
+- PC `0x02003686`, words `E435/0031`.
+- Instructions 43,281,044; virtual time 346,248,360 ns.
 - IRQ11 entries/returns 1/0;
   IRQ63 entries/returns 0/0.
 - ALNK completions 5, acknowledgments 0,
@@ -451,9 +459,32 @@ signed-register fields and unused-low-byte admission policy independently.
 - LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
   Audio service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `d8551d0dfe1c5fad92381e63c6378e42e30d598351950b13c32c71e21b45f325`.
-- Generic replay: `after-signed-literal-le-if-generic`.
-- Durable evidence: main repo `.deps/qemu-signed-literal-le-if-2026-10-08/`.
+- QEMU SHA-256: `2ddfb21604294036c470e7922ddeac5453a592dfe7703e8672c68a8ef5a8338a`.
+- Generic replay: `after-signed-register-if-generic`.
+- Durable evidence: main repo `.deps/qemu-signed-register-if-2026-10-08/`.
+
+### Resolved ED10 signed-register greater-or-equal IF
+
+Exact ED10/FFF0 compares signed32 GPR[opcode low nibble] against GPR in
+second-word bits8..11. It admits the primary constructor's zero low byte;
+the separate reference ignores tested nonzero bytes. Their rejection is a
+conservative canonical-encoding policy, not verified hardware reserved-bit
+behavior. Existing91/GEU, C1/GTU, literal families and common IF machinery
+are unchanged.
+
+`validate_signed_register_if.py` passes 158 separate-reference cases, one
+generic replay and 20 model faults. All fields, aliases, signed boundaries,
+arm counts/mixed widths, PSR/RETS, stores and balanced follow-up IF are
+checked. Nine nonzero-byte cases retain separately verified oracle completion
+against model rejection. The reached E435 signed-min body fault occurs after
+the IF and preceding literal retire, preserving r0=32767. Four inherited
+predicate limits, two PC guards and four store faults retain precise count,
+full registers/specials and memory. Hardware fault state remains unverified;
+retained predicate IRQ blocking is source inspection only.
+
+Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
+two instructions to E435; renamed loading matches state except profile and
+all sample/LCD bytes. Whole SRAM is not compared across initialization modes.
 
 ### Resolved EEB0 signed-literal less-or-equal IF
 
@@ -701,13 +732,12 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign the reached ED13 signed-register greater-or-equal IF to the CPU
-   worker. Establish exact ED10 fields and signed comparison independently;
-   qualify unused low-byte rejection as model policy unless hardware evidence
-   establishes it. Preserve existing IF families/scanner/helpers. Check fields,
-   aliases/sign boundaries, arm counts/widths, PSR/RETS/count, balanced
-   completion, generic replay and inherited model faults. Keep broader
-   predicate exits as a separate evidenced milestone.
+2. Assign the reached E435 mode1 signed minimum to the CPU worker. Establish
+   exact operand fields and signed behavior independently; preserve mode0
+   unsigned minimum, other modes and parallel classification. Check signed
+   boundaries/equality, fields/aliases, PSR/count, conditionals, generic replay
+   and explicit model faults. Convert or retire the ED10 gate's obsolete
+   deferred-body test only after admission; preserve its other regressions.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.

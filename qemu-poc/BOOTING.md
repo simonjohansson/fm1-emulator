@@ -960,7 +960,7 @@ cases and boot pass. Unchanged firmware advances five instructions to EEB4;
 renamed default loading matches state except profile and all sample/LCD
 bytes. Whole SRAM is not compared across initialization modes.
 
-Latest stop: EEB4/4000 at `0x02002020`, 43,280,921 instructions
+At this milestone: EEB4/4000 at `0x02002020`, 43,280,921 instructions
 and 346,247,376 ns. Vendor `ifs (r4 <= 0)` selects two instructions.
 IRQ11 still has no ack/return; captured halves are zero and the splash intact.
 Caches use `after-signed-literal-if` and its `-generic` label; main repo
@@ -971,7 +971,7 @@ and acceptance. Home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_literal_if.py
 ```
 
-### EEB0 signed-literal less-or-equal IF and latest checkpoint
+### EEB0 signed-literal less-or-equal IF checkpoint
 
 Exact EEB0/FFF0 compares signed32 GPR with a signed12 threshold using the
 existing IF machinery. ED30 and common scanner/helpers/classifier are unchanged.
@@ -1002,6 +1002,40 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_literal_le_if.py
+```
+
+### ED10 signed-register greater-or-equal IF and latest checkpoint
+
+Exact ED10/FFF0 compares signed32 GPR[opcode low nibble] against GPR in
+second-word bits8..11. It admits the primary constructor's zero low byte;
+the separate reference ignores tested nonzero bytes. Their rejection is a
+conservative canonical-encoding policy, not verified hardware reserved-bit
+behavior. Existing91/GEU, C1/GTU, literal families and common IF machinery
+are unchanged.
+
+`validate_signed_register_if.py` passes 158 separate-reference cases, one
+generic replay and 20 model faults. All fields, aliases, signed boundaries,
+arm counts/mixed widths, PSR/RETS, stores and balanced follow-up IF are
+checked. Nine nonzero-byte cases retain separately verified oracle completion
+against model rejection. The reached E435 signed-min body fault occurs after
+the IF and preceding literal retire, preserving r0=32767. Four inherited
+predicate limits, two PC guards and four store faults retain precise count,
+full registers/specials and memory. Hardware fault state remains unverified;
+retained predicate IRQ blocking is source inspection only.
+
+Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
+two instructions to E435; renamed loading matches state except profile and
+all sample/LCD bytes. Whole SRAM is not compared across initialization modes.
+
+Latest stop: E435/0031 at `0x02003686`, 43,281,044
+instructions and 346,248,360 ns. Vendor `r0 = smin(r3, r0)` is selected after the signed IF and literal.
+Establish exact E435 mode1 signed minimum while preserving mode0 unsigned minimum.
+Caches use `after-signed-register-if` and its `-generic` label; main repo
+`.deps/qemu-signed-register-if-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 1/0; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_if.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
