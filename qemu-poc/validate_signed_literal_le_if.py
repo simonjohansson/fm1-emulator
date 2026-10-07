@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Validate exact ED30 signed-literal GE IF through the existing predicate path.
+"""Validate exact EEB0 signed-literal LE IF through the existing predicate path.
 
-Vendor ED34/4000 selects two THEN instructions for signed r4 >= 0. Vendor
-ED31/0F00 at0x02001e86 says >= -256; the pinned Apache ifthenelse.sinc:115-124
-instead names the unsigned imm1627 token. Negative-boundary fixtures preserve
-this discrepancy and independently establish signed12 via executable oracle.
+Vendor EEB4/4000 selects two THEN instructions for signed r4 <= 0. Vendor
+EEB2/4FFF at0x02001770 says <= -1; pinned Apache ifthenelse.sinc:72-81
+instead names packedimm12, which maps FFF to510. Negative boundaries and
+explicit0/510/511 discriminators establish signed12 via executable oracle.
 Then count is second-word bits14:15 + 1; else count is bits12:13. Ordinary
 nonnested completion and 2/4/6-byte scalar, 4/6/8-byte bundle sizing are tested.
 PSR and RETS remain unchanged when the selected arm does not change them.
-The common scanner/helpers/classifier remain unchanged: selected nested IF,
-final THEN CALL with ELSE and final THEN FF0C with ELSE are model unsupported.
-Taken exits may retain predicate state and fault at a following IF after branch
-retirement; source inspection shows that retained state blocks IRQ admission.
-That limit is recorded with reference disagreement, not completion/IRQ proof.
-ED20 stays deferred. Hardware faults and undocumented predicate shadow state
-are unverified; no reference fault-state or ISA-invalid claim is made.
+The ED30 decoder and common scanner/helpers/classifier remain unchanged.
+Selected nested IF, final THEN CALL with ELSE and final THEN FF0C with ELSE
+remain model unsupported. Taken exits may retain predicate state and fault at
+a following IF after branch retirement; source inspection shows that retained
+state blocks IRQ admission. Raw reference disagreements remain recorded,
+without completion/IRQ proof for exits or undocumented predicate shadow state.
+ED20 remains deferred. Hardware fault state is unverified; no reference
+fault-state or ISA-invalid claim is made.
 """
 import hashlib
 import json
@@ -29,10 +30,10 @@ import validate_isa as isa
 from validate_peripherals import Guest
 
 HERE=Path(__file__).resolve().parent
-CACHE=HERE/".cache/signed-literal-if-validation"
+CACHE=HERE/".cache/signed-literal-le-if-validation"
 ENTRY=0x02000120
 INSPECTION=0x01C08000
-STACK=INSPECTION-16
+STACK=INSPECTION-12
 PSR=0x89ABCDE5
 RETS=0x12345678
 GPRS=[0x10203040+i*0x01010101 for i in range(16)]
@@ -117,9 +118,9 @@ def success_case(name,reg=4,value=0,threshold=0,then=(('lit4',8,0x1111),),otherw
     assert 1<=len(then)<=4 and 0<=len(otherwise)<=3
     encoded=(threshold&0xfff)|((len(then)-1)<<14)|(len(otherwise)<<12)
     header=guest.pc
-    guest.emit(0xed30|reg,encoded)
+    guest.emit(0xeeb0|reg,encoded)
     for op in (*then,*otherwise): emit(guest,op)
-    selected=signed(expected[reg])>=threshold
+    selected=signed(expected[reg])<=threshold
     for op in then if selected else otherwise: apply(expected,inspection,op,stack)
     skipped=len(otherwise) if selected else len(then)
     # The second IF explicitly exercises balanced completion of the first.
@@ -138,10 +139,10 @@ def success_case(name,reg=4,value=0,threshold=0,then=(('lit4',8,0x1111),),otherw
                    f"{name}: signed predicate, selected effects, PSR or RETS differ")
     validate.check(state["inspection"]==inspection,
                    f"{name}: selected memory effects or neighbors differ")
-    # Preserve the concrete encoding disagreement, not an unsigned-ISA claim.
-    evidence={"opcode":0xED30|reg,"second_word":encoded,"signed_threshold":threshold,
-              "primary_unsigned_literal":threshold&0xFFF,"selected":selected,
-              "primary_unsigned_interpretation_selected":signed(value&0xFFFFFFFF)>=(threshold&0xFFF),
+    # Preserve the packed-token discrepancy without changing packed arithmetic.
+    evidence={"opcode":0xEEB0|reg,"second_word":encoded,"signed_threshold":threshold,
+              "primary_packed_literal":{0xFFF:510,0xF00:512,0x800:0x800000,0x100:0,0x7FF:0x1FE0000}.get(threshold&0xFFF),
+              "selected":selected,
               "then_count":len(then),"else_count":len(otherwise),
               "balanced_nonnested_followup_if_completed":True}
     (CACHE/f"{name}-evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
@@ -214,13 +215,13 @@ def inherited_fixture(kind):
     if kind=="nested":
         guest.emit(0xEA20,1)
         pc=guest.pc
-        guest.emit(0xED34,0x4000)
+        guest.emit(0xEEB4,0x4000)
         guest.emit(0xE048,0x1111)
         guest.emit(0xE049,0x2222)
         reason="nested conditional block is unsupported"
         span=4
     else:
-        guest.emit(0xED34,0x1000)  # One THEN and one ELSE instruction.
+        guest.emit(0xEEB4,0x1000)  # One THEN and one ELSE instruction.
         pc=guest.pc
         if kind=="final-call":
             guest.emit(0x00C3)
@@ -279,7 +280,7 @@ def guard_fault(stage):
     name=f"pc-guard-{stage}"
     guest,expected=setup({4:0},seed=True,guard=stage)
     header,before=guest.pc,guest.instructions
-    guest.emit(0xED34,0)
+    guest.emit(0xEEB4,0)
     body=guest.pc
     guest.emit(0)
     guest.emit(0xE04D,0x3344)
@@ -302,7 +303,7 @@ def store_fault(kind):
     guest,expected=setup({4:0,5:0x89ABCDEF,7:address},seed=True,
                          guard="write" if kind=="guarded" else None)
     before=guest.instructions
-    guest.emit(0xED34,0)
+    guest.emit(0xEEB4,0)
     pc=guest.pc
     guest.store(5,7)
     guest.emit(0xE04D,0x3344)
@@ -341,7 +342,7 @@ def main():
     isa.CACHE=CACHE
     cases=[]
     for reg in range(16):
-        for value in (0,0xFFFFFFFF): cases.append(dict(name=f"field-{reg}-{value:08x}",reg=reg,value=value))
+        for value in (0,1): cases.append(dict(name=f"field-{reg}-{value:08x}",reg=reg,value=value))
     for threshold in (-2048,-256,-1,0,1,256,2047):
         values=[0x80000000,0xFFFFFFFF,0,1,0x7FFFFFFF]
         values += [(threshold-1)&0xFFFFFFFF,threshold&0xFFFFFFFF,(threshold+1)&0xFFFFFFFF]
@@ -352,24 +353,27 @@ def main():
         for else_count in range(4):
             for selected in (False,True):
                 cases.append(dict(name=f"counts-{then_count}-{else_count}-{selected}",
-                    value=0 if selected else 0xFFFFFFFF,
+                    value=0 if selected else 1,
                     then=tuple(("lit4",8,0x1100+i) for i in range(then_count)),
                     otherwise=tuple(("lit4",9,0x2200+i) for i in range(else_count))))
     widths=[("nop",),("lit4",8,0x1111),("lit6",8,0x89ABCDEF),
             ("bundle4",),("bundle6",),("bundle8",)]
     for index,op in enumerate(widths):
         for selected in (False,True):
-            cases.append(dict(name=f"width-{index}-{selected}",value=0 if selected else 0xFFFFFFFF,
+            cases.append(dict(name=f"width-{index}-{selected}",value=0 if selected else 1,
                               then=(op,),otherwise=(("lit4",9,0x2222),)))
     for selected in (False,True):
-        cases.append(dict(name=f"mixed-{selected}",value=0 if selected else 0xFFFFFFFF,
+        cases.append(dict(name=f"mixed-{selected}",value=0 if selected else 1,
                           then=tuple(widths[:4]),otherwise=tuple(widths[3:])))
-        cases.append(dict(name=f"reached-{selected}",value=0 if selected else 0xFFFFFFFF,
-                          then=(("lit4",0,4096),("spstore",0,16))))
+        cases.append(dict(name=f"reached-{selected}",value=0 if selected else 1,
+                          then=(("lit4",0,4096),("spstore",0,12))))
     for psr in (0,0xFFFFFFFF):
         cases.append(dict(name=f"psr-{psr:08x}",value=0xFFFFFFFF,threshold=-1,psr=psr))
-    cases.append(dict(name="skipped-unmapped-store",value=0xFFFFFFFF,
+    cases.append(dict(name="skipped-unmapped-store",value=1,
                       registers={5:0x89ABCDEF,7:0x18000000},then=(("store",5,7,0),)))
+    for value in (510,511):
+        cases.append(dict(name=f"packed-vs-signed12-{value}",value=value,threshold=-1,
+                          otherwise=(("lit4",9,0x2222),)))
     replay=None
     for case in cases:
         result=success_case(**case)
@@ -379,17 +383,17 @@ def main():
     for kind in ("nested","final-call","final-ff0c","taken-exit"): inherited_fault(kind)
     for stage in ("header","body"): guard_fault(stage)
     for kind in ("unaligned","unmapped","read-only","guarded"): store_fault(kind)
-    summary={"passed":True,"instruction":"exact ED30/FFF0 signed12 GE IF",
+    summary={"passed":True,"instruction":"exact EEB0/FFF0 signed12 LE IF",
              "reference_compared_cases":len(cases),"generic_replays":1,"total_model_faults":11,
              "deferred_families":1,"inherited_predicate_limits":4,"pc_guard_faults":2,
              "selected_body_access_faults":4,"primary_if_blob":"4ee88595bc41e98cd2d58bcdde90bc19f4c19a57",
-             "primary_discrepancy":"unsigned imm1627 token; vendor and independent oracle establish signed12",
+             "primary_discrepancy":"packedimm12 token maps FFF to510; vendor and independent oracle establish signed12 FFF=-1",
              "conditional_completion":"balanced nonnested arms verified; inherited control-transfer limits retained",
              "irq_limit":"retained predicate blocks IRQ by source inspection; not IRQ validation",
              "qemu_sha256":hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
              "hardware_validation":False,"hardware_fault_state_validation":False}
     (CACHE/"validation.json").write_text(json.dumps(summary,indent=2)+"\n")
-    print(f"PASS ED30: {len(cases)} reference comparisons, generic replay and eleven model faults")
+    print(f"PASS EEB0: {len(cases)} reference comparisons, generic replay and eleven model faults")
 
 
 if __name__=="__main__":

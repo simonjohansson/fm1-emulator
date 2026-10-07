@@ -90,7 +90,7 @@ stable Rust API changes or physical flashing are authorized by this plan.
   before overlapping controllers are added. Define reset, power cycle and
   storage erase separately. Test pending IRQ/DMA/timer cancellation, clock
   transitions and mid-transfer buffer mutation. Complete reached CPU/device
-  gaps, including the current signed-literal IF blocker, then real audio IRQ return,
+  gaps, then real audio IRQ return,
   sustained home frames, 30 guest seconds and physical input acceptance.
 - [ ] **4. Demonstrate compatibility.** Inventory and attempt unchanged
   Felucca plus available stock/other firmware using the same machine. Record
@@ -291,6 +291,14 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   are retained. Evidence: `.deps/qemu-signed-literal-if-2026-10-08/`.
   Audio service remains open.
 
+- 2026-10-08: Stage 3 EEB0 signed12 less-or-equal IF complete and independently
+  reviewed. Focused gate passes 141 reference cases, one generic replay and 11
+  faults; updated GE positives and full ISA/profile/IRQ/boot pass. Unchanged
+  firmware advances 121 instructions to ED13 at `0x0200367e`; renamed generic
+  state/sample/LCD match. Only the obsolete GE EEB4 rejection is retired.
+  Primary packed-token discrepancy and inherited predicate limits are retained.
+  Evidence: `.deps/qemu-signed-literal-le-if-2026-10-08/`. Audio remains open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -417,7 +425,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is EEB4, recorded below.
+  latest firmware blocker is ED13, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -427,22 +435,47 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: signed-literal less-or-equal IF EEB4
+## Current firmware blocker: signed register greater-or-equal IF ED13
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-literal-if/`.
-Signed greater-or-equal IF now executes through the shared CPU path. Next stop:
+Latest unchanged boot: `.cache/felucca-validation/after-signed-literal-le-if/`.
+Vendor `ifs (r3 >= r1)` selects two THEN instructions. Establish exact ED10
+signed-register fields and unused-low-byte admission policy independently.
 
-- PC `0x02002020`, words `EEB4/4000`: vendor `ifs (r4 <= 0)` selecting
-  two instructions. Establish exact EEB0 signed-literal semantics independently;
-  primary packed-literal labeling disagrees with negative vendor examples.
-- Instructions 43,280,921; virtual time 346,247,376 ns.
-- One IRQ11 entry, no acknowledgment/return; no IRQ63 entries/returns.
-- Five ALNK completions, four coalesced, 2,560 zero sample words; pending
-  `0x80`. Splash intact, guard messages and watchdog expiry zero. Audio
-  service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `5a599ded669d35623df090d6d4fdebeae384834927d0ff43cf773058143ba04c`.
-- Generic replay: `after-signed-literal-if-generic`.
-- Durable evidence: main repo `.deps/qemu-signed-literal-if-2026-10-08/`.
+- PC `0x0200367e`, words `ED13/4100`.
+- Instructions 43,281,042; virtual time 346,248,344 ns.
+- IRQ11 entries/returns 1/0;
+  IRQ63 entries/returns 0/0.
+- ALNK completions 5, acknowledgments 0,
+  coalesced 4, pending `0x80`;
+  2,560 captured sample words, 0 nonzero.
+- LCD visible=True, busy=False; guard debug message
+  `0x0`, watchdog expirations 0.
+  Audio service, synthesis and the home screen remain incomplete.
+- QEMU SHA-256: `d8551d0dfe1c5fad92381e63c6378e42e30d598351950b13c32c71e21b45f325`.
+- Generic replay: `after-signed-literal-le-if-generic`.
+- Durable evidence: main repo `.deps/qemu-signed-literal-le-if-2026-10-08/`.
+
+### Resolved EEB0 signed-literal less-or-equal IF
+
+Exact EEB0/FFF0 compares signed32 GPR with a signed12 threshold using the
+existing IF machinery. ED30 and common scanner/helpers/classifier are unchanged.
+Primary packed-token labeling disagrees with vendor <= -1 and discriminating
+reference probes: FFF means -1 rather than packed510; 100 means256 rather than
+packed0. Both negative and positive discrepancies are retained.
+
+`validate_signed_literal_le_if.py` passes 141 separate-reference cases, one
+generic replay and 11 model faults. All fields, thresholds, THEN1..4/ELSE0..3,
+mixed scalar/bundle widths, selected SP+12 stores, PSR/RETS and balanced
+nonnested follow-up IF are checked. Inherited nested/call/FF0C/taken-exit
+limits remain explicit; taken-exit IRQ blocking is source inspection only.
+Hardware fault state remains unverified.
+
+Admitting EEB0 retires the old GE gate's obsolete unsupported-EEB4 case.
+Its 139 positive fixtures are unchanged; the current GE gate passes 139
+reference cases, one generic replay and 11 faults. Full ISA, 98 profiles,
+ten IRQ cases and boot pass. Unchanged firmware advances 121 instructions
+to ED13; renamed loading matches state except profile and sample/LCD bytes.
+Whole SRAM is not compared across initialization modes.
 
 ### Resolved ED30 signed-literal greater-or-equal IF
 
@@ -454,10 +487,11 @@ Discriminating negative-literal reference evidence agrees with signed12 and
 retains the primary discrepancy.
 
 `validate_signed_literal_if.py` passes 139 separate-reference cases, one
-generic replay and 12 model faults. Signed boundaries, all GPR fields,
+generic replay and 12 model faults at that milestone. EEB0 admission later
+retires its obsolete rejection, so the current GE gate has 11 faults. Signed boundaries, all GPR fields,
 THEN1..4/ELSE0..3, 2/4/6-byte scalar and 4/6/8-byte bundle arm widths,
 PSR/RETS, selected stores and balanced nonnested follow-up IF are checked.
-Faults cover two deferred families, four inherited predicate limits, two PC
+At that milestone faults covered two deferred families, four inherited predicate limits, two PC
 guards and four selected-store accesses. Header/body/control-transfer fault
 retirement is asserted separately; hardware fault state remains unverified.
 
@@ -667,11 +701,12 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign the reached EEB4 signed-literal less-or-equal IF to the CPU worker.
-   Establish the exact EEB0 family and signed threshold independently; preserve
-   existing IF families, scanner/helpers and recorded primary discrepancies.
-   Check boundaries, fields, arm counts/widths, PSR/RETS/count, balanced
-   completion, generic replay and inherited model faults. Keep generic
+2. Assign the reached ED13 signed-register greater-or-equal IF to the CPU
+   worker. Establish exact ED10 fields and signed comparison independently;
+   qualify unused low-byte rejection as model policy unless hardware evidence
+   establishes it. Preserve existing IF families/scanner/helpers. Check fields,
+   aliases/sign boundaries, arm counts/widths, PSR/RETS/count, balanced
+   completion, generic replay and inherited model faults. Keep broader
    predicate exits as a separate evidenced milestone.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.

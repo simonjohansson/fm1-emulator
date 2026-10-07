@@ -829,7 +829,7 @@ bytes match. Whole SRAM is not compared across initialization modes.
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_indexed_halfword_load.py
 ```
 
-Latest stop: AF88 at `0x02001c70`, 43,279,921 instructions and 346,239,376 ns.
+At this milestone: AF88 at `0x02001c70`, 43,279,921 instructions and 346,239,376 ns.
 Vendor `r0 = r0 >>> 15` requires the signed right immediate shift. IRQ11 still
 has no ack/return; captured halves are zero and the splash is intact. Caches
 use `after-signed-indexed-halfword-load` and its `-generic` label; main repo
@@ -934,7 +934,7 @@ and acceptance. Home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_packed_add.py
 ```
 
-### Signed greater-or-equal IF and latest checkpoint
+### Signed greater-or-equal IF checkpoint
 
 Exact ED30/FFF0 compares signed32 GPR with a signed12 literal through the
 existing four-byte IF path. THEN count is bits14:15+1 and ELSE bits12:13;
@@ -944,10 +944,11 @@ Discriminating negative-literal reference evidence agrees with signed12 and
 retains the primary discrepancy.
 
 `validate_signed_literal_if.py` passes 139 separate-reference cases, one
-generic replay and 12 model faults. Signed boundaries, all GPR fields,
+generic replay and 12 model faults at that milestone. EEB0 admission later
+retires its obsolete rejection, so the current GE gate has 11 faults. Signed boundaries, all GPR fields,
 THEN1..4/ELSE0..3, 2/4/6-byte scalar and 4/6/8-byte bundle arm widths,
 PSR/RETS, selected stores and balanced nonnested follow-up IF are checked.
-Faults cover two deferred families, four inherited predicate limits, two PC
+At that milestone faults covered two deferred families, four inherited predicate limits, two PC
 guards and four selected-store accesses. Header/body/control-transfer fault
 retirement is asserted separately; hardware fault state remains unverified.
 
@@ -968,6 +969,39 @@ and acceptance. Home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_literal_if.py
+```
+
+### EEB0 signed-literal less-or-equal IF and latest checkpoint
+
+Exact EEB0/FFF0 compares signed32 GPR with a signed12 threshold using the
+existing IF machinery. ED30 and common scanner/helpers/classifier are unchanged.
+Primary packed-token labeling disagrees with vendor <= -1 and discriminating
+reference probes: FFF means -1 rather than packed510; 100 means256 rather than
+packed0. Both negative and positive discrepancies are retained.
+
+`validate_signed_literal_le_if.py` passes 141 separate-reference cases, one
+generic replay and 11 model faults. All fields, thresholds, THEN1..4/ELSE0..3,
+mixed scalar/bundle widths, selected SP+12 stores, PSR/RETS and balanced
+nonnested follow-up IF are checked. Inherited nested/call/FF0C/taken-exit
+limits remain explicit; taken-exit IRQ blocking is source inspection only.
+Hardware fault state remains unverified.
+
+Admitting EEB0 retires the old GE gate's obsolete unsupported-EEB4 case.
+Its 139 positive fixtures are unchanged; the current GE gate passes 139
+reference cases, one generic replay and 11 faults. Full ISA, 98 profiles,
+ten IRQ cases and boot pass. Unchanged firmware advances 121 instructions
+to ED13; renamed loading matches state except profile and sample/LCD bytes.
+Whole SRAM is not compared across initialization modes.
+
+Latest stop: ED13/4100 at `0x0200367e`, 43,281,042
+instructions and 346,248,344 ns. Vendor `ifs (r3 >= r1)` selects two THEN instructions. Establish exact ED10
+signed-register fields and unused-low-byte admission policy independently.
+Caches use `after-signed-literal-le-if` and its `-generic` label; main repo
+`.deps/qemu-signed-literal-le-if-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 1/0; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_literal_le_if.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
