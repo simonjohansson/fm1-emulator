@@ -664,7 +664,7 @@ saved to main repo `.deps/qemu-indexed-store-2026-10-07/` with focused gates
 and raw oracle disagreement evidence. This is not completed audio service,
 synthesis or a home screen.
 
-### Postincrement byte store and latest checkpoint
+### Postincrement byte store checkpoint
 
 Exact EED2 now stores the incoming source low byte at the old base, then adds
 the unsigned eight-bit immediate stride to that base. Source==base uses the
@@ -681,7 +681,7 @@ PSR, conditional selection/skip, retirement and fault-before-writeback model
 state. Hardware fault state and successful 32-bit wrapping writeback remain
 unverified. Full ISA, ECDC, 98 profiles, ten IRQ cases and boot gates pass.
 
-Unchanged Felucca now stops at `F1E0/1EB3` at `0x02002776`, after 43,279,574
+After the postincrement milestone, unchanged Felucca stopped at `F1E0/1EB3` at `0x02002776`, after 43,279,574
 instructions and 346,236,600 virtual ns. The existing packed multiply needs
 parallel-head destination classification: the vendor bundle is
 `r0 = r1 * 0x598` with `[sp+76] = r1`. The EED2 milestone advances another
@@ -692,6 +692,34 @@ pixels. Whole SRAM is not compared across different initialization modes.
 Caches use `after-postincrement-store` and `after-postincrement-store-generic`;
 durable logs, focused gates and raw reference probes are in the main repo's
 `.deps/qemu-postincrement-store-2026-10-07/`. Home and synthesis remain unverified.
+
+### Packed multiply bundle and latest checkpoint
+
+The existing E1E0 packed multiply is now classified as writing its low-nibble
+destination when used as a parallel head. Scalar arithmetic, packed literals
+and incoming-register bundle execution are preserved for every image.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_parallel_packed_multiply.py
+```
+
+The gate passes 39 reference comparisons, one generic replay and eight faults.
+Incoming source/store/address aliases, every destination, low-word products,
+PSR, six/eight-byte conditional sizing and retirement are checked. Hardware
+fault state and inherited unused packed-literal discrepancies remain unverified.
+Full ISA, 98 profiles, ten IRQ cases and boot gates pass.
+
+Unchanged Felucca now stops at `ED54/63BC`, PC `0x02002782`, after 43,279,576
+instructions and 346,236,616 virtual ns. The vendor disassembly shows
+`r6 = h[r11+60] (s)`, followed by `ED55/52FC`, `r5 = h[r15+300] (s)`.
+This advances two bundles beyond the preceding stop. IRQ11 still has no
+acknowledgment/return; the five captured halves are zero and the splash is
+intact. Renamed generic loading matches all captured state fields except the
+profile label and all sample/LCD bytes. Whole SRAM is not compared across
+loader modes. Caches use `after-parallel-packed-multiply` and its `-generic`
+label; main repo `.deps/qemu-parallel-packed-multiply-2026-10-07/` preserves
+focused gates, actual boot captures and reference probes. Home and synthesis
+remain unverified.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

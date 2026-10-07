@@ -90,7 +90,7 @@ stable Rust API changes or physical flashing are authorized by this plan.
   before overlapping controllers are added. Define reset, power cycle and
   storage erase separately. Test pending IRQ/DMA/timer cancellation, clock
   transitions and mid-transfer buffer mutation. Complete reached CPU/device
-  gaps, including the current F1E0 bundle blocker, then real audio IRQ return,
+  gaps, including the current ED54/55 blocker, then real audio IRQ return,
   sustained home frames, 30 guest seconds and physical input acceptance.
 - [ ] **4. Demonstrate compatibility.** Inventory and attempt unchanged
   Felucca plus available stock/other firmware using the same machine. Record
@@ -207,6 +207,15 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   whole SRAM, samples and LCD bytes before/after extraction within each mode.
   Evidence: `.deps/qemu-syscon-2026-10-07/`. Clock tree, resettable ALNK and
   hardware/whole-machine reset remain open.
+
+- 2026-10-07: Stage 3 packed-multiply parallel classification complete and
+  independently reviewed. Only the existing E1E0 destination mask is added;
+  arithmetic/literal and bundle execution semantics are preserved. Focused
+  gate passes 39 reference comparisons, one generic replay and eight faults;
+  full ISA, 98 profiles, ten IRQ cases and boot gates pass. Unchanged Felucca
+  advances to ED54 at `0x02002782`; renamed generic capture matches state,
+  samples and LCD bytes. Evidence:
+  `.deps/qemu-parallel-packed-multiply-2026-10-07/` in the main repo.
 
 ### QEMU version upgrade
 
@@ -334,7 +343,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is F1E0, recorded below.
+  latest firmware blocker is ED54, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -344,27 +353,44 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: packed multiply parallel head F1E0
+## Current firmware blocker: signed halfword load ED54/55
 
-Latest unchanged boot: `.cache/felucca-validation/after-syscon/`; CPU state
-matches the preceding `after-postincrement-store/` checkpoint exactly.
-Both indexed stores now execute through the shared CPU path. Execution fails
-explicitly at the next reached parallel bundle:
+Latest unchanged boot: `.cache/felucca-validation/after-parallel-packed-multiply/`.
+The packed multiply bundle and following parallel addition now execute through
+existing arithmetic and incoming-value machinery. Execution fails explicitly:
 
-- PC: `0x02002776`; head words `F1E0/1EB3`; compact tail `3381`.
-- Vendor disassembly: `r0 = r1 * 0x598`, paired with `[sp+76] = r1`.
-  The nonparallel packed multiply is already implemented; independently verify
-  destination classification and incoming-value capture for the bundle.
-- Instructions: 43,279,574; virtual time: 346,236,600 ns.
+- PC: `0x02002782`; opcode words `ED54/63BC`.
+- Vendor disassembly: `r6 = h[r11+60] (s)`; the next instruction is
+  `ED55/52FC`, `r5 = h[r15+300] (s)`. Establish valid bits and offset fields
+  from independent evidence before extending the existing ED50/51 unsigned path.
+- Instructions: 43,279,576; virtual time: 346,236,616 ns.
 - IRQ11 entries: 1; IRQ11 returns: 0; IRQ63 entries/returns: 0.
 - ALNK: five completions, four coalesced, zero skipped, 2,560 zero sample words;
   pending `0x80`, no acknowledgment. Splash intact, guard messages and watchdog
   expiry zero. This is not completed audio service, synthesis or a home screen.
 - QEMU SHA-256:
-  `d64ef1694c0f7b08c85573f51ff0643beb258d949395f59448d975d87cbdeae9`.
-- Generic replay: `.cache/felucca-validation/after-syscon-generic/`.
-- Durable evidence: main repo `.deps/qemu-syscon-2026-10-07/`; earlier
-  postincrement, indexed-store, upgrade and architecture evidence is retained.
+  `29c781a06380345c660aa1e5ccb371b78b326c739470dabd64216e08a9f5ed35`.
+- Generic replay:
+  `.cache/felucca-validation/after-parallel-packed-multiply-generic/`.
+- Durable evidence: main repo `.deps/qemu-parallel-packed-multiply-2026-10-07/`;
+  preceding CPU, syscon, upgrade and architecture checkpoints are retained.
+
+### Resolved F1E0 parallel multiply checkpoint
+
+`F1E0/1EB3 + 3381` at `0x02002776` pairs `r0 = r1 * 0x598` with
+`[sp+76] = r1`. The change only classifies the existing E1E0 destination;
+scalar decoding, packed literals and the incoming-register bundle machinery
+remain unchanged. It applies to every image through the shared CPU path.
+
+`validate_parallel_packed_multiply.py` passes 39 reference comparisons, one
+generic-loader replay and eight explicit faults. It checks incoming source,
+store value/address aliases, all destinations, product truncation, PSR,
+six/eight-byte conditional sizing and one-bundle retirement. Tail faults occur
+before multiply effects under the existing model policy. Hardware fault state
+and inherited unused packed-literal discrepancies remain unverified. Full ISA,
+98 profiles, ten IRQ cases and boot gates pass. Unchanged Felucca advances two
+bundles to ED54; the renamed default-loader replay matches captured state
+except the profile label, sample bytes and LCD pixels.
 
 ### Resolved EED2 checkpoint
 
@@ -430,10 +456,10 @@ Next implementation sequence:
 
 1. Preserve the QEMU 11.1.2 upgrade gate and source pin above while continuing
    reached instruction and device bring-up.
-2. Assign the reached F1E0 parallel multiply head to the CPU worker. Inspect
-   the existing multiply and bundle patterns before extending destination
-   classification. Test incoming-value aliases, conflicts, sizing/retirement,
-   PSR and explicit bundle faults; do not change existing multiply arithmetic.
+2. Assign the reached ED54/55 signed halfword loads to the CPU worker. Inspect
+   existing unsigned ED50/51 addressing before extending the shared path.
+   Resolve valid fields independently; test sign extension, offsets, aliases,
+   PSR/retirement, conditional sizing and explicit guard/access faults.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new evidence label. Commit only
    validated changes. Repeat for each actual subsequent CPU/MMIO failure.
