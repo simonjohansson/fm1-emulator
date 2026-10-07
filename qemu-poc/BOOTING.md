@@ -993,7 +993,7 @@ ten IRQ cases and boot pass. Unchanged firmware advances 121 instructions
 to ED13; renamed loading matches state except profile and sample/LCD bytes.
 Whole SRAM is not compared across initialization modes.
 
-Latest stop: ED13/4100 at `0x0200367e`, 43,281,042
+At this milestone: ED13/4100 at `0x0200367e`, 43,281,042
 instructions and 346,248,344 ns. Vendor `ifs (r3 >= r1)` selects two THEN instructions. Establish exact ED10
 signed-register fields and unused-low-byte admission policy independently.
 Caches use `after-signed-literal-le-if` and its `-generic` label; main repo
@@ -1004,7 +1004,7 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_literal_le_if.py
 ```
 
-### ED10 signed-register greater-or-equal IF and latest checkpoint
+### ED10 signed-register greater-or-equal IF checkpoint
 
 Exact ED10/FFF0 compares signed32 GPR[opcode low nibble] against GPR in
 second-word bits8..11. It admits the primary constructor's zero low byte;
@@ -1014,11 +1014,14 @@ behavior. Existing91/GEU, C1/GTU, literal families and common IF machinery
 are unchanged.
 
 `validate_signed_register_if.py` passes 158 separate-reference cases, one
-generic replay and 20 model faults. All fields, aliases, signed boundaries,
+generic replay and 20 model faults at this milestone (19 after E435 admission).
+All fields, aliases, signed boundaries,
 arm counts/mixed widths, PSR/RETS, stores and balanced follow-up IF are
 checked. Nine nonzero-byte cases retain separately verified oracle completion
-against model rejection. The reached E435 signed-min body fault occurs after
-the IF and preceding literal retire, preserving r0=32767. Four inherited
+against model rejection. Before E435 admission, its reached signed-min body
+fault occurred after the IF and preceding literal retired, preserving r0=32767.
+That obsolete negative is now retired and actual-body positives belong to the
+minimum gate. Four inherited
 predicate limits, two PC guards and four store faults retain precise count,
 full registers/specials and memory. Hardware fault state remains unverified;
 retained predicate IRQ blocking is source inspection only.
@@ -1036,6 +1039,40 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_if.py
+```
+
+### E435 signed minimum and latest checkpoint
+
+Exact scalar E435 mode1 implements signed32 minimum with destination in
+second-word bits12..15, left operand bits4..7 and right operand bits8..11.
+The primary constructor and vendor disassembly agree. Mode0 unsigned minimum,
+other scalar families, unsupported modes and parallel classification remain
+unchanged. No firmware identity or guest PC selects CPU behavior.
+
+`validate_signed_minimum.py` passes 140 separate-reference cases, one generic
+replay and 16 model faults. Signed boundaries, every operand field, aliases,
+mode0 controls, PSR/count and five actual conditional-body sequences are checked.
+Modes2..15, deferred F435 bundle rejection and the PC guard retain precise
+fault state. The old ED10 gate removes only its now-obsolete minimum body fault;
+all 158 positive cases remain, with 19 current model faults. Hardware fault
+state remains unverified.
+
+Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
+8,404 instructions to F430; renamed loading matches all captured state except
+profile and all sample/LCD bytes. Whole SRAM is not compared across different
+initialization modes. IRQ11 has still not acknowledged or returned.
+
+Latest stop: F430/1500 +6100 at `0x02003992`, 43,289,448
+instructions and 346,315,592 ns. Vendor `r1 = abs(r5)` is paired with `r0 = [r0 + 4]`.
+Scalar E430 absolute value is also absent: admitting only the bundle classifier
+would execute its tail before the head fault. Establish exact scalar E430 and
+canonical guarded bundle classification together before accepting this form.
+Caches use `after-signed-minimum` and its `-generic` label; main repo
+`.deps/qemu-signed-minimum-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 1/0; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_minimum.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

@@ -301,11 +301,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0xe1f0 || op == 0xe1f4 || op == 0xe435) {
         uint16_t x = fetch(d, here + 2);
         unsigned mode = x & 15;
-        if (mode && (op != 0xe1f4 || mode != 1)) { goto illegal; }
+        if (mode && ((op != 0xe1f4 && op != 0xe435) || mode != 1)) { goto illegal; }
         TCGv_i32 left = read_gpr(d, (x >> 4) & 15), right = read_gpr(d, (x >> 8) & 15);
         if (op == 0xe1f0) { tcg_gen_mul_i32(gpr[x >> 12], left, right); }
         else if (op == 0xe1f4 && mode) { gen_helper_pi32v2_divs(gpr[x >> 12], tcg_env, left, right); }
         else if (op == 0xe1f4) { gen_helper_pi32v2_div(gpr[x >> 12], tcg_env, left, right); }
+        else if (op == 0xe435 && mode == 1) { tcg_gen_smin_i32(gpr[x >> 12], left, right); }
         else { tcg_gen_umin_i32(gpr[x >> 12], left, right); }
         next = here + 4;
     } else if (op == 0xe1c0) {

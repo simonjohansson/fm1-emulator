@@ -307,6 +307,13 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   reached-body retirement are retained. Evidence:
   `.deps/qemu-signed-register-if-2026-10-08/`. Audio service remains open.
 
+- 2026-10-08: Stage 3 E435 signed minimum complete and independently reviewed.
+  Focused gate passes 140 reference cases, one generic replay and 16 faults;
+  updated ED10 gate passes unchanged 158 positives and 19 faults. Full ISA/
+  profile/IRQ/boot pass. Unchanged firmware advances 8,404 instructions to
+  F430 at `0x02003992`; renamed state/sample/LCD match. Evidence:
+  `.deps/qemu-signed-minimum-2026-10-08/`. Audio service remains open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -433,7 +440,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is E435, recorded below.
+  latest firmware blocker is F430, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -443,25 +450,48 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: signed minimum E435
+## Current firmware blocker: paired absolute value F430
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-register-if/`.
-Vendor `r0 = smin(r3, r0)` is selected after the signed IF and literal.
-Establish exact E435 mode1 signed minimum while preserving mode0 unsigned minimum.
+Latest unchanged boot: `.cache/felucca-validation/after-signed-minimum/`.
+Vendor `r1 = abs(r5)` is paired with `r0 = [r0 + 4]`.
+Scalar E430 absolute value is also absent: admitting only the bundle classifier
+would execute its tail before the head fault. Establish exact scalar E430 and
+canonical guarded bundle classification together before accepting this form.
 
-- PC `0x02003686`, words `E435/0031`.
-- Instructions 43,281,044; virtual time 346,248,360 ns.
+- PC `0x02003992`, words `F430/1500 +6100`.
+- Instructions 43,289,448; virtual time 346,315,592 ns.
 - IRQ11 entries/returns 1/0;
   IRQ63 entries/returns 0/0.
-- ALNK completions 5, acknowledgments 0,
-  coalesced 4, pending `0x80`;
-  2,560 captured sample words, 0 nonzero.
+- ALNK completions 6, acknowledgments 0,
+  coalesced 5, pending `0x80`;
+  3,072 captured sample words, 0 nonzero.
 - LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
   Audio service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `2ddfb21604294036c470e7922ddeac5453a592dfe7703e8672c68a8ef5a8338a`.
-- Generic replay: `after-signed-register-if-generic`.
-- Durable evidence: main repo `.deps/qemu-signed-register-if-2026-10-08/`.
+- QEMU SHA-256: `a814d09bb9642b863fd17ae54422bf6dd0bdbcd5a5662bcb8c154533942f0b51`.
+- Generic replay: `after-signed-minimum-generic`.
+- Durable evidence: main repo `.deps/qemu-signed-minimum-2026-10-08/`.
+
+### Resolved E435 signed minimum
+
+Exact scalar E435 mode1 implements signed32 minimum with destination in
+second-word bits12..15, left operand bits4..7 and right operand bits8..11.
+The primary constructor and vendor disassembly agree. Mode0 unsigned minimum,
+other scalar families, unsupported modes and parallel classification remain
+unchanged. No firmware identity or guest PC selects CPU behavior.
+
+`validate_signed_minimum.py` passes 140 separate-reference cases, one generic
+replay and 16 model faults. Signed boundaries, every operand field, aliases,
+mode0 controls, PSR/count and five actual conditional-body sequences are checked.
+Modes2..15, deferred F435 bundle rejection and the PC guard retain precise
+fault state. The old ED10 gate removes only its now-obsolete minimum body fault;
+all 158 positive cases remain, with 19 current model faults. Hardware fault
+state remains unverified.
+
+Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
+8,404 instructions to F430; renamed loading matches all captured state except
+profile and all sample/LCD bytes. Whole SRAM is not compared across different
+initialization modes. IRQ11 has still not acknowledged or returned.
 
 ### Resolved ED10 signed-register greater-or-equal IF
 
@@ -473,11 +503,14 @@ behavior. Existing91/GEU, C1/GTU, literal families and common IF machinery
 are unchanged.
 
 `validate_signed_register_if.py` passes 158 separate-reference cases, one
-generic replay and 20 model faults. All fields, aliases, signed boundaries,
+generic replay and 20 model faults at this milestone (19 after E435 admission).
+All fields, aliases, signed boundaries,
 arm counts/mixed widths, PSR/RETS, stores and balanced follow-up IF are
 checked. Nine nonzero-byte cases retain separately verified oracle completion
-against model rejection. The reached E435 signed-min body fault occurs after
-the IF and preceding literal retire, preserving r0=32767. Four inherited
+against model rejection. Before E435 admission, its reached signed-min body
+fault occurred after the IF and preceding literal retired, preserving r0=32767.
+That obsolete negative is now retired and actual-body positives belong to the
+minimum gate. Four inherited
 predicate limits, two PC guards and four store faults retain precise count,
 full registers/specials and memory. Hardware fault state remains unverified;
 retained predicate IRQ blocking is source inspection only.
@@ -732,12 +765,12 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign the reached E435 mode1 signed minimum to the CPU worker. Establish
-   exact operand fields and signed behavior independently; preserve mode0
-   unsigned minimum, other modes and parallel classification. Check signed
-   boundaries/equality, fields/aliases, PSR/count, conditionals, generic replay
-   and explicit model faults. Convert or retire the ED10 gate's obsolete
-   deferred-body test only after admission; preserve its other regressions.
+2. Assign reached absolute value to the CPU worker. Independently establish
+   exact scalar E430 canonical low-byte-zero encoding, signed32 wraparound ABS,
+   and guarded parallel destination classification. Preserve E434, F435 and
+   other helpers. Check signed boundaries/INT_MIN, fields/aliases, scalar and
+   six/eight-byte paired forms, incoming operands, tail flags, PSR/count,
+   generic replay and rejection before malformed-head tail effects.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.

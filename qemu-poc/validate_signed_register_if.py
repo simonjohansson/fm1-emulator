@@ -9,11 +9,10 @@ reference ignores tested nonzero bytes; this gate retains canonical admission
 and raw disagreement without claiming hardware reserved-bit behavior.
 Then count is bits14:15 + 1; else count is bits12:13. Balanced nonnested
 completion, full register fields/aliases and scalar/bundle widths are tested.
-PSR and RETS stay unchanged when selected arms do not change them. Reached
-E435/0031 signed-min remains deferred: its fault follows IF and literal
-retirement, with the literal's r0 update preserved. Positive arm fixtures use
-already-supported instructions. No existing register/literal IF, classifier,
-scanner/helper or signed-min implementation changes.
+PSR and RETS stay unchanged when selected arms do not change them. Positive
+arm fixtures use already-supported instructions. Actual IF/literal/signed-min
+body completion is covered by validate_signed_minimum.py. Existing register/
+literal IF paths, classifier and scanner/helpers stay fixed.
 Inherited nested/final-CALL/final-FF0C/taken-exit limits retain raw reference
 behavior; exits are not IRQ/completion proof. Hardware faults and undocumented
 predicate shadow state remain unverified. No ISA-invalid claim is made.
@@ -217,24 +216,6 @@ def low_byte_fault(low):
     print(f"PASS {name}: canonical admission and reference disagreement recorded")
 
 
-def deferred_reached_min():
-    name="deferred-reached-signed-min"
-    guest,expected=setup({3:0,1:0xFFFF8000},seed=True)
-    before=guest.instructions
-    guest.emit(0xED13,0x4100)
-    guest.emit(0xE040,0x7FFF)
-    pc=guest.pc
-    guest.emit(0xE435,0x0031)
-    guest.emit(0xE04D,0x3344)
-    expected[0]=32767
-    directory,record=fault_snapshot(name,guest,expected,guest.pc,pc,before+2,
-        "unsupported instruction 0xe435",{"address":pc,"size":4,"flags":2})
-    record.update(if_header_already_retired=True,literal_already_retired=True,
-                  signed_min_deferred=True)
-    (directory/"run.json").write_text(json.dumps(record,indent=2)+"\n")
-    print("PASS deferred-reached-signed-min: fault preserves retired IF/literal effects")
-
-
 def inherited_fixture(kind):
     registers={3:0,1:0xFFFF8000}
     if kind=="nested": registers[0]=0
@@ -404,7 +385,7 @@ def main():
         cases.append(dict(name=f"mixed-{selected}",left=1 if selected else 0,right=1,
                           then=tuple(widths[:4]),otherwise=tuple(widths[3:])))
         # Preserve actual reached header/register fields; use an accepted
-        # store as the second disposable test operation. Actual smin is below.
+        # store as the second disposable test operation.
         cases.append(dict(name=f"reached-header-supported-body-{selected}",
                           left=0 if selected else 0x80000000,right=0xFFFF8000,
                           then=(("lit4",0,32767),("spstore",0,16))))
@@ -418,13 +399,12 @@ def main():
         if case["name"]=="reached-header-supported-body-True": replay=result
     generic_replay(*replay)
     for low in (1,2,4,8,16,32,64,128,255): low_byte_fault(low)
-    deferred_reached_min()
     for kind in ("nested","final-call","final-ff0c","taken-exit"): inherited_fault(kind)
     for stage in ("header","body"): guard_fault(stage)
     for kind in ("unaligned","unmapped","read-only","guarded"): store_fault(kind)
     summary={"passed":True,"instruction":"exact ED10/FFF0 signed register GE IF",
-             "reference_compared_cases":len(cases),"generic_replays":1,"total_model_faults":20,
-             "canonical_low_byte_faults":9,"deferred_reached_body_faults":1,
+             "reference_compared_cases":len(cases),"generic_replays":1,"total_model_faults":19,
+             "canonical_low_byte_faults":9,"deferred_reached_body_faults":0,
              "inherited_predicate_limits":4,"pc_guard_faults":2,"selected_body_access_faults":4,
              "primary_if_blob":"4ee88595bc41e98cd2d58bcdde90bc19f4c19a57",
              "low_byte_policy":"primary imm1623=0; reference ignores tested nonzero bytes; hardware bits unverified",
@@ -433,7 +413,7 @@ def main():
              "qemu_sha256":hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
              "hardware_validation":False,"hardware_fault_state_validation":False}
     (CACHE/"validation.json").write_text(json.dumps(summary,indent=2)+"\n")
-    print(f"PASS ED10: {len(cases)} reference comparisons, generic replay and twenty model faults")
+    print(f"PASS ED10: {len(cases)} reference comparisons, generic replay and nineteen model faults")
 
 
 if __name__=="__main__":
