@@ -6,6 +6,20 @@ build products in `.cache/` are disposable.
 
 Worktree: `/Users/simonjohansson/src/fm1-qemu-poc`, branch `codex/qemu-poc`.
 
+## Generic machine boundary
+
+The 2026-10-07 architecture extraction uses one CPU semantic path and one
+implemented hardware map for every image. Omit `-append` (or use
+`-append application`) for raw application handoff without fixture hashes,
+poisoning or implicit checkpoints. Historical fixture modes below now select
+only explicit test inputs and observations. See [ARCHITECTURE.md](ARCHITECTURE.md)
+for the three layers, input inventory, loader contract and remaining limits.
+
+The unchanged startup/splash/diagnostic gates remain acceptance tests. New
+`validate_cpu_profiles.py` and `validate_machine_profiles.py` test profile,
+layout and filename independence. A common one-instruction translation-block
+boundary preserves conditional completion; this is not a throughput claim.
+
 ## Watch the timer and key matrix in a macOS window
 
 ```sh

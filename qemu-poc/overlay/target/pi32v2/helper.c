@@ -8,8 +8,11 @@
 
 void pi32v2_fail(CPUPi32v2State *env, const char *reason)
 {
-    fm1_poc_fault(env, reason);
-    error_report("pi32v2 PoC: %s at PC 0x%08x after %" PRIu64 " instructions",
+    Pi32v2CPU *cpu = PI32V2_CPU(env_cpu(env));
+    if (cpu->observer_ops && cpu->observer_ops->fault) {
+        cpu->observer_ops->fault(env, reason);
+    }
+    error_report("pi32v2: %s at PC 0x%08x after %" PRIu64 " instructions",
                  reason, env->pc, env->instructions);
     exit(EXIT_FAILURE);
 }
@@ -22,41 +25,66 @@ void HELPER(pi32v2_illegal)(CPUPi32v2State *env, uint32_t insn)
 
 void HELPER(pi32v2_finish)(CPUPi32v2State *env)
 {
-    fm1_poc_finish(env);
+    Pi32v2CPU *cpu = PI32V2_CPU(env_cpu(env));
+    if (cpu->observer_ops && cpu->observer_ops->finish) {
+        cpu->observer_ops->finish(env);
+    }
+    pi32v2_fail(env, "checkpoint observer missing or returned");
 }
 
 void HELPER(pi32v2_frame)(CPUPi32v2State *env)
 {
-    fm1_poc_frame(env);
+    Pi32v2CPU *cpu = PI32V2_CPU(env_cpu(env));
+    if (cpu->observer_ops && cpu->observer_ops->frame) {
+        cpu->observer_ops->frame(env);
+    }
 }
 
-void HELPER(pi32v2_diag_loop)(CPUPi32v2State *env)
+void HELPER(pi32v2_loop)(CPUPi32v2State *env)
 {
-    fm1_poc_diag_loop(env);
+    Pi32v2CPU *cpu = PI32V2_CPU(env_cpu(env));
+    if (cpu->observer_ops && cpu->observer_ops->loop) {
+        cpu->observer_ops->loop(env);
+    }
 }
 
 void HELPER(pi32v2_budget)(CPUPi32v2State *env)
 {
-    pi32v2_fail(env, PI32V2_CPU(env_cpu(env))->felucca_fixture ?
-                    "Felucca instruction limit reached" :
-                    "diagnostic instruction limit reached");
+    pi32v2_fail(env, "instruction limit reached");
+}
+
+void pi32v2_check_access(CPUPi32v2State *env, uint32_t address,
+                         unsigned size, unsigned flags)
+{
+    Pi32v2CPU *cpu = PI32V2_CPU(env_cpu(env));
+    if (cpu->ops && cpu->ops->check_access) {
+        cpu->ops->check_access(env, address, size, flags);
+    }
+}
+
+void pi32v2_note_branch(CPUPi32v2State *env)
+{
+    Pi32v2CPU *cpu = PI32V2_CPU(env_cpu(env));
+    if (cpu->ops && cpu->ops->note_branch) {
+        cpu->ops->note_branch(env);
+    }
 }
 
 void HELPER(pi32v2_access)(CPUPi32v2State *env, uint32_t address, uint32_t size, uint32_t flags)
 {
-    fm1_poc_check_access(env, address, size, flags);
+    pi32v2_check_access(env, address, size, flags);
 }
 
 void HELPER(pi32v2_branch)(CPUPi32v2State *env)
 {
-    fm1_poc_note_branch(env);
+    pi32v2_note_branch(env);
 }
 
 void HELPER(pi32v2_flush)(CPUPi32v2State *env, uint32_t address)
 {
     /* Guest data stores already invalidate affected TCG code. The bounded
      * machine has synchronous coherent memory, so no cache queue remains. */
-    fm1_poc_check_access(env, address & ~31u, 32, 0);
+    pi32v2_check_access(env, address & ~31u, 32, 0);
 }
 
 uint32_t HELPER(pi32v2_if)(CPUPi32v2State *env, uint32_t result,

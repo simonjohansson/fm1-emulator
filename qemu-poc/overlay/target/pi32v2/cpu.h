@@ -17,17 +17,33 @@ typedef struct CPUArchState {
     uint32_t last_irq_pc, last_irq_handler, entry_icfg, return_icfg;
 } CPUPi32v2State;
 
+/* Hardware and optional validation interfaces supplied by the machine. */
+typedef struct Pi32v2MachineOps {
+    void (*reset_state)(CPUPi32v2State *env);
+    bool (*select_irq)(CPUPi32v2State *env, unsigned *number, unsigned *priority);
+    void (*check_access)(CPUPi32v2State *env, uint32_t address,
+                         unsigned size, unsigned flags);
+    void (*note_branch)(CPUPi32v2State *env);
+} Pi32v2MachineOps;
+
+typedef struct Pi32v2ObserverOps {
+    void (*fault)(CPUPi32v2State *env, const char *reason);
+    void (*finish)(CPUPi32v2State *env);
+    void (*frame)(CPUPi32v2State *env);
+    void (*loop)(CPUPi32v2State *env);
+} Pi32v2ObserverOps;
+
 struct ArchCPU {
     CPUState parent_obj;
     CPUPi32v2State env;
-    uint32_t boot_pc, stop_pc, frame_pc;
+    /* Explicit loader entry and optional observer addresses/budget. */
+    uint32_t boot_pc, stop_pc, frame_pc, loop_pc;
     uint64_t instruction_limit;
-    bool timer_fixture, foundation_fixture, display_fixture, diag_fixture;
-    bool felucca_fixture;
-    bool diag_loop_checkpoint;
+    const Pi32v2MachineOps *ops;
+    const Pi32v2ObserverOps *observer_ops;
     void *machine;
-    /* Host display checkpoint, not architectural guest state. */
-    bool display_held;
+    /* Host observer checkpoint, not architectural guest state. */
+    bool observer_held;
 };
 struct Pi32v2CPUClass {
     CPUClass parent_class;
@@ -37,13 +53,9 @@ struct Pi32v2CPUClass {
 #define CPU_RESOLVING_TYPE TYPE_PI32V2_CPU
 void pi32v2_translate_init(void);
 void pi32v2_translate_code(CPUState *, TranslationBlock *, int *, vaddr, void *);
-G_NORETURN void fm1_poc_finish(CPUPi32v2State *env);
-void fm1_poc_fault(CPUPi32v2State *env, const char *reason);
-bool fm1_poc_select_irq(CPUPi32v2State *env, unsigned *number, unsigned *priority);
-void fm1_poc_frame(CPUPi32v2State *env);
-void fm1_poc_diag_loop(CPUPi32v2State *env);
-void fm1_poc_check_access(CPUPi32v2State *env, uint32_t address, unsigned size, unsigned flags);
-void fm1_poc_note_branch(CPUPi32v2State *env);
+void pi32v2_check_access(CPUPi32v2State *env, uint32_t address,
+                         unsigned size, unsigned flags);
+void pi32v2_note_branch(CPUPi32v2State *env);
 G_NORETURN void pi32v2_fail(CPUPi32v2State *env, const char *reason);
 #include "exec/cpu-all.h"
 

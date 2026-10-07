@@ -12,14 +12,12 @@
 typedef struct FM1PocSystem {
     Pi32v2CPU *cpu;
     MemoryRegion p33_mmio, reset_mmio, debug_mmio, emu_mmio, etm_mmio, cache_mmio;
-    MemoryRegion audio_mmio;
     QEMUTimer *p33_timer, *watchdog_timer;
     uint32_t p33_control, reset_source;
     uint8_t p33_data, transfer_byte, command, phase;
     uint16_t address;
-    bool p33_busy, debug_unlocked, alnk_dma;
+    bool p33_busy, debug_unlocked;
     uint8_t p3_reset_source, valid_keep, watchdog_control, power_control;
-    uint16_t audio_control;
     uint32_t debug_message, debug_enable, write_enable;
     uint32_t write_low[3], write_high[3], pc_low[2], pc_high[2];
     uint32_t emu_control, emu_message, stack_low[2], stack_high[2];

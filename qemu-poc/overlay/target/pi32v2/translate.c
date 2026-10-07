@@ -13,7 +13,7 @@ typedef struct PiDisasContext {
     DisasContextBase base;
     CPUPi32v2State *env;
     uint32_t stop;
-    bool count_enabled, diagnostic;
+    bool count_enabled;
     TCGv_i32 inputs[16];
 } PiDisasContext;
 static TCGv_i32 gpr[16], spr[16], pc;
@@ -62,9 +62,7 @@ static void set_call_return(PiDisasContext *d, uint32_t next)
 {
     /* Retire the call at its sequential boundary before entering its callee;
      * the outgoing control-transfer target is separate. */
-    if (d->diagnostic) {
-        gen_helper_pi32v2_call_return(spr[RETS], tcg_env, tcg_constant_i32(next));
-    } else { tcg_gen_movi_i32(spr[RETS], next); }
+    gen_helper_pi32v2_call_return(spr[RETS], tcg_env, tcg_constant_i32(next));
 }
 static TCGv_i32 read_gpr(PiDisasContext *d, unsigned reg)
 {
@@ -72,9 +70,7 @@ static TCGv_i32 read_gpr(PiDisasContext *d, unsigned reg)
 }
 static void check_memory_access(PiDisasContext *d, TCGv_i32 addr, MemOp op, bool write)
 {
-    if (d->diagnostic) {
-        gen_helper_pi32v2_access(tcg_env, addr, tcg_constant_i32(memop_size(op)), tcg_constant_i32(write));
-    }
+    gen_helper_pi32v2_access(tcg_env, addr, tcg_constant_i32(memop_size(op)), tcg_constant_i32(write));
 }
 static void load(PiDisasContext *d, TCGv_i32 value, TCGv_i32 addr, MemOp op)
 {
@@ -88,7 +84,7 @@ static void store(PiDisasContext *d, TCGv_i32 value, TCGv_i32 addr, MemOp op)
 }
 static void record_branch(PiDisasContext *d)
 {
-    if (d->diagnostic) { gen_helper_pi32v2_branch(tcg_env); }
+    gen_helper_pi32v2_branch(tcg_env);
 }
 static TCGv_i32 bit_operand(TCGv_i32 index, uint16_t op)
 {
@@ -109,29 +105,17 @@ static void pop(PiDisasContext *d, TCGv_i32 value)
 {
     load(d, value, spr[SP], MO_LEUL | MO_ALIGN);
     tcg_gen_addi_i32(spr[SP], spr[SP], 4);
-    if (d->diagnostic) {
-        gen_helper_pi32v2_access(tcg_env, spr[SP], tcg_constant_i32(0), tcg_constant_i32(4));
-    }
+    gen_helper_pi32v2_access(tcg_env, spr[SP], tcg_constant_i32(0), tcg_constant_i32(4));
 }
-static void jump(PiDisasContext *d, uint32_t dest, int slot)
+static void jump(uint32_t dest)
 {
-    if (d->diagnostic) {
-        gen_helper_pi32v2_advance(pc, tcg_env, tcg_constant_i32(dest));
-        tcg_gen_exit_tb(NULL, 0);
-    } else if (translator_use_goto_tb(&d->base, dest)) {
-        tcg_gen_goto_tb(slot);
-        tcg_gen_movi_i32(pc, dest);
-        tcg_gen_exit_tb(d->base.tb, slot);
-    } else {
-        tcg_gen_movi_i32(pc, dest);
-        tcg_gen_exit_tb(NULL, 0);
-    }
+    gen_helper_pi32v2_advance(pc, tcg_env, tcg_constant_i32(dest));
+    tcg_gen_exit_tb(NULL, 0);
 }
 static void dynamic_jump(PiDisasContext *d, TCGv_i32 value)
 {
     record_branch(d);
-    if (d->diagnostic) { gen_helper_pi32v2_advance(pc, tcg_env, value); }
-    else { tcg_gen_mov_i32(pc, value); }
+    gen_helper_pi32v2_advance(pc, tcg_env, value);
     tcg_gen_exit_tb(NULL, 0);
     d->base.is_jmp = DISAS_NORETURN;
 }
@@ -140,10 +124,10 @@ static void branch(PiDisasContext *d, uint32_t dest, uint32_t next,
 {
     TCGLabel *taken = gen_new_label();
     tcg_gen_brcondi_i32(nonzero ? TCG_COND_NE : TCG_COND_EQ, value, 0, taken);
-    jump(d, next, 0);
+    jump(next);
     gen_set_label(taken);
     record_branch(d);
-    jump(d, dest, 1);
+    jump(dest);
     d->base.is_jmp = DISAS_NORETURN;
 }
 static void compare_branch(PiDisasContext *d, uint32_t dest, uint32_t next,
@@ -151,10 +135,10 @@ static void compare_branch(PiDisasContext *d, uint32_t dest, uint32_t next,
 {
     TCGLabel *taken = gen_new_label();
     tcg_gen_brcond_i32(cond, left, right, taken);
-    jump(d, next, 0);
+    jump(next);
     gen_set_label(taken);
     record_branch(d);
-    jump(d, dest, 1);
+    jump(dest);
     d->base.is_jmp = DISAS_NORETURN;
 }
 static void init_disas(DisasContextBase *db, CPUState *cs)
@@ -163,7 +147,6 @@ static void init_disas(DisasContextBase *db, CPUState *cs)
     d->env = cpu_env(cs);
     d->stop = PI32V2_CPU(cs)->stop_pc;
     d->count_enabled = true;
-    d->diagnostic = PI32V2_CPU(cs)->diag_fixture || PI32V2_CPU(cs)->felucca_fixture;
 }
 static void tb_start(DisasContextBase *db, CPUState *cs) {}
 static void insn_start(DisasContextBase *db, CPUState *cs)
@@ -266,9 +249,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xe01f) == 0x8002) {
         int32_t imm = sext((op >> 5) & 7, 3) * 128 + ((op >> 8) & 31) * 4;
         tcg_gen_addi_i32(spr[SP], spr[SP], imm);
-        if (d->diagnostic) {
-            gen_helper_pi32v2_access(tcg_env, spr[SP], tcg_constant_i32(0), tcg_constant_i32(4));
-        }
+        gen_helper_pi32v2_access(tcg_env, spr[SP], tcg_constant_i32(0), tcg_constant_i32(4));
     } else if ((op & 0xfff0) == 0xe160 || (op & 0xfff0) == 0xe170) {
         uint16_t x = fetch(d, here + 2);
         unsigned mode = (x >> 10) & 3;
@@ -689,19 +670,19 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
         next = here + 4;
         set_call_return(d, next);
-        count(d); record_branch(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
+        count(d); record_branch(d); jump(next + delta); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xffc0) == 0xeac0) {
         int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
         next = here + 4;
         /* The long GOTO shares CALL's displacement fields but preserves RETS. */
-        count(d); record_branch(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
+        count(d); record_branch(d); jump(next + delta); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe00c) == 0x8004) {
         int32_t delta = sext(((op & 3) << 10) | (((op >> 4) & 15) << 6) | (((op >> 8) & 31) << 1), 12);
-        count(d); record_branch(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
+        count(d); record_branch(d); jump(next + delta); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe08f) == 0x8001) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
         set_call_return(d, next);
-        count(d); record_branch(d); jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
+        count(d); record_branch(d); jump(next + delta); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe008) == 0x4000) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
         count(d); branch(d, next + delta, next, read_gpr(d, a), op & 128);
@@ -886,21 +867,19 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         db->pc_next = next;
         return;
     }
-    if (PI32V2_CPU(cs)->display_fixture && here == PI32V2_CPU(cs)->frame_pc) {
+    if (PI32V2_CPU(cs)->frame_pc && here == PI32V2_CPU(cs)->frame_pc) {
         /* Observe a completed guest frame, then execute its real next opcode. */
         gen_helper_pi32v2_frame(tcg_env);
     }
-    if (PI32V2_CPU(cs)->diag_loop_checkpoint && here == 0x02002632) {
+    if (PI32V2_CPU(cs)->loop_pc && here == PI32V2_CPU(cs)->loop_pc) {
         translator_io_start(db);
-        gen_helper_pi32v2_diag_loop(tcg_env);
+        gen_helper_pi32v2_loop(tcg_env);
     }
     op = fetch(d, here);
     bool parallel = op >> 13 == 6 || (op & 0xf800) == 0xf000;
     unsigned span = instruction_end(d, here) - here;
-    if (d->diagnostic) {
-        gen_helper_pi32v2_access(tcg_env, tcg_constant_i32(here),
-                                 tcg_constant_i32(span), tcg_constant_i32(2));
-    }
+    gen_helper_pi32v2_access(tcg_env, tcg_constant_i32(here),
+                             tcg_constant_i32(span), tcg_constant_i32(2));
     if (parallel) {
         /* Either half may touch MMIO. Ending the TB here lets QEMU enable
          * I/O before both effects, so replay cannot repeat a register update. */
@@ -938,12 +917,10 @@ static void tb_stop(DisasContextBase *db, CPUState *cs)
 {
     if (db->is_jmp == DISAS_EXIT) {
         /* Re-evaluate a pending IRQ after its architectural mask changes. */
-        PiDisasContext *d = container_of(db, PiDisasContext, base);
-        if (d->diagnostic) { gen_helper_pi32v2_advance(pc, tcg_env, tcg_constant_i32(db->pc_next)); }
-        else { tcg_gen_movi_i32(pc, db->pc_next); }
+        gen_helper_pi32v2_advance(pc, tcg_env, tcg_constant_i32(db->pc_next));
         tcg_gen_exit_tb(NULL, 0);
     } else if (db->is_jmp != DISAS_NORETURN) {
-        jump(container_of(db, PiDisasContext, base), db->pc_next, 0);
+        jump(db->pc_next);
     }
 }
 static const TranslatorOps ops = {
@@ -954,10 +931,8 @@ void pi32v2_translate_code(CPUState *cs, TranslationBlock *tb,
                           int *max_insns, vaddr start, void *host_pc)
 {
     PiDisasContext d = {};
-    /* The bounded profiles validate semantics, not throughput. A short TB lets
-     * conditional completion normalize PC and IRQ state with exact icount. */
-    if (PI32V2_CPU(cs)->diag_fixture || PI32V2_CPU(cs)->felucca_fixture) {
-        *max_insns = 1;
-    }
+    /* Preserve conditional completion and IRQ admission at each architectural
+     * instruction boundary for every image. Wider TBs need a separate gate. */
+    *max_insns = 1;
     translator_loop(cs, tb, max_insns, start, host_pc, &ops, &d.base);
 }

@@ -186,25 +186,6 @@ static void cache_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
     system_fail(opaque, "cache control writes are unsupported");
 }
 
-static uint64_t audio_read(void *opaque, hwaddr offset, unsigned size)
-{
-    FM1PocSystem *s = opaque;
-    if (offset || size != 2) { system_fail(s, "unsupported ALNK0 control read"); }
-    return s->audio_control;
-}
-
-static void audio_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
-{
-    FM1PocSystem *s = opaque;
-    /* The unchanged diagnostic only clears CON0's DMA enable bit 11.
-     * This cold handoff starts ALNK0 disabled; accepting zero retains that
-     * actual state. Configuration, enabling and audio DMA are unsupported. */
-    if (offset || size != 2 || value) {
-        system_fail(s, "ALNK0 configuration and audio DMA are unsupported");
-    }
-    s->audio_control = value;
-}
-
 static uint64_t debug_read(void *opaque, hwaddr offset, unsigned size)
 {
     FM1PocSystem *s = opaque;
@@ -313,12 +294,6 @@ SYSTEM_OPS(debug);
 SYSTEM_OPS(emu);
 SYSTEM_OPS(etm);
 
-static const MemoryRegionOps audio_ops = {
-    .read = audio_read, .write = audio_write, .endianness = DEVICE_LITTLE_ENDIAN,
-    .valid = {.min_access_size = 2, .max_access_size = 2},
-    .impl = {.min_access_size = 2, .max_access_size = 2},
-};
-
 void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
 {
     s->cpu = cpu;
@@ -330,9 +305,6 @@ void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
     memory_region_add_subregion(get_system_memory(), address, &s->region)
     MAP(p33_mmio, p33_ops, "fm1.p33", 0x13e08, 8);
     MAP(reset_mmio, reset_ops, "fm1.reset-source", 0x100c0, 4);
-    if (!s->alnk_dma) {
-        MAP(audio_mmio, audio_ops, "fm1.alnk0-disabled", 0x12e00, 2);
-    }
     MAP(cache_mmio, cache_ops, "fm1.cache-idle", 0x01eee008, 4);
     MAP(debug_mmio, debug_ops, "fm1.debug-guards", 0x01eee240, 0x150);
     MAP(emu_mmio, emu_ops, "fm1.emu-guards", 0x01eef0d0, 24);

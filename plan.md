@@ -73,11 +73,11 @@ stable Rust API changes or physical flashing are authorized by this plan.
 
 ### Ordered stages and completion gates
 
-- [ ] **1. Establish contracts and baseline.** Inventory available firmware
+- [x] **1. Establish contracts and baseline.** Inventory available firmware
   artifacts and supported entry modes. Record hardware assumptions and
   fixture dependencies. Re-run the full ISA baseline (last full run predates
   IRQ changes) before changing CPU behavior. Preserve existing boot evidence.
-- [ ] **2. Establish generic boundaries.** Isolate test observers and loader
+- [x] **2. Establish generic boundaries.** Isolate test observers and loader
   state. Make CPU semantics and hardware availability independent of fixture
   selection. Preserve conditional-call completion and IRQ admission before
   attempting larger translation blocks. Preserve explicit protection faults
@@ -136,12 +136,31 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
 - 2026-10-07: architecture reviewed with Sol 6.1 Extra high CPU, hardware and
   macOS reviewers. User authorized implementation. Updating the plan and
   establishing Stage 1 evidence precede the first Stage 2 extraction.
+- 2026-10-07: Stage 1 complete. Full ISA baseline passed before CPU changes;
+  `qemu-poc/ARCHITECTURE.md` records actual firmware/package identities and
+  entry limitations. Approved plan saved as signed commit `b04f464`.
+- 2026-10-07: Stage 2 first boundary extraction complete and independently
+  reviewed. CPU fixture semantics removed; fixed hardware map and dedicated
+  ALNK apply to all images; optional fixture loading/observations extracted to
+  `fm1-test.c`. Generic application mode has no identity checks, poisoning,
+  implicit stop/budget or observers. Existing test output formats preserved.
+  Passed 98 CPU profile/default-observer-disabled runs, 32 common-map runs,
+  full ISA, foundation/probe/QMP/fault checks, 10 IRQ cases, 18 ALNK cases,
+  diagnostic long USB retry, display, and unchanged Felucca startup/reference
+  and splash/reference. Renamed unchanged Felucca under the generic loader
+  reached the same FF0C failure with matching instruction/time, device state
+  and pixels. Evidence: `.deps/qemu-architecture-2026-10-07/` in the main repo.
+  The common one-instruction TB boundary is intentional; performance and
+  pending-IRQ-at-conditional-boundary/page-crossing coverage remain follow-up.
+  Stage 3 now begins with the independently reviewed narrow FF0C semantics;
+  resettable controllers/shared syscon and deeper DMA contracts remain open.
 
 ## Permanent workspace and checkpoint
 
 - Worktree: `/Users/simonjohansson/src/fm1-qemu-poc`
 - Branch: `codex/qemu-poc`
-- Last implementation commit: `74f2ce6` — Dispatch the reached Felucca audio interrupt.
+- Pre-architecture firmware checkpoint: `74f2ce6` — first real audio IRQ entry.
+- Current architecture milestones and verification are recorded in the work ledger.
 - Architecture review baseline: `268e562`; later milestones are recorded in
   the work ledger and Git history.
 - Main repository: `/Users/simonjohansson/src/fm1-emulator`
@@ -240,9 +259,9 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Unchanged FM-1_980 diagnostic passes: 640 balanced timer IRQs and the long
   disconnected-USB retry run with 6,173 balanced IRQ/RTIs, 153,163 foreground
   loops, 1,029 guest ms, 12 SIE requests and 240,000 guest polls.
-- Full ISA gate last passed at `d38ad8d`, immediately before the IRQ source
-  change. The later IRQ change passed its focused and established boot/diag
-  gates; a new full ISA run has not been performed after `74f2ce6`.
+- Full ISA gate passed again on 2026-10-07 before and after the first
+  architecture extraction. The IRQ, startup and splash gates also passed;
+  firmware execution still reaches the recorded FF0C blocker below.
 
 Recent signed commits, all signatures verified:
 

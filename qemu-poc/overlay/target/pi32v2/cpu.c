@@ -59,19 +59,23 @@ static void unexpected_exception(CPUState *cs)
 
 static bool interrupt(CPUState *cs, int request)
 {
-    if (PI32V2_CPU(cs)->display_held) { return false; }
+    Pi32v2CPU *cpu = PI32V2_CPU(cs);
+    if (cpu->observer_held) { return false; }
     CPUPi32v2State *e = cpu_env(cs);
     if (!(request & CPU_INTERRUPT_HARD) || e->in_irq || e->predicate_end ||
         (e->spr[ICFG] & 0x300) != 0x300) {
         return false;
     }
     unsigned number, priority;
-    if (!fm1_poc_select_irq(e, &number, &priority)) { return false; }
+    if (!cpu->ops || !cpu->ops->select_irq ||
+        !cpu->ops->select_irq(e, &number, &priority)) {
+        return false;
+    }
     if ((number != 11 && number != 63) || priority > 7) {
         pi32v2_fail(e, "unsupported selected IRQ source or priority");
     }
     uint32_t vector = 0x01c7fe00 + number * 4;
-    fm1_poc_check_access(e, vector, 4, 0);
+    pi32v2_check_access(e, vector, 4, 0);
     uint32_t handler = cpu_ldl_data(e, vector);
     /* A missing/unmapped vector fails through QEMU's memory access path. */
     /* The normal per-instruction fetch gate validates the selected handler. */
@@ -106,13 +110,10 @@ static void reset(Object *obj, ResetType type)
     if (klass->parent_phases.hold) { klass->parent_phases.hold(obj, type); }
     memset(&cpu->env, 0, sizeof(cpu->env));
     cpu->env.pc = cpu->boot_pc;
-    for (int i = 0; i < 16; i++) { cpu->env.gpr[i] = 0x10203040u + i * 0x01010101u; }
-    if (cpu->diag_fixture || cpu->felucca_fixture) {
-        cpu->env.gpr[0] = 0x01c7fe08;
-    }
-    if (cpu->timer_fixture) {
-        cpu->env.spr[SP] = 0x01c7a000;
-        cpu->env.spr[SSP] = 0x01c7c000;
+    /* Initial realize has no machine interface yet. Later resets apply the
+     * explicitly configured loader contract outside the architectural CPU. */
+    if (cpu->ops && cpu->ops->reset_state) {
+        cpu->ops->reset_state(&cpu->env);
     }
 }
 static ObjectClass *class_by_name(const char *name)

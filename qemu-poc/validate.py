@@ -57,7 +57,9 @@ def infrastructure_checks():
     check(probe["instructions"] == 75, "TCG logging changed probe execution")
     blocks = [len(re.findall(r"^ ---- [0-9a-f]+$", block, re.MULTILINE))
               for block in logfile.read_text().split("OP:\n")[1:]]
-    check(blocks and max(blocks) > 1, "no multiple-instruction translation block")
+    # Conditional completion currently needs a boundary after each guest
+    # instruction. This is a common CPU correctness policy, not throughput.
+    check(blocks and max(blocks) == 1, "CPU conditional-completion TB boundary differs")
     save("tcg-translation", {
         "qemu_revision": "7c949c53e936aa3a658d84ab53bae5cadaa5d59c",
         "fixture": "build/probe.bin", "translation_block_guest_markers": blocks,

@@ -38,7 +38,7 @@ void fm1_nor_check_access(FM1PocNOR *nor, uint32_t address,
     if (address < FM1_NOR_XIP_BASE || address >= 0x02100000u) {
         return;
     }
-    if (write) { nor_fail(nor, "write to read-only NOR XIP"); }
+    if (write) { nor_fail(nor, "write to read-only XIP (NOR)"); }
     if (!size || (uint64_t)address + size >
                  FM1_NOR_XIP_BASE + FM1_NOR_XIP_SIZE) {
         nor_fail(nor, "XIP access exceeds mapped NOR storage");
