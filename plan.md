@@ -282,6 +282,15 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   now records command-style start and separate shared analog ownership.
   Audio service remains open.
 
+- 2026-10-08: Stage 3 ED30 signed12 greater-or-equal IF complete and
+  independently reviewed. Exact admission/condition preserve common predicate
+  machinery. Focused gate passes 139 reference cases, one generic replay and
+  12 model faults; full ISA/profile/IRQ/boot pass. Unchanged firmware advances
+  five instructions to EEB4 at `0x02002020`; renamed generic state/sample/LCD
+  match. Primary unsigned-token discrepancy and inherited predicate limits
+  are retained. Evidence: `.deps/qemu-signed-literal-if-2026-10-08/`.
+  Audio service remains open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -408,7 +417,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is ED34, recorded below.
+  latest firmware blocker is EEB4, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -418,22 +427,47 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: signed-literal IF ED34
+## Current firmware blocker: signed-literal less-or-equal IF EEB4
 
-Latest unchanged boot: `.cache/felucca-validation/after-parallel-packed-add/`.
-Packed adds now use the shared parallel classifier. Next stop:
+Latest unchanged boot: `.cache/felucca-validation/after-signed-literal-if/`.
+Signed greater-or-equal IF now executes through the shared CPU path. Next stop:
 
-- PC `0x02002010`, words `ED34/4000`: vendor `ifs (r4 >= 0)` selecting
-  two instructions. Establish the signed-literal IF family independently;
-  the later EEB4 form remains deferred until reached/evidenced.
-- Instructions 43,280,916; virtual time 346,247,336 ns.
+- PC `0x02002020`, words `EEB4/4000`: vendor `ifs (r4 <= 0)` selecting
+  two instructions. Establish exact EEB0 signed-literal semantics independently;
+  primary packed-literal labeling disagrees with negative vendor examples.
+- Instructions 43,280,921; virtual time 346,247,376 ns.
 - One IRQ11 entry, no acknowledgment/return; no IRQ63 entries/returns.
 - Five ALNK completions, four coalesced, 2,560 zero sample words; pending
   `0x80`. Splash intact, guard messages and watchdog expiry zero. Audio
   service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `003465a7b107bb01251764971134db2767131880d4fc23402fccc656f1fbc4cb`.
-- Generic replay: `after-parallel-packed-add-generic`.
-- Durable evidence: main repo `.deps/qemu-parallel-packed-add-2026-10-08/`.
+- QEMU SHA-256: `5a599ded669d35623df090d6d4fdebeae384834927d0ff43cf773058143ba04c`.
+- Generic replay: `after-signed-literal-if-generic`.
+- Durable evidence: main repo `.deps/qemu-signed-literal-if-2026-10-08/`.
+
+### Resolved ED30 signed-literal greater-or-equal IF
+
+Exact ED30/FFF0 compares signed32 GPR with a signed12 literal through the
+existing four-byte IF path. THEN count is bits14:15+1 and ELSE bits12:13;
+arm scanning, predicate helpers, existing IF kinds and classifier are unchanged.
+Pinned primary names an unsigned token; vendor ED31/0F00 means >= -256.
+Discriminating negative-literal reference evidence agrees with signed12 and
+retains the primary discrepancy.
+
+`validate_signed_literal_if.py` passes 139 separate-reference cases, one
+generic replay and 12 model faults. Signed boundaries, all GPR fields,
+THEN1..4/ELSE0..3, 2/4/6-byte scalar and 4/6/8-byte bundle arm widths,
+PSR/RETS, selected stores and balanced nonnested follow-up IF are checked.
+Faults cover two deferred families, four inherited predicate limits, two PC
+guards and four selected-store accesses. Header/body/control-transfer fault
+retirement is asserted separately; hardware fault state remains unverified.
+
+Nested IF, final THEN CALL/FF0C with ELSE and taken-exit limitations remain.
+A taken exit faults at a following IF after header/branch retirement, while
+reference completion succeeds. Retained predicate IRQ blocking is source
+inspection only, not interrupt validation. Full ISA, 98 profiles, ten IRQ
+cases and boot pass. Unchanged firmware advances five instructions to EEB4;
+renamed default loading matches state except profile and all sample/LCD
+bytes. Whole SRAM is not compared across initialization modes.
 
 ### Resolved E0E0 packed-add parallel classification
 
@@ -633,12 +667,12 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign the reached ED34 signed-literal IF to the CPU worker. Establish
-   exact opcode/literal fields and arm counts independently, preserving common
-   predicate helpers. Check signed boundaries, register fields, selected/skipped
-   THEN/ELSE arms, variable instruction sizes, PSR/RETS/count, generic replay
-   and explicit model faults. Keep generic predicate exits as a separate
-   evidenced milestone; implement later neighboring forms only when reached.
+2. Assign the reached EEB4 signed-literal less-or-equal IF to the CPU worker.
+   Establish the exact EEB0 family and signed threshold independently; preserve
+   existing IF families, scanner/helpers and recorded primary discrepancies.
+   Check boundaries, fields, arm counts/widths, PSR/RETS/count, balanced
+   completion, generic replay and inherited model faults. Keep generic
+   predicate exits as a separate evidenced milestone.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.

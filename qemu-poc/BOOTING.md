@@ -902,7 +902,7 @@ retains primary/reference disagreements and acceptance. Home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_branch.py
 ```
 
-### Packed-add parallel classification and latest checkpoint
+### Packed-add parallel classification checkpoint
 
 Only the existing E0E0 scalar family's destination mask is added to the
 parallel classifier. Packed literals, ALU flags, incoming-register snapshots
@@ -923,7 +923,7 @@ ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
 980 instructions to ED34; renamed default loading matches state except
 profile and all sample/LCD bytes. Whole SRAM is not compared across modes.
 
-Latest stop: ED34/4000 at `0x02002010`, 43,280,916 instructions
+At this milestone: ED34/4000 at `0x02002010`, 43,280,916 instructions
 and 346,247,336 ns. Vendor `ifs (r4 >= 0)` selects two instructions.
 IRQ11 still has no ack/return; captured halves are zero and the splash intact.
 Caches use `after-parallel-packed-add` and its `-generic` label; main repo
@@ -932,6 +932,42 @@ and acceptance. Home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_packed_add.py
+```
+
+### Signed greater-or-equal IF and latest checkpoint
+
+Exact ED30/FFF0 compares signed32 GPR with a signed12 literal through the
+existing four-byte IF path. THEN count is bits14:15+1 and ELSE bits12:13;
+arm scanning, predicate helpers, existing IF kinds and classifier are unchanged.
+Pinned primary names an unsigned token; vendor ED31/0F00 means >= -256.
+Discriminating negative-literal reference evidence agrees with signed12 and
+retains the primary discrepancy.
+
+`validate_signed_literal_if.py` passes 139 separate-reference cases, one
+generic replay and 12 model faults. Signed boundaries, all GPR fields,
+THEN1..4/ELSE0..3, 2/4/6-byte scalar and 4/6/8-byte bundle arm widths,
+PSR/RETS, selected stores and balanced nonnested follow-up IF are checked.
+Faults cover two deferred families, four inherited predicate limits, two PC
+guards and four selected-store accesses. Header/body/control-transfer fault
+retirement is asserted separately; hardware fault state remains unverified.
+
+Nested IF, final THEN CALL/FF0C with ELSE and taken-exit limitations remain.
+A taken exit faults at a following IF after header/branch retirement, while
+reference completion succeeds. Retained predicate IRQ blocking is source
+inspection only, not interrupt validation. Full ISA, 98 profiles, ten IRQ
+cases and boot pass. Unchanged firmware advances five instructions to EEB4;
+renamed default loading matches state except profile and all sample/LCD
+bytes. Whole SRAM is not compared across initialization modes.
+
+Latest stop: EEB4/4000 at `0x02002020`, 43,280,921 instructions
+and 346,247,376 ns. Vendor `ifs (r4 <= 0)` selects two instructions.
+IRQ11 still has no ack/return; captured halves are zero and the splash intact.
+Caches use `after-signed-literal-if` and its `-generic` label; main repo
+`.deps/qemu-signed-literal-if-2026-10-08/` retains primary/reference disagreements
+and acceptance. Home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_literal_if.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

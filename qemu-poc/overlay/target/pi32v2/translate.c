@@ -360,7 +360,8 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                (op & 0xfff0) == 0xe910 ||
                (op & 0xfff0) == 0xe930 || (op & 0xfff0) == 0xe9b0 ||
                (op & 0xfff0) == 0xec10 ||
-               (op & 0xfff0) == 0xecb0) {
+               (op & 0xfff0) == 0xecb0 ||
+               (op & 0xfff0) == 0xed30) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = (op >> 4) & 255;
         TCGv_i32 left = read_gpr(d, op & 15), right, result = tcg_temp_new_i32();
@@ -384,6 +385,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             /* Vendor-backed unsigned literals disagree with SLEIGH's packed
              * label (ECB0 0208 means 520). Keep all twelve literal bits. */
             right = tcg_constant_i32(x & 4095); cond = TCG_COND_LEU;
+        } else if (kind == 0xd3) {
+            /* Vendor ED31 0F00 selects >= -256; the pinned SLEIGH
+             * constructor instead names the unsigned imm1627 token. */
+            right = tcg_constant_i32(sext(x & 4095, 12)); cond = TCG_COND_GE;
         } else {
             right = tcg_constant_i32(kind == 0x83 || kind == 0x8b ? sext(x & 4095, 12) : x & 4095);
             /* Vendor E9B5 1005 at Felucca 0x02004b30 selects r5 < 5. */
