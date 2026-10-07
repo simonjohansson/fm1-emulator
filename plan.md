@@ -323,12 +323,20 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   `.deps/qemu-parallel-absolute-2026-10-08/`. Audio service remains open.
 
 - 2026-10-08: Stage 3 exact E434 scalar signed/unsigned maximum complete and
-  independently reviewed. Focused gate passes191 reference cases, one generic
-  replay and18 faults; minimum and full ISA/profile/IRQ/boot pass. Unchanged
+  independently reviewed. Focused gate passes 191 reference cases, one generic
+  replay and 18 faults; minimum and full ISA/profile/IRQ/boot pass. Unchanged
   firmware advances one instruction to EE80 at `0x020039a0`; renamed state/
   sample/LCD match. Direct vendor/reference authority and absent exact pinned
   maximum constructor are explicit. Evidence:
   `.deps/qemu-maximum-2026-10-08/`. Audio service remains open.
+
+- 2026-10-08: Stage 3 exact EE80 signed register less-or-equal branch complete
+  and independently reviewed. New and updated EE00 gates each pass 70 reference
+  cases, one generic replay and 15 faults; full ISA/profile/IRQ/boot pass.
+  Unchanged firmware advances two instructions to ED81 at `0x020039b0`; renamed
+  state/sample/LCD match. Canonical policy and inherited outgoing-arm/follow-up
+  IF discrepancy are retained. Evidence:
+  `.deps/qemu-signed-register-le-branch-2026-10-08/`. Audio service remains open.
 
 ### QEMU version upgrade
 
@@ -456,7 +464,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is EE80, recorded below.
+  latest firmware blocker is ED81, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -466,16 +474,16 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: signed register less-or-equal branch EE80
+## Current firmware blocker: signed register less-than branch ED80
 
-Latest unchanged boot: `.cache/felucca-validation/after-maximum/`.
-Vendor `ifs (r1 <= r0) goto 0x020039ac` uses a signed9 word displacement
-from PC+4. The exact Apache progflow constructor286..290 supports signed LE.
-Extend only this canonical register-branch family; preserve inherited predicate
-exit/completion limits and qualify conservative unused-bit admission.
+Latest unchanged boot: `.cache/felucca-validation/after-signed-register-le-branch/`.
+Vendor `ifs (r0 < r1) goto 0x020039e6` uses signed9 word displacement
+from PC+4. Extend only exact ED80/FFF0 with signed LT, preserving the common
+pipeline and conservative unused-bit admission. Both current branch gates
+still carry the obsolete ED8E deferred negative until this form is admitted.
 
-- PC `0x020039a0`, words `EE80/1004`.
-- Instructions 43,289,451; virtual time 346,315,616 ns.
+- PC `0x020039b0`, words `ED81/0019`.
+- Instructions 43,289,453; virtual time 346,315,632 ns.
 - IRQ11 entries/returns 1/0;
   IRQ63 entries/returns 0/0.
 - ALNK completions 6, acknowledgments 0,
@@ -484,9 +492,35 @@ exit/completion limits and qualify conservative unused-bit admission.
 - LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
   Audio service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `8948a44b5e174f164100e96f4251b66794d2962c10e14f6ce13dfac0de049351`.
-- Generic replay: `after-maximum-generic`.
-- Durable evidence: main repo `.deps/qemu-maximum-2026-10-08/`.
+- QEMU SHA-256: `684ec4e871b911553534e2cd9232e77d06670af8de8a1a3263a5313078d1baba`.
+- Generic replay: `after-signed-register-le-branch-generic`.
+- Durable evidence: main repo `.deps/qemu-signed-register-le-branch-2026-10-08/`.
+
+### Resolved EE80 signed register less-or-equal branch
+
+Exact EE80/FFF0 compares signed32 second-word bits12..15 against opcode
+bits0..3 with LE and signed9 word displacement from PC+4. Apache progflow
+constructor286..290 and slaspec364 directly agree with vendor EE80/1004.
+Only admission and condition change; count/branch recording, common predicate
+advance, helpers and classifiers remain fixed.
+
+`validate_signed_register_le_branch.py` passes 70 reference cases (54 ordinary,
+16 balanced conditional), one generic replay and 15 model faults: seven unused
+bit policy faults, two deferred families, two PC guards and four inherited
+outgoing-arm faults. Fields/aliases, signed boundaries/equality, displacement
+endpoints, full PSR/RETS, memory and retirement are checked. Taken exits retain
+the predicate and fault at the following IF after the branch retires; the
+reference completes that IF. Retained predicate IRQ blocking is source
+inspection only. Hardware fault state and true PC32 wrap remain unverified.
+
+Bits11..9 are unconstrained by primary evidence; rejecting them preserves
+conservative canonical admission. The reference accepts exactly one sampled
+pattern 4 / bit 11 and rejects six others without fault snapshots. This is not
+hardware validity evidence. The old EE00 gate removes only its obsolete EE8E
+negative/counts and still passes all 70 positives, generic replay and 15 faults.
+Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
+two instructions to ED81; renamed generic state except profile and sample/LCD
+bytes match. Whole SRAM is not compared across initialization modes.
 
 ### Resolved E434 signed and unsigned maximum
 
@@ -663,7 +697,8 @@ admission and the signed-GT condition are added. FF0C, common predicate
 completion and neighboring memory encodings retain their behavior.
 
 `validate_signed_register_branch.py` passes 70 separate-reference cases
-(54 ordinary, 16 conditional), one generic replay and 16 model faults.
+(54 ordinary, 16 conditional), one generic replay and16 model faults at that
+checkpoint (15 after EE80 admission retires its obsolete EE8E negative).
 Register fields, signed boundaries, displacement endpoints, aliases, PSR,
 conditional sizing and retirement are checked. Second-word bits11:9 are
 rejected as conservative decoder policy; primary evidence leaves them
@@ -832,13 +867,13 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached EE80/FFF0 signed register less-or-equal branch to the CPU
-   worker. Use exact progflow constructor286..290 and signed9 PC+4 displacement.
-   Preserve the existing canonical unused-bit policy, compare/count helpers and
-   inherited taken-exit completion limits. Check boundaries/equality, fields/
-   aliases, displacement/target guards, balanced arms, generic replay and raw
-   policy/reference disagreements. Retire only the old EE00 gate's obsolete
-   EE8E deferred negative/counts after admission; retain all70 positives.
+2. Assign reached ED80/FFF0 signed register less-than branch to the CPU
+   worker. Use its exact progflow constructor and signed9 PC+4 displacement.
+   Preserve canonical unused-bit policy, compare/count/advance helpers and
+   inherited taken-exit completion limits. Check strict signed boundaries/
+   equality, fields/aliases, displacement/target guards, balanced arms, generic
+   replay and raw reference disagreements. Retire only ED8E deferred negatives
+   and counts in old EE00/new EE80 gates; preserve their 70 positives each.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.

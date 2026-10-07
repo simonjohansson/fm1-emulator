@@ -872,7 +872,8 @@ admission and the signed-GT condition are added. FF0C, common predicate
 completion and neighboring memory encodings retain their behavior.
 
 `validate_signed_register_branch.py` passes 70 separate-reference cases
-(54 ordinary, 16 conditional), one generic replay and 16 model faults.
+(54 ordinary, 16 conditional), one generic replay and16 model faults at that
+checkpoint (15 after EE80 admission retires its obsolete EE8E negative).
 Register fields, signed boundaries, displacement endpoints, aliases, PSR,
 conditional sizing and retirement are checked. Second-word bits11:9 are
 rejected as conservative decoder policy; primary evidence leaves them
@@ -1100,7 +1101,7 @@ pass. Unchanged firmware advances two instructions to E434; renamed generic
 loading matches captured state except profile and all sample/LCD bytes. Whole
 SRAM is not compared across different initialization modes.
 
-Latest stop: E434/1131 at `0x0200399c`, 43,289,450
+At this milestone: E434/1131 at `0x0200399c`, 43,289,450
 instructions and 346,315,608 ns. Vendor `r1 = smax(r3, r1)` follows the accepted absolute-value sequence.
 The pinned Apache SLEIGH has no exact maximum constructor. Establish exact
 mode1 signed maximum from vendor operand witnesses and independent executable
@@ -1113,7 +1114,7 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_absolute.py
 ```
 
-### E434 signed and unsigned maximum and latest checkpoint
+### E434 signed and unsigned maximum checkpoint
 
 Exact scalar E434 supports mode0 unsigned and mode1 signed maximum with
 destination bits12..15, left bits4..7 and right bits8..11. Direct vendor
@@ -1150,6 +1151,45 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_maximum.py
+```
+
+### EE80 signed register less-or-equal branch and latest checkpoint
+
+Exact EE80/FFF0 compares signed32 second-word bits12..15 against opcode
+bits0..3 with LE and signed9 word displacement from PC+4. Apache progflow
+constructor286..290 and slaspec364 directly agree with vendor EE80/1004.
+Only admission and condition change; count/branch recording, common predicate
+advance, helpers and classifiers remain fixed.
+
+`validate_signed_register_le_branch.py` passes 70 reference cases (54 ordinary,
+16 balanced conditional), one generic replay and 15 model faults: seven unused
+bit policy faults, two deferred families, two PC guards and four inherited
+outgoing-arm faults. Fields/aliases, signed boundaries/equality, displacement
+endpoints, full PSR/RETS, memory and retirement are checked. Taken exits retain
+the predicate and fault at the following IF after the branch retires; the
+reference completes that IF. Retained predicate IRQ blocking is source
+inspection only. Hardware fault state and true PC32 wrap remain unverified.
+
+Bits11..9 are unconstrained by primary evidence; rejecting them preserves
+conservative canonical admission. The reference accepts exactly one sampled
+pattern 4 / bit 11 and rejects six others without fault snapshots. This is not
+hardware validity evidence. The old EE00 gate removes only its obsolete EE8E
+negative/counts and still passes all 70 positives, generic replay and 15 faults.
+Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
+two instructions to ED81; renamed generic state except profile and sample/LCD
+bytes match. Whole SRAM is not compared across initialization modes.
+
+Latest stop: ED81/0019 at `0x020039b0`, 43,289,453
+instructions and 346,315,632 ns. Vendor `ifs (r0 < r1) goto 0x020039e6` uses signed9 word displacement
+from PC+4. Extend only exact ED80/FFF0 with signed LT, preserving the common
+pipeline and conservative unused-bit admission. Both current branch gates
+still carry the obsolete ED8E deferred negative until this form is admitted.
+Caches use `after-signed-register-le-branch` and its `-generic` label; main repo
+`.deps/qemu-signed-register-le-branch-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 1/0; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_le_branch.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

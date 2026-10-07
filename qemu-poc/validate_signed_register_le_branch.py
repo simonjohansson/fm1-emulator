@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Validate canonical EE00/FFF0 signed greater-than register branches.
+"""Validate canonical EE80/FFF0 signed less-or-equal register branches.
 
-Pinned Apache progflow:276-279/slaspec:364 and vendor EE01/0019 establish
-signed32 x[15:12] > op[3:0], with signed9 word displacement from PC+4.
+Pinned Apache progflow:286-290/slaspec:364 and vendor EE80/1004 establish
+signed32 x[15:12] <= op[3:0], with signed9 word displacement from PC+4.
 Second-word bits11:9 are unconstrained by primary evidence; rejecting them
 preserves the existing conservative four-byte decoder admission policy, not
 an ISA-invalid or hardware claim. Reference raw disagreements are retained.
+Reference accepts sampled unused pattern4/xbit11; six other patterns fault.
 Canonical conditional arm completion agrees for selected/skipped final and
 nonfinal branches with displacement0. Taken exits beyond an arm retain the
 existing model predicate state: the following IF faults after branch retirement,
@@ -28,7 +29,7 @@ import validate_isa as isa
 from validate_peripherals import Guest
 
 HERE = Path(__file__).resolve().parent
-CACHE = HERE / ".cache/signed-register-branch-validation"
+CACHE = HERE / ".cache/signed-register-le-branch-validation"
 ENTRY = 0x02000120
 BRANCH = ENTRY + 0x500
 INSPECTION = 0x01C08000
@@ -84,8 +85,8 @@ def save_image(name, guest):
     return image
 
 
-def branch_fixture(leftreg=0, rightreg=1, left=0xFFFFFFFF, right=32766,
-                   displacement=25, psr=PSR, unused=0, opcode=None, guard=None):
+def branch_fixture(leftreg=1, rightreg=0, left=0xFFFFFFFF, right=32766,
+                   displacement=4, psr=PSR, unused=0, opcode=None, guard=None):
     assert 0 <= leftreg < 16 and 0 <= rightreg < 16 and -256 <= displacement <= 255
     guard_high = BRANCH - 1 if guard == "branch" else BRANCH + 3 if guard == "target" else None
     guest, expected = setup({leftreg: left, rightreg: right}, psr, guard_high)
@@ -95,9 +96,9 @@ def branch_fixture(leftreg=0, rightreg=1, left=0xFFFFFFFF, right=32766,
     guest.emit(0xEAC0 | ((delta >> 16) & 63), delta & 0xFFFF)
     guest.words.extend([0] * ((BRANCH - ENTRY) // 2 - len(guest.words)))
     before = guest.instructions
-    op = 0xEE00 | rightreg if opcode is None else opcode
+    op = 0xEE80 | rightreg if opcode is None else opcode
     guest.emit(op, (leftreg << 12) | (unused << 9) | (displacement & 511))
-    taken = signed(expected[leftreg]) > signed(expected[rightreg])
+    taken = signed(expected[leftreg]) <= signed(expected[rightreg])
     stop = (BRANCH + 4 + (displacement * 2 if taken else 0)) & 0xFFFFFFFF
     guest.words.extend([0] * max(0, (stop - ENTRY) // 2 + 4 - len(guest.words)))
     return guest, expected, stop, before, op
@@ -120,7 +121,7 @@ def success_case(name, **settings):
 
 
 def conditional_fixture(side, position, condition, taken, outside=False):
-    left, right = (5, 4) if taken else (4, 5)
+    left, right = (4, 5) if taken else (5, 4)
     guest, expected = setup({0: condition, 4: left, 5: right})
     header_count = guest.instructions
     marker = ("marker", 6 if side == "then" else 7, 0x6666 if side == "then" else 0x7777)
@@ -135,7 +136,7 @@ def conditional_fixture(side, position, condition, taken, outside=False):
                 guest.literal(item[1], item[2])
             else:
                 branch_index, branch_pc = len(guest.words), guest.pc
-                guest.emit(0xEE05, 0x4000)
+                guest.emit(0xEE85, 0x4000)
     guest.literal(8, 0x8888)
     next_if = guest.pc
     guest.emit(0xEA20, 1)
@@ -221,7 +222,7 @@ def reference_record(image, env):
 
 def policy_fault(name, unused=0, opcode=None):
     guest, expected, stop, before, op = branch_fixture(leftreg=15, rightreg=14,
-        left=1, right=0, unused=unused, opcode=opcode)
+        left=0, right=1, unused=unused, opcode=opcode)
     image = save_image(name, guest)
     directory, env, record = fault_snapshot(name, image, stop, BRANCH, before, expected,
                                            f"unsupported instruction 0x{op:04x}", 4)
@@ -238,7 +239,7 @@ def policy_fault(name, unused=0, opcode=None):
 def guard_fault(stage):
     name = f"pc-guard-{stage}"
     guest, expected, target, before, _ = branch_fixture(leftreg=15, rightreg=14,
-                                                       left=1, right=0, guard=stage)
+                                                       left=0, right=1, guard=stage)
     image = save_image(name, guest)
     pc, count, size = (BRANCH, before, 4) if stage == "branch" else (target, before + 1, 2)
     # Target fetch must execute its guard check rather than the checkpoint
@@ -308,7 +309,7 @@ def main():
     for register in range(16):
         cases.extend([
             dict(name=f"left-{register}-right-{(register + 1) % 16}", leftreg=register,
-                 rightreg=(register + 1) % 16, left=0x7FFFFFFF, right=0x80000000),
+                 rightreg=(register + 1) % 16, left=0x80000000, right=0x7FFFFFFF),
             dict(name=f"equal-alias-{register}", leftreg=register, rightreg=register,
                  left=0x80000000, right=0x80000000),
         ])
@@ -320,14 +321,14 @@ def main():
                           left=left, right=right))
     for displacement in (-256, -255, -1, 0, 1, 25, 254, 255):
         cases.append(dict(name=f"displacement-{displacement}", leftreg=15, rightreg=14,
-                          left=1, right=0, displacement=displacement))
+                          left=0, right=1, displacement=displacement))
     for psr in (0, 0xFFFFFFFF):
         cases.append(dict(name=f"psr-{psr:08x}", psr=psr))
-    cases.append(dict(name="reached-fields-negative"))
+    cases.append(dict(name="reached-fields-signed-1004"))
     replay = None
     for case in cases:
         result = success_case(**case)
-        if case["name"] == "reached-fields-negative":
+        if case["name"] == "reached-fields-signed-1004":
             replay = result
     for side in ("then", "else"):
         for position in ("final", "nonfinal"):
@@ -344,18 +345,19 @@ def main():
     for side in ("then", "else"):
         for position in ("final", "nonfinal"):
             exit_followup_fault(side, position)
-    summary = {"passed": True, "instruction": "canonical EE00/FFF0 signed register greater-than",
+    summary = {"passed": True, "instruction": "canonical EE80/FFF0 signed register less-or-equal",
                "ordinary_reference_cases": len(cases), "conditional_reference_cases": 16,
                "generic_replays": 1, "canonical_admission_policy_faults": 7,
                "deferred_family_faults": 2, "pc_guard_faults": 2,
                "inherited_followup_if_faults": 4, "total_model_faults": 15,
                "primary_blob": "622d767fceb3ad46972ae821394226ff1e6117b2",
                "unused_bits_policy": "bits11:9 unconstrained by primary; canonical decoder requires zero",
+               "reference_unused_pattern4": "one accepted pattern value4/xbit11; six other sampled patterns rejected",
                "conditional_limit": "taken exits followed by IF retain model predicate; oracle differs",
                "irq_limit": "retained predicate blocks IRQ entry by source inspection; not validated here",
                "pc32_wrap_validation": False, "hardware_fault_state_validation": False}
     (CACHE / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print("PASS signed register branch: canonical semantics and inherited model limits recorded")
+    print("PASS signed LE register branch: canonical semantics and inherited model limits recorded")
 
 
 if __name__ == "__main__":
