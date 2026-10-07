@@ -1062,7 +1062,7 @@ Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
 profile and all sample/LCD bytes. Whole SRAM is not compared across different
 initialization modes. IRQ11 has still not acknowledged or returned.
 
-Latest stop: F430/1500 +6100 at `0x02003992`, 43,289,448
+At this milestone: F430/1500 +6100 at `0x02003992`, 43,289,448
 instructions and 346,315,592 ns. Vendor `r1 = abs(r5)` is paired with `r0 = [r0 + 4]`.
 Scalar E430 absolute value is also absent: admitting only the bundle classifier
 would execute its tail before the head fault. Establish exact scalar E430 and
@@ -1075,7 +1075,7 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_minimum.py
 ```
 
-### E430 absolute value and F430 bundles and latest checkpoint
+### E430 absolute value and F430 bundles checkpoint
 
 Exact E430 requires a zero second-word low byte, reads source bits8..11
 and writes destination bits12..15 using wrap32 absolute value. INT_MIN remains
@@ -1111,6 +1111,45 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_absolute.py
+```
+
+### E434 signed and unsigned maximum and latest checkpoint
+
+Exact scalar E434 supports mode0 unsigned and mode1 signed maximum with
+destination bits12..15, left bits4..7 and right bits8..11. Direct vendor
+E434/0050,0100,1131,7741 witnesses and independent executable probes establish
+these fields and modes. No exact maximum constructor exists in the pinned
+Apache SLEIGH; the minimum constructor is only analogous. Native TCG umax/smax
+preserve aliases. Shared multiply/divide/min dispatch, helpers and all parallel
+classifiers remain fixed; F434 and F435 stay deferred.
+
+`validate_maximum.py` passes 191 separate-reference cases, one generic replay
+and 18 model faults. Both modes, every register field/alias, signed boundaries,
+PSR/RETS, balanced selected/skipped arms followed by IF, four vendor witnesses
+and the actual preceding ABS pair/scalar/max sequence are checked. ABS(INT_MIN)
+meaningfully discriminates signed maximum. Fourteen unsupported modes, two
+F434 bundles with memory-changing tails and two PC guards fault before effects
+and retirement. The reference rejects modes2..15 without fault snapshots;
+hardware validity/fault behavior remain unverified. Separate research retains
+714 canonical reference successes, independently of focused QEMU acceptance.
+
+The minimum regression still passes 140 reference cases, one generic replay
+and 16 faults. Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged
+firmware advances one instruction to EE80; renamed generic loading matches
+captured state except profile and all sample/LCD bytes. Whole SRAM is not
+compared across different initialization modes.
+
+Latest stop: EE80/1004 at `0x020039a0`, 43,289,451
+instructions and 346,315,616 ns. Vendor `ifs (r1 <= r0) goto 0x020039ac` uses a signed9 word displacement
+from PC+4. The exact Apache progflow constructor286..290 supports signed LE.
+Extend only this canonical register-branch family; preserve inherited predicate
+exit/completion limits and qualify conservative unused-bit admission.
+Caches use `after-maximum` and its `-generic` label; main repo
+`.deps/qemu-maximum-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 1/0; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_maximum.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

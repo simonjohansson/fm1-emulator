@@ -322,6 +322,14 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   pre-effect malformed-head rejection are covered. Evidence:
   `.deps/qemu-parallel-absolute-2026-10-08/`. Audio service remains open.
 
+- 2026-10-08: Stage 3 exact E434 scalar signed/unsigned maximum complete and
+  independently reviewed. Focused gate passes191 reference cases, one generic
+  replay and18 faults; minimum and full ISA/profile/IRQ/boot pass. Unchanged
+  firmware advances one instruction to EE80 at `0x020039a0`; renamed state/
+  sample/LCD match. Direct vendor/reference authority and absent exact pinned
+  maximum constructor are explicit. Evidence:
+  `.deps/qemu-maximum-2026-10-08/`. Audio service remains open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -448,7 +456,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is E434, recorded below.
+  latest firmware blocker is EE80, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -458,16 +466,16 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: scalar maximum E434
+## Current firmware blocker: signed register less-or-equal branch EE80
 
-Latest unchanged boot: `.cache/felucca-validation/after-parallel-absolute/`.
-Vendor `r1 = smax(r3, r1)` follows the accepted absolute-value sequence.
-The pinned Apache SLEIGH has no exact maximum constructor. Establish exact
-mode1 signed maximum from vendor operand witnesses and independent executable
-probes; mode0 unsigned witnesses also exist. Keep F434 bundle admission deferred.
+Latest unchanged boot: `.cache/felucca-validation/after-maximum/`.
+Vendor `ifs (r1 <= r0) goto 0x020039ac` uses a signed9 word displacement
+from PC+4. The exact Apache progflow constructor286..290 supports signed LE.
+Extend only this canonical register-branch family; preserve inherited predicate
+exit/completion limits and qualify conservative unused-bit admission.
 
-- PC `0x0200399c`, words `E434/1131`.
-- Instructions 43,289,450; virtual time 346,315,608 ns.
+- PC `0x020039a0`, words `EE80/1004`.
+- Instructions 43,289,451; virtual time 346,315,616 ns.
 - IRQ11 entries/returns 1/0;
   IRQ63 entries/returns 0/0.
 - ALNK completions 6, acknowledgments 0,
@@ -476,9 +484,35 @@ probes; mode0 unsigned witnesses also exist. Keep F434 bundle admission deferred
 - LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
   Audio service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `96cb77dc922d66966ebebbc14c7cdedd65d6bd09c247aabc583e541d7dc56005`.
-- Generic replay: `after-parallel-absolute-generic`.
-- Durable evidence: main repo `.deps/qemu-parallel-absolute-2026-10-08/`.
+- QEMU SHA-256: `8948a44b5e174f164100e96f4251b66794d2962c10e14f6ce13dfac0de049351`.
+- Generic replay: `after-maximum-generic`.
+- Durable evidence: main repo `.deps/qemu-maximum-2026-10-08/`.
+
+### Resolved E434 signed and unsigned maximum
+
+Exact scalar E434 supports mode0 unsigned and mode1 signed maximum with
+destination bits12..15, left bits4..7 and right bits8..11. Direct vendor
+E434/0050,0100,1131,7741 witnesses and independent executable probes establish
+these fields and modes. No exact maximum constructor exists in the pinned
+Apache SLEIGH; the minimum constructor is only analogous. Native TCG umax/smax
+preserve aliases. Shared multiply/divide/min dispatch, helpers and all parallel
+classifiers remain fixed; F434 and F435 stay deferred.
+
+`validate_maximum.py` passes 191 separate-reference cases, one generic replay
+and 18 model faults. Both modes, every register field/alias, signed boundaries,
+PSR/RETS, balanced selected/skipped arms followed by IF, four vendor witnesses
+and the actual preceding ABS pair/scalar/max sequence are checked. ABS(INT_MIN)
+meaningfully discriminates signed maximum. Fourteen unsupported modes, two
+F434 bundles with memory-changing tails and two PC guards fault before effects
+and retirement. The reference rejects modes2..15 without fault snapshots;
+hardware validity/fault behavior remain unverified. Separate research retains
+714 canonical reference successes, independently of focused QEMU acceptance.
+
+The minimum regression still passes 140 reference cases, one generic replay
+and 16 faults. Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged
+firmware advances one instruction to EE80; renamed generic loading matches
+captured state except profile and all sample/LCD bytes. Whole SRAM is not
+compared across different initialization modes.
 
 ### Resolved E430 absolute value and F430 bundles
 
@@ -798,12 +832,13 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached exact E434 scalar maximum to the CPU worker. Establish
-   destination/left/right fields and mode1 signed/mode0 unsigned behavior from
-   vendor witnesses plus independent reference evidence; explicitly record the
-   missing direct pinned SLEIGH constructor. Check boundaries/equality, every
-   field/alias, PSR/count, conditionals, generic replay and unsupported modes.
-   Keep F434/F435 bundle admission, helpers and adjacent families fixed.
+2. Assign reached EE80/FFF0 signed register less-or-equal branch to the CPU
+   worker. Use exact progflow constructor286..290 and signed9 PC+4 displacement.
+   Preserve the existing canonical unused-bit policy, compare/count helpers and
+   inherited taken-exit completion limits. Check boundaries/equality, fields/
+   aliases, displacement/target guards, balanced arms, generic replay and raw
+   policy/reference disagreements. Retire only the old EE00 gate's obsolete
+   EE8E deferred negative/counts after admission; retain all70 positives.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
