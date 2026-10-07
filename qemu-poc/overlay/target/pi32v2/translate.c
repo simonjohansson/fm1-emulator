@@ -298,6 +298,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         uint16_t x = fetch(d, here + 2);
         tcg_gen_muli_i32(gpr[op & 15], read_gpr(d, x >> 12), packed_mask(x));
         next = here + 4;
+    } else if (op == 0xe430) {
+        uint16_t x = fetch(d, here + 2);
+        if (x & 255) { goto illegal; }
+        tcg_gen_abs_i32(gpr[x >> 12], read_gpr(d, (x >> 8) & 15));
+        next = here + 4;
     } else if (op == 0xe1f0 || op == 0xe1f4 || op == 0xe435) {
         uint16_t x = fetch(d, here + 2);
         unsigned mode = x & 15;
@@ -877,6 +882,10 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     if (op == 0xe1f0) {
         uint16_t x = fetch(d, here + 2);
         return x & 15 ? -1 : 1u << (x >> 12);
+    }
+    if (op == 0xe430) {
+        uint16_t x = fetch(d, here + 2);
+        return x & 255 ? -1 : 1u << (x >> 12);
     }
     if (op == 0xe1c8 || op == 0xe1c0 || op == 0xe190 || op == 0xe0b4) {
         return 1u << (fetch(d, here + 2) >> 12);

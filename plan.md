@@ -314,6 +314,14 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   F430 at `0x02003992`; renamed state/sample/LCD match. Evidence:
   `.deps/qemu-signed-minimum-2026-10-08/`. Audio service remains open.
 
+- 2026-10-08: Stage 3 exact E430 ABS and guarded F430 bundle support complete
+  and independently reviewed. Focused gate passes 99 reference cases, one generic
+  replay and 21 faults; adjacent minimum and full ISA/profile/IRQ/boot pass.
+  Unchanged firmware advances two instructions to E434 at `0x0200399c`; renamed
+  state/sample/LCD match. Source snapshots, extended-tail role, INT_MIN and
+  pre-effect malformed-head rejection are covered. Evidence:
+  `.deps/qemu-parallel-absolute-2026-10-08/`. Audio service remains open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -440,7 +448,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is F430, recorded below.
+  latest firmware blocker is E434, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -450,16 +458,16 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: paired absolute value F430
+## Current firmware blocker: scalar maximum E434
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-minimum/`.
-Vendor `r1 = abs(r5)` is paired with `r0 = [r0 + 4]`.
-Scalar E430 absolute value is also absent: admitting only the bundle classifier
-would execute its tail before the head fault. Establish exact scalar E430 and
-canonical guarded bundle classification together before accepting this form.
+Latest unchanged boot: `.cache/felucca-validation/after-parallel-absolute/`.
+Vendor `r1 = smax(r3, r1)` follows the accepted absolute-value sequence.
+The pinned Apache SLEIGH has no exact maximum constructor. Establish exact
+mode1 signed maximum from vendor operand witnesses and independent executable
+probes; mode0 unsigned witnesses also exist. Keep F434 bundle admission deferred.
 
-- PC `0x02003992`, words `F430/1500 +6100`.
-- Instructions 43,289,448; virtual time 346,315,592 ns.
+- PC `0x0200399c`, words `E434/1131`.
+- Instructions 43,289,450; virtual time 346,315,608 ns.
 - IRQ11 entries/returns 1/0;
   IRQ63 entries/returns 0/0.
 - ALNK completions 6, acknowledgments 0,
@@ -468,9 +476,34 @@ canonical guarded bundle classification together before accepting this form.
 - LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
   Audio service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `a814d09bb9642b863fd17ae54422bf6dd0bdbcd5a5662bcb8c154533942f0b51`.
-- Generic replay: `after-signed-minimum-generic`.
-- Durable evidence: main repo `.deps/qemu-signed-minimum-2026-10-08/`.
+- QEMU SHA-256: `96cb77dc922d66966ebebbc14c7cdedd65d6bd09c247aabc583e541d7dc56005`.
+- Generic replay: `after-parallel-absolute-generic`.
+- Durable evidence: main repo `.deps/qemu-parallel-absolute-2026-10-08/`.
+
+### Resolved E430 absolute value and F430 bundles
+
+Exact E430 requires a zero second-word low byte, reads source bits8..11
+and writes destination bits12..15 using wrap32 absolute value. INT_MIN remains
+0x80000000. The pinned Apache constructor and vendor disassembly agree.
+The exact guarded classifier admits E430 as a paired head or extended tail;
+malformed operands are rejected before any tail effects. Existing incoming
+snapshots, bundle order/sizing/count, helpers and E434/EE80/F435 stay fixed.
+
+`validate_parallel_absolute.py` passes 99 separate-reference cases, one generic
+replay and 21 model faults. Tests cover all register fields, aliases, signed
+boundaries, four/six/eight-byte sizing, actual head/following scalar, an extended
+ABS tail, incoming loads/stores and distinct tail flags. Ten malformed operand
+faults, three conflict/deferred-tail faults, six access faults and two PC guards
+retain full registers/specials, memory and retirement. The reference rejects
+sampled noncanonical operands without fault snapshots; hardware fault state and
+reserved-bit behavior remain unverified. Separate research retains 543 canonical
+reference successes, independently of the focused QEMU acceptance count.
+
+The minimum regression still passes 140 reference cases, one generic replay and
+16 faults, including deferred F435. Full ISA, 98 profiles, ten IRQ cases and boot
+pass. Unchanged firmware advances two instructions to E434; renamed generic
+loading matches captured state except profile and all sample/LCD bytes. Whole
+SRAM is not compared across different initialization modes.
 
 ### Resolved E435 signed minimum
 
@@ -765,12 +798,12 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached absolute value to the CPU worker. Independently establish
-   exact scalar E430 canonical low-byte-zero encoding, signed32 wraparound ABS,
-   and guarded parallel destination classification. Preserve E434, F435 and
-   other helpers. Check signed boundaries/INT_MIN, fields/aliases, scalar and
-   six/eight-byte paired forms, incoming operands, tail flags, PSR/count,
-   generic replay and rejection before malformed-head tail effects.
+2. Assign reached exact E434 scalar maximum to the CPU worker. Establish
+   destination/left/right fields and mode1 signed/mode0 unsigned behavior from
+   vendor witnesses plus independent reference evidence; explicitly record the
+   missing direct pinned SLEIGH constructor. Check boundaries/equality, every
+   field/alias, PSR/count, conditionals, generic replay and unsupported modes.
+   Keep F434/F435 bundle admission, helpers and adjacent families fixed.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.

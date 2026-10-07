@@ -1030,7 +1030,7 @@ Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
 two instructions to E435; renamed loading matches state except profile and
 all sample/LCD bytes. Whole SRAM is not compared across initialization modes.
 
-Latest stop: E435/0031 at `0x02003686`, 43,281,044
+At this milestone: E435/0031 at `0x02003686`, 43,281,044
 instructions and 346,248,360 ns. Vendor `r0 = smin(r3, r0)` is selected after the signed IF and literal.
 Establish exact E435 mode1 signed minimum while preserving mode0 unsigned minimum.
 Caches use `after-signed-register-if` and its `-generic` label; main repo
@@ -1041,7 +1041,7 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_if.py
 ```
 
-### E435 signed minimum and latest checkpoint
+### E435 signed minimum checkpoint
 
 Exact scalar E435 mode1 implements signed32 minimum with destination in
 second-word bits12..15, left operand bits4..7 and right operand bits8..11.
@@ -1073,6 +1073,44 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_minimum.py
+```
+
+### E430 absolute value and F430 bundles and latest checkpoint
+
+Exact E430 requires a zero second-word low byte, reads source bits8..11
+and writes destination bits12..15 using wrap32 absolute value. INT_MIN remains
+0x80000000. The pinned Apache constructor and vendor disassembly agree.
+The exact guarded classifier admits E430 as a paired head or extended tail;
+malformed operands are rejected before any tail effects. Existing incoming
+snapshots, bundle order/sizing/count, helpers and E434/EE80/F435 stay fixed.
+
+`validate_parallel_absolute.py` passes 99 separate-reference cases, one generic
+replay and 21 model faults. Tests cover all register fields, aliases, signed
+boundaries, four/six/eight-byte sizing, actual head/following scalar, an extended
+ABS tail, incoming loads/stores and distinct tail flags. Ten malformed operand
+faults, three conflict/deferred-tail faults, six access faults and two PC guards
+retain full registers/specials, memory and retirement. The reference rejects
+sampled noncanonical operands without fault snapshots; hardware fault state and
+reserved-bit behavior remain unverified. Separate research retains 543 canonical
+reference successes, independently of the focused QEMU acceptance count.
+
+The minimum regression still passes 140 reference cases, one generic replay and
+16 faults, including deferred F435. Full ISA, 98 profiles, ten IRQ cases and boot
+pass. Unchanged firmware advances two instructions to E434; renamed generic
+loading matches captured state except profile and all sample/LCD bytes. Whole
+SRAM is not compared across different initialization modes.
+
+Latest stop: E434/1131 at `0x0200399c`, 43,289,450
+instructions and 346,315,608 ns. Vendor `r1 = smax(r3, r1)` follows the accepted absolute-value sequence.
+The pinned Apache SLEIGH has no exact maximum constructor. Establish exact
+mode1 signed maximum from vendor operand witnesses and independent executable
+probes; mode0 unsigned witnesses also exist. Keep F434 bundle admission deferred.
+Caches use `after-parallel-absolute` and its `-generic` label; main repo
+`.deps/qemu-parallel-absolute-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 1/0; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_parallel_absolute.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
