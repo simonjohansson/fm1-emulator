@@ -106,7 +106,7 @@ is unchanged. No firmware identity or guest PC triggers device reset.
 Syscon, ALNK, maps, profiles, IRQ, peripherals, diagnostics and boot gates pass.
 With CPU fixed at 0ba8792, unchanged fixture and renamed generic runs exactly
 match all pre-lifecycle state fields, whole SRAM, sample and LCD bytes within
-each mode. The EDD8 stop below is unchanged. Caches use `after-alnk-lifecycle`
+each mode. The EDD8 stop at that milestone was unchanged. Caches use `after-alnk-lifecycle`
 and its `-generic` label; main repo `.deps/qemu-alnk-lifecycle-2026-10-07/`
 retains baselines, sidecars and gates. Whole-machine/watchdog/physical reset
 and runtime unrealize/re-realize remain unvalidated.
@@ -805,6 +805,36 @@ and its `-generic` label; main repo
 Home and synthesis remain unverified. The subsequent ALNK lifecycle milestone preserves this checkpoint exactly.
 The latest unchanged/generic labels are `after-alnk-lifecycle` and its
 `-generic` counterpart.
+
+### Signed indexed halfword load and latest checkpoint
+
+Exact EDD8 operand kind A loads a signed little-endian halfword at wrapping
+incoming base+(index<<1), without writeback or PSR changes. Existing unsigned
+kinds 8/9 and the parallel classifier are unchanged for every image.
+
+Pinned Apache SLEIGH's comment and vendor disassembly describe index<<1,
+but that constructor body omits the shift. Discriminating separate-reference
+probes agree with vendor scaling; retain this discrepancy as evidence rather
+than describing all sources as agreeing. Hardware fault state is unverified.
+
+`validate_signed_indexed_halfword_load.py` passes 73 reference cases, one
+generic replay and 17 faults: sign/index boundaries, wrapping sums, all GPR
+fields/aliases, distinct scaled/unscaled memory, readable limits, PSR,
+conditionals/retirement, guards and unsupported EDD8 kinds. Full ISA, 98
+profiles, ten IRQ cases and boot pass. Unchanged Felucca advances eight
+instructions to AF88; renamed generic state except profile and sample/LCD
+bytes match. Whole SRAM is not compared across initialization modes.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_indexed_halfword_load.py
+```
+
+Latest stop: AF88 at `0x02001c70`, 43,279,921 instructions and 346,239,376 ns.
+Vendor `r0 = r0 >>> 15` requires the signed right immediate shift. IRQ11 still
+has no ack/return; captured halves are zero and the splash is intact. Caches
+use `after-signed-indexed-halfword-load` and its `-generic` label; main repo
+`.deps/qemu-signed-indexed-halfword-load-2026-10-07/` retains raw evidence,
+acceptance and repaired test failures. Home and synthesis remain unverified.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

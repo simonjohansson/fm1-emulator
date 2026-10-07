@@ -90,7 +90,7 @@ stable Rust API changes or physical flashing are authorized by this plan.
   before overlapping controllers are added. Define reset, power cycle and
   storage erase separately. Test pending IRQ/DMA/timer cancellation, clock
   transitions and mid-transfer buffer mutation. Complete reached CPU/device
-  gaps, including the current EDD8 signed indexed-load blocker, then real audio IRQ return,
+  gaps, including the current arithmetic-right-shift blocker, then real audio IRQ return,
   sustained home frames, 30 guest seconds and physical input acceptance.
 - [ ] **4. Demonstrate compatibility.** Inventory and attempt unchanged
   Felucca plus available stock/other firmware using the same machine. Record
@@ -247,6 +247,15 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   `.deps/qemu-alnk-lifecycle-2026-10-07/`. Whole-machine/watchdog/hardware
   reset and runtime unrealize/re-realize remain unvalidated.
 
+- 2026-10-07: Stage 3 EDD8 kind-A signed indexed load complete and independently
+  reviewed. Shared scaled address path reused; unsigned/classifier behavior
+  retained. Focused gate passes 73 reference cases, one generic replay and
+  17 faults; full ISA/profile/IRQ/boot pass. Unchanged firmware advances eight
+  instructions to AF88 at `0x02001c70`; renamed generic state/sample/LCD match.
+  SLEIGH body/comment shift discrepancy and rejected speculative FDD8 test
+  are preserved in `.deps/qemu-signed-indexed-halfword-load-2026-10-07/`.
+  Existing FDD8 branch behavior is retained. Audio service remains open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -373,7 +382,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is EDD8, recorded below.
+  latest firmware blocker is AF88, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -383,25 +392,39 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: signed indexed halfword load EDD8
+## Current firmware blocker: arithmetic right immediate shift AF88
 
-Latest unchanged boot: `.cache/felucca-validation/after-alnk-lifecycle/`.
-The compact multiply bundle now executes with existing shared CPU arithmetic.
-Execution fails explicitly at the signed sine-table lookup:
+Latest unchanged boot: `.cache/felucca-validation/after-signed-indexed-halfword-load/`.
+Signed sine-table reads now execute through shared CPU behavior. Next stop:
 
-- PC: `0x02001c58`; opcode words `EDD8/302A`.
-- Vendor disassembly: `r3 = h[r2+r0<<1] (s)`, followed by the alias form
-  `EDD8/002A`, `r0 = h[r2+r0<<1] (s)`. Resolve exact fields independently.
-- Instructions: 43,279,913; virtual time: 346,239,312 ns.
-- IRQ11 entries: 1; IRQ11 returns: 0; IRQ63 entries/returns: 0.
-- ALNK: five completions, four coalesced, zero skipped, 2,560 zero sample words;
-  pending `0x80`, no acknowledgment. Splash intact, guard messages and watchdog
-  expiry zero. Audio service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `63ff120e46d998267576f35ed01db1cf84d3406134cfa3105a10cae8bb258598`.
-- Generic replay: `.cache/felucca-validation/after-alnk-lifecycle-generic/`.
-- Durable evidence: main repo `.deps/qemu-alnk-lifecycle-2026-10-07/`;
-  preceding CPU, syscon, upgrade and architecture checkpoints are retained.
-  Firmware state and bytes exactly match the pre-lifecycle CPU checkpoint.
+- PC `0x02001c70`, opcode `AF88`: vendor `r0 = r0 >>> 15`.
+- Instructions 43,279,921; virtual time 346,239,376 ns.
+- One IRQ11 entry, no acknowledgment/return; no IRQ63 entries/returns.
+- Five ALNK completions, four coalesced, 2,560 zero sample words; pending
+  `0x80`. Splash intact, guard messages and watchdog expiry zero. Audio
+  service, synthesis and the home screen remain incomplete.
+- QEMU SHA-256: `99dc22db2c93d15f67409abc40a34d187b8e0be7e860e226f58123c1c6c8ced6`.
+- Generic replay: `after-signed-indexed-halfword-load-generic`.
+- Durable evidence: main repo `.deps/qemu-signed-indexed-halfword-load-2026-10-07/`.
+
+### Resolved EDD8 signed indexed halfword load
+
+Exact EDD8 operand kind A loads a signed little-endian halfword at wrapping
+incoming base+(index<<1), without writeback or PSR changes. Existing unsigned
+kinds 8/9 and the parallel classifier are unchanged for every image.
+
+Pinned Apache SLEIGH's comment and vendor disassembly describe index<<1,
+but that constructor body omits the shift. Discriminating separate-reference
+probes agree with vendor scaling; retain this discrepancy as evidence rather
+than describing all sources as agreeing. Hardware fault state is unverified.
+
+`validate_signed_indexed_halfword_load.py` passes 73 reference cases, one
+generic replay and 17 faults: sign/index boundaries, wrapping sums, all GPR
+fields/aliases, distinct scaled/unscaled memory, readable limits, PSR,
+conditionals/retirement, guards and unsupported EDD8 kinds. Full ISA, 98
+profiles, ten IRQ cases and boot pass. Unchanged Felucca advances eight
+instructions to AF88; renamed generic state except profile and sample/LCD
+bytes match. Whole SRAM is not compared across initialization modes.
 
 ### Resolved DB01 compact multiply parallel head
 
@@ -517,10 +540,11 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign EDD8 signed indexed halfword load to the CPU worker. Establish exact
-   size/shift/register fields independently; preserve the SLEIGH body/comment
-   scaling discrepancy separately. Test sign extension, address wrapping,
-   incoming aliases, PSR/retirement, conditionals and explicit faults.
+2. Assign the reached arithmetic right immediate shift AF88 to the CPU
+   worker. Establish exact valid bits/register/shift fields and PSR behavior
+   independently; preserve existing logical shifts and bundle classification.
+   Test negative values, zero/31 shifts, fields/aliases, PSR/count, conditionals,
+   generic replay and unsupported neighboring encodings.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
