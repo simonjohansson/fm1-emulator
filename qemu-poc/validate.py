@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Re-run immutable guest fixtures in QEMU and the separate Rust process."""
 import argparse
+import build
 import hashlib
 import json
 from pathlib import Path
@@ -55,13 +56,13 @@ def infrastructure_checks():
     probe = json_run([*COMMAND, "-kernel", "build/probe.bin", "-append", "probe",
                       "-d", "op", "-D", str(logfile)])
     check(probe["instructions"] == 75, "TCG logging changed probe execution")
-    blocks = [len(re.findall(r"^ ---- [0-9a-f]+$", block, re.MULTILINE))
+    blocks = [len(re.findall(r"^ ---- [0-9a-f]+ 0+ 0+$", block, re.MULTILINE))
               for block in logfile.read_text().split("OP:\n")[1:]]
     # Conditional completion currently needs a boundary after each guest
     # instruction. This is a common CPU correctness policy, not throughput.
     check(blocks and max(blocks) == 1, "CPU conditional-completion TB boundary differs")
     save("tcg-translation", {
-        "qemu_revision": "7c949c53e936aa3a658d84ab53bae5cadaa5d59c",
+        "qemu_revision": build.QEMU_COMMIT, "qemu_version": build.QEMU,
         "fixture": "build/probe.bin", "translation_block_guest_markers": blocks,
         "maximum_guest_markers_per_block": max(blocks), "performance_comparison": False,
     })

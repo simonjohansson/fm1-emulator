@@ -7,7 +7,7 @@
  * results or creates a successful SIE completion. No Rust implementation or
  * guest USB protocol code is copied into QEMU. */
 #include "qemu/osdep.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "fm1-usb.h"
 
 #define USB_BASE 0x11800u

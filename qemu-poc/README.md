@@ -2,6 +2,9 @@
 
 ## Current boot progress
 
+The active build uses QEMU **11.1.2**. Upgrade evidence and the retained
+QEMU 10 baseline are documented in [BOOTING.md](BOOTING.md).
+
 The unchanged foundation and bare display diagnostics now boot from their
 application entries. Foundation covers guest RAM initialization and execution,
 GPIO matrix scanning, TIMER4 and a complete TIMER5 interrupt. The display
@@ -109,7 +112,9 @@ script with warnings treated as errors. Build logs are `.cache/configure.log`
 and `.cache/build.log`. Existing local dependency installations were reused in
 that final check. The one unused EDK2 symlink to `/opt/X11/include` is omitted
 during safe archive extraction; EDK2 firmware is not built by this target.
-Use `build.py --reconfigure` after changing configure options. Deleting only
+Use `build.py --reconfigure` after changing configure options. When changing
+QEMU releases, preserve the old `.cache/build/` under another name first; the
+script rejects a cache tied to another release. Deleting only
 `qemu-poc/.cache/build/` requests a fresh compilation. Downloaded sources and
 build outputs are disposable; the overlay is the maintained source.
 
@@ -148,12 +153,12 @@ headless core does not require the vendor compiler or ignored firmware packages.
 
 ## Revision and integration
 
-QEMU is pinned to **v10.0.0**, commit
-`7c949c53e936aa3a658d84ab53bae5cadaa5d59c`. Its release archive is
-[`qemu-10.0.0.tar.xz`](https://download.qemu.org/qemu-10.0.0.tar.xz), SHA-256:
+QEMU is pinned to **v11.1.2**, commit
+`4fc49f46dc95d4a27de2509e7fceb2931e91faeb`. Its release archive is
+[`qemu-11.1.2.tar.xz`](https://download.qemu.org/qemu-11.1.2.tar.xz), SHA-256:
 
 ```text
-22c075601fdcf8c7b2671a839ebdcef1d4f2973eb6735254fd2e1bd0f30b3896
+731b5681e4bb18be313231579b8efd0296c5b015fa36dc533874b639ba838016
 ```
 
 Build dependencies are Python 3.13.15, Rust 1.91.1, Meson 1.5.0, Ninja

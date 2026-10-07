@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* QOM/TCG integration follows QEMU 10.0's CPUClass interfaces. */
+/* QOM/TCG integration follows QEMU 11.1's CPU/TCG interfaces. */
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/qemu-print.h"
 #include "cpu.h"
 #include "exec/cputlb.h"
-#include "exec/cpu_ldst.h"
+#include "exec/page-protection.h"
+#include "exec/target_page.h"
+#include "accel/tcg/cpu-ldst.h"
 #include "exec/translation-block.h"
 #include "hw/core/sysemu-cpu-ops.h"
 #include "accel/tcg/cpu-ops.h"
@@ -14,7 +16,13 @@ static void set_pc(CPUState *cs, vaddr pc) { cpu_env(cs)->pc = pc; }
 static vaddr get_pc(CPUState *cs) { return cpu_env(cs)->pc; }
 static int mmu_index(CPUState *cs, bool ifetch) { return 0; }
 static hwaddr physical_debug(CPUState *cs, vaddr addr) { return addr; }
-static bool has_work(CPUState *cs) { return cs->interrupt_request & CPU_INTERRUPT_HARD; }
+static bool has_work(CPUState *cs) { return cpu_test_interrupt(cs, CPU_INTERRUPT_HARD); }
+
+static TCGTBCPUState get_tb_state(CPUState *cs)
+{
+    CPUPi32v2State *env = cpu_env(cs);
+    return (TCGTBCPUState){ .pc = env->pc, .flags = env->in_irq };
+}
 
 static void synchronize(CPUState *cs, const TranslationBlock *tb)
 {
@@ -139,23 +147,25 @@ static void dump(CPUState *cs, FILE *f, int flags)
     for (int i = 0; i < 16; i++) { qemu_fprintf(f, "r%d=%08x%c", i, e->gpr[i], i % 4 == 3 ? '\n' : ' '); }
 }
 static const SysemuCPUOps system_ops = {
-    .has_work = has_work, .get_phys_page_debug = physical_debug,
+    .has_work = has_work, .get_phys_addr_debug = physical_debug,
 };
 static const TCGCPUOps tcg_ops = {
     .initialize = pi32v2_translate_init, .translate_code = pi32v2_translate_code,
+    .get_tb_cpu_state = get_tb_state, .mmu_index = mmu_index,
+    .cpu_exec_reset = cpu_reset, .pointer_wrap = cpu_pointer_wrap_uint32,
     .synchronize_from_tb = synchronize, .restore_state_to_opc = restore,
     .tlb_fill = fill_tlb, .do_transaction_failed = transaction_failed,
     .do_unaligned_access = unaligned, .cpu_exec_interrupt = interrupt,
     .cpu_exec_halt = has_work, .do_interrupt = unexpected_exception,
 };
-static void class_init(ObjectClass *oc, void *data)
+static void class_init(ObjectClass *oc, const void *data)
 {
     Pi32v2CPUClass *klass = PI32V2_CPU_CLASS(oc);
     CPUClass *cc = CPU_CLASS(oc);
     device_class_set_parent_realize(DEVICE_CLASS(oc), realize, &klass->parent_realize);
     resettable_class_set_parent_phases(RESETTABLE_CLASS(oc), NULL, reset, NULL, &klass->parent_phases);
     cc->class_by_name = class_by_name;
-    cc->set_pc = set_pc; cc->get_pc = get_pc; cc->mmu_index = mmu_index;
+    cc->set_pc = set_pc; cc->get_pc = get_pc;
     cc->dump_state = dump; cc->sysemu_ops = &system_ops; cc->tcg_ops = &tcg_ops;
 }
 static const TypeInfo info = {

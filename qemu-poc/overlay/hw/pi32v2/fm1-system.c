@@ -6,7 +6,7 @@
  * reset requests terminate explicitly: hardware exception/reset dispatch is
  * not implemented by this bounded machine. */
 #include "qemu/osdep.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "fm1-system.h"
 
 #define P33_CS 1u

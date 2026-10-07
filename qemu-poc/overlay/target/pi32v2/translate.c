@@ -151,7 +151,7 @@ static void init_disas(DisasContextBase *db, CPUState *cs)
 static void tb_start(DisasContextBase *db, CPUState *cs) {}
 static void insn_start(DisasContextBase *db, CPUState *cs)
 {
-    tcg_gen_insn_start(db->pc_next);
+    tcg_gen_insn_start(db->pc_next, 0, 0);
 }
 
 static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
@@ -939,5 +939,5 @@ void pi32v2_translate_code(CPUState *cs, TranslationBlock *tb,
     /* Preserve conditional completion and IRQ admission at each architectural
      * instruction boundary for every image. Wider TBs need a separate gate. */
     *max_insns = 1;
-    translator_loop(cs, tb, max_insns, start, host_pc, &ops, &d.base);
+    translator_loop(cs, tb, max_insns, start, host_pc, &ops, &d.base, TCG_TYPE_VA);
 }

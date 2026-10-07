@@ -7,7 +7,7 @@
  * calibrated peripheral divider or encrypted package boot model. */
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "fm1-nor.h"
 
 #define SPI0_BASE 0x11c00u

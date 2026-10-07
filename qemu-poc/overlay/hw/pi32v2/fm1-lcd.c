@@ -9,7 +9,7 @@
  */
 #include "qemu/osdep.h"
 #include "fm1-lcd.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "ui/console.h"
 
 #define SPI1_BASE 0x11d00
@@ -28,10 +28,10 @@ static void lcd_fail(FM1PocLCD *lcd, const char *reason)
     pi32v2_fail(&lcd->cpu->env, reason);
 }
 
-static void lcd_update_display(void *opaque)
+static bool lcd_update_display(void *opaque)
 {
     FM1PocLCD *lcd = opaque;
-    if (!lcd->redraw) { return; }
+    if (!lcd->redraw) { return true; }
     DisplaySurface *surface = qemu_console_surface(lcd->console);
     /* qemu_console_resize creates QEMU's native 32-bit RGB surface. The
      * console observes completed panel writes; it never advances the guest. */
@@ -45,7 +45,8 @@ static void lcd_update_display(void *opaque)
         }
     }
     lcd->redraw = false;
-    dpy_gfx_update(lcd->console, 0, 0, FM1_LCD_WIDTH, FM1_LCD_HEIGHT);
+    qemu_console_update(lcd->console, 0, 0, FM1_LCD_WIDTH, FM1_LCD_HEIGHT);
+    return true;
 }
 
 static void lcd_invalidate_display(void *opaque)
@@ -292,7 +293,7 @@ void fm1_lcd_init(FM1PocLCD *lcd, Object *owner, Pi32v2CPU *cpu)
     memory_region_init_io(&lcd->spi_mmio, owner, &spi_ops, lcd, "fm1.spi1", 20);
     memory_region_add_subregion(get_system_memory(), SPI1_BASE, &lcd->spi_mmio);
     /* This private panel is machine state rather than a qdev device. */
-    lcd->console = graphic_console_init(NULL, 0, &lcd_graphic_ops, lcd);
+    lcd->console = qemu_graphic_console_create(NULL, 0, &lcd_graphic_ops, lcd);
     qemu_console_resize(lcd->console, FM1_LCD_WIDTH, FM1_LCD_HEIGHT);
 }
 

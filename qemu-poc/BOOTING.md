@@ -6,6 +6,44 @@ build products in `.cache/` are disposable.
 
 Worktree: `/Users/simonjohansson/src/fm1-qemu-poc`, branch `codex/qemu-poc`.
 
+## QEMU 11.1.2 upgrade
+
+The active build is pinned to official QEMU 11.1.2, release commit
+`4fc49f46dc95d4a27de2509e7fceb2931e91faeb`. The archive SHA-256 and detached
+signature were verified; [README.md](README.md) and `build.py` contain the pin.
+A fresh build passed with warnings treated as errors. CPU/TCG/QOM and display
+callbacks and moved headers were adapted; guest instructions and device
+behavior were preserved. Build dependency pins were accepted unchanged.
+The build rejects reuse of a cache configured for another QEMU release.
+
+Upgrade acceptance passed foundation/probe/fault/QMP, full ISA, FF0C,
+98 CPU-profile and 32 common-map runs, peripheral/diagnostic startup/flash/long
+boot, three-frame display, 18 ALNK and ten IRQ cases, hold/resume, exact
+Felucca startup/reference and splash/reference, and the reached boot below.
+TCG diagnostics now print three instruction metadata words; the parsers check
+PC/zero/zero while retaining the common one-instruction TB assertion.
+
+Unchanged Felucca and a renamed image through the default generic loader still
+stop at ECDC, `0x020023be`, 43,278,871 instructions and 346,230,976 ns. Within
+each loader mode, every captured state field, whole SRAM, sample bytes and LCD
+pixels match QEMU 10 exactly. The generic and fixture runs also match every
+state field except the profile label; sample and LCD bytes match too. Their
+differently initialized whole SRAM images are not compared across modes.
+
+The Cocoa functional gate passed 418 frames, ten physical key cycles and 386
+changing timer images without pausing: 9.676 guest seconds in 9.646 wall
+seconds. This is functional display/pacing validation, not a throughput or
+hardware clock measurement. Automated checks inspect guest pixels and running
+status; visual inspection of the unbundled QEMU window was unavailable through
+the native app inventory during this upgrade.
+
+The QEMU 10 binary, pins, build configuration and old validation caches remain
+in main repo `.deps/qemu-11.1.2-upgrade-2026-10-07/baseline-10.0.0/`, with the old
+build retained as `.cache/build-qemu-10.0.0/`. New logs and exact comparisons
+are in `.deps/qemu-11.1.2-upgrade-2026-10-07/`; reached boot caches use the label
+`upgrade-qemu-11-1-2`. The next firmware blocker remains the indexed store;
+this upgrade does not establish completed audio service or a home screen.
+
 ## Generic machine boundary
 
 The 2026-10-07 architecture extraction uses one CPU semantic path and one

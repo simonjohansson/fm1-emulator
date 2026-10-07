@@ -165,17 +165,35 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   LCD pixels match exactly. Whole SRAM is not compared because fixture poisoning
   differs. Resettable controllers/shared syscon and DMA contracts remain open.
 
-### QEMU version decision
+- 2026-10-07: user-authorized QEMU 11.1.2 upgrade complete. Fresh warning-clean
+  build and every existing acceptance gate pass, including full ISA, profiles,
+  common maps, peripherals, diagnostic startup/flash/long boot, display,
+  ALNK/IRQ, QMP hold/resume and exact Felucca startup/splash reference checks.
+  Reached unchanged Felucca and renamed generic replay match QEMU 10 state,
+  whole SRAM, sample and LCD bytes exactly within each loader mode. The ECDC
+  checkpoint remains unchanged. Cocoa functional gate passes 418 frames and
+  ten key cycles without pausing; native window visual inspection was unavailable
+  through the app inventory. Review found no new guest semantics. Old build
+  and evidence are retained; the build rejects reuse of another release's cache.
 
-The POC inherited pinned QEMU 10.0.0; no documented CPU/hardware requirement
-for version 10 was found. Build and regression evidence bind that version.
-In response to the user's version question, recommend a separate upgrade
-milestone before expanding device infrastructure. The official download page
-listed 11.1.2 on 2026-10-07: <https://www.qemu.org/download/>.
-The question did not authorize changing the pin. Keep the tested version until
-the upgrade is selected; then adapt required internal interfaces and run the
-full architecture, ISA, diagnostic, startup, splash and reached-boot gates.
-Preserve both baselines to distinguish upgrade regressions from new behavior.
+### QEMU version upgrade
+
+The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
+10.0.0 binary, source/build pins and validation caches are preserved in
+main repo `.deps/qemu-11.1.2-upgrade-2026-10-07/baseline-10.0.0/`; its old build
+also remains in `.cache/build-qemu-10.0.0/`. The active source is
+`.cache/qemu-11.1.2/`, selected by `integrate.py`; build provenance is in
+`build.py`. No instruction/device expansion is part of this upgrade.
+
+The official release archive's detached signature verified against QEMU's
+published fingerprint `CEACC9E15534EBABB82D3FA03353C9CEF108B584`.
+Release commit: `4fc49f46dc95d4a27de2509e7fceb2931e91faeb`.
+Archive SHA-256: `731b5681e4bb18be313231579b8efd0296c5b015fa36dc533874b639ba838016`.
+Only required CPU/TCG/QOM/display interfaces and moved headers are adapted;
+three-word TCG marker parsing preserves the existing validation assertions.
+Meson 1.5.0 and other build dependencies remain within this release's accepted
+requirements; no dependency pin change was necessary. Full acceptance results
+are recorded in the work ledger above and `qemu-poc/BOOTING.md`.
 
 ## Permanent workspace and checkpoint
 
@@ -253,7 +271,7 @@ noinit/loader state and hash-bound poisoned startup sections; the guest must
 initialize memory itself. Erased NOR is seeded with unchanged application
 bytes at physical offset `0x4120`.
 
-Edit `qemu-poc/overlay/`, never generated `.cache/qemu-10.0.0` files. Existing
+Edit `qemu-poc/overlay/`, never generated `.cache/qemu-11.1.2` files. Existing
 build regeneration is authorized. Fresh QEMU C/Python stays GPL-2.0-or-later;
 Rust and firmware stay GPL-3.0-only. Use register/encoding/interface facts,
 write fresh implementation, and keep Rust as a **separate executable using
@@ -296,7 +314,8 @@ Recent signed commits, all signatures verified:
 
 ## Current firmware blocker: indexed store ECDC
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-literal-branch/`.
+Latest unchanged boot: `.cache/felucca-validation/upgrade-qemu-11-1-2/`
+on QEMU 11.1.2; it matches the preceding QEMU 10 checkpoint exactly.
 It enters the real audio wrapper at `0x0200047e` and handler at `0x02002266`,
 passes the former FF0C blocker, then fails explicitly:
 
@@ -310,9 +329,10 @@ passes the former FF0C blocker, then fails explicitly:
   pending `0x80`, no acknowledgment. Splash intact, guard messages and watchdog
   expiry zero. This is not completed audio service, synthesis or a home screen.
 - QEMU SHA-256:
-  `89f59afe7a71604ac51b7ba5a410482720edebdba891a706acdc88b73ab64d81`.
-- Generic replay: `.cache/application-validation/after-signed-literal-branch/`.
-- Durable evidence: main repo `.deps/qemu-architecture-2026-10-07/`.
+  `8f124ef41577968b9816a34f61a4dddf002dc4a5b57d86bc5f3e976b986828eb`.
+- Generic replay: `.cache/application-validation/upgrade-qemu-11-1-2/`.
+- Durable evidence: main repo `.deps/qemu-11.1.2-upgrade-2026-10-07/`;
+  prior architecture/FF0C checkpoints remain in `.deps/qemu-architecture-2026-10-07/`.
 
 No Felucca live viewer has been launched.
 
@@ -336,8 +356,8 @@ preserved separately. The old `after-irq-selection/` and
 
 Next implementation sequence:
 
-1. Resolve the QEMU upgrade recommendation above before expanding device
-   infrastructure; the current pin is unchanged.
+1. Preserve the QEMU 11.1.2 upgrade gate and source pin above while continuing
+   reached instruction and device bring-up.
 2. Assign the reached ECDC store to the CPU worker for independent encoding
    and semantics analysis. Implement only evidenced behavior with focused
    aliasing, addressing, width/alignment, guard/fault and retirement tests.

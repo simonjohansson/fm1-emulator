@@ -6,7 +6,7 @@ separate reference executable in `reference/`. Guest binaries are loaded as
 runtime data and remain subject to their existing licenses and provenance.
 The diagnostic package, SDK and vendor compiler are not redistributed here.
 
-QEMU 10.0.0's `LICENSE` states that the emulator as a whole is GPL version 2,
+QEMU 11.1.2's `LICENSE` states that the emulator as a whole is GPL version 2,
 with compatible file-specific licenses. Its TCG components have mixed
 file-specific licenses. See the
 [QEMU licensing documentation](https://www.qemu.org/docs/master/about/license.html)

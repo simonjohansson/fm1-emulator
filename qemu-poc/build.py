@@ -3,6 +3,7 @@
 """Build only this experimental target; all writable caches stay beside it."""
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -14,9 +15,9 @@ import integrate
 
 HERE = Path(__file__).resolve().parent
 CACHE = HERE / ".cache"
-QEMU = "10.0.0"
-QEMU_COMMIT = "7c949c53e936aa3a658d84ab53bae5cadaa5d59c"
-QEMU_SHA = "22c075601fdcf8c7b2671a839ebdcef1d4f2973eb6735254fd2e1bd0f30b3896"
+QEMU = integrate.QEMU
+QEMU_COMMIT = "4fc49f46dc95d4a27de2509e7fceb2931e91faeb"
+QEMU_SHA = "731b5681e4bb18be313231579b8efd0296c5b015fa36dc533874b639ba838016"
 PKGCONF_SHA = "3a9080ac51d03615e7c1910a0a2a8df08424892b5f13b0628a204d3fcce0ea8b"
 PACKAGES = ["meson==1.5.0", "ninja==1.11.1.4", "distlib==0.3.9", "pycotap==1.3.1"]
 
@@ -49,6 +50,12 @@ def main():
     parser.add_argument("--reconfigure", action="store_true")
     args = parser.parse_args()
     CACHE.mkdir(exist_ok=True)
+    # An older Ninja build remains tied to its original source tree. Do not
+    # rebuild it and report the new pin as though an upgrade occurred.
+    project_info = CACHE / "build/meson-info/intro-projectinfo.json"
+    if project_info.exists() and json.loads(project_info.read_text())["version"] != QEMU:
+        raise SystemExit(f"cached build belongs to another QEMU release; preserve "
+                         f"{CACHE / 'build'} elsewhere and rebuild QEMU {QEMU}")
     env = dict(os.environ)
     env["PIP_CACHE_DIR"] = str(CACHE / "pip-cache")
     env["PYTHONNOUSERSITE"] = "1"
@@ -59,7 +66,11 @@ def main():
     source = CACHE / f"qemu-{QEMU}"
     if not source.exists():
         with tarfile.open(archive) as tar:
-            tar.extractall(CACHE, filter="data")
+            # EDK2 is unused by this target; its upstream X11 include link
+            # points outside the archive and is rejected by the data filter.
+            excluded = f"qemu-{QEMU}/roms/edk2/EmulatorPkg/Unix/Host/X11IncludeHack"
+            members = [member for member in tar if member.name != excluded]
+            tar.extractall(CACHE, members=members, filter="data")
     venv = CACHE / "python"
     if not venv.exists():
         subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)

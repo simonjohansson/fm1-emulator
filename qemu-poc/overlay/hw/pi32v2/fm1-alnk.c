@@ -9,7 +9,7 @@
  * implemented. All other register/configuration accesses fail explicitly. */
 #include "qemu/osdep.h"
 #include "qemu/bswap.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "fm1-alnk.h"
 
 #define ALNK_BASE 0x12e00u

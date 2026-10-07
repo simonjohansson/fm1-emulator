@@ -6,10 +6,10 @@
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
-#include "hw/loader.h"
-#include "hw/irq.h"
-#include "exec/address-spaces.h"
+#include "hw/core/boards.h"
+#include "hw/core/loader.h"
+#include "hw/core/irq.h"
+#include "system/address-spaces.h"
 #include "system/runstate.h"
 #include "cpu.h"
 #include "fm1-lcd.h"
@@ -347,7 +347,7 @@ static void machine_init(MachineState *ms)
     fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
     fm1_test_start(m);
 }
-static void machine_class_init(ObjectClass *oc, void *data)
+static void machine_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     mc->desc = "FM-1 pi32v2 application machine (partial hardware model)";

@@ -75,7 +75,7 @@ def main():
                        "guest did not clear poisoned BSS")
         validate.check(qemu["ram_code"] == expected_ram and qemu["inspection"][2] == 0x5a17,
                        "guest RAM copy/execution failed")
-        markers = set(int(x, 16) for x in re.findall(r"^ ---- ([0-9a-f]+)$", log.read_text(), re.MULTILINE))
+        markers = set(int(x, 16) for x in re.findall(r"^ ---- ([0-9a-f]+) 0+ 0+$", log.read_text(), re.MULTILINE))
         validate.check({0x02000120, 0x01c00000, 0x01c00004, 0x01c00006}.issubset(markers),
                        "startup or RAM execution was not translated")
         validate.check(qemu["probe"] == probe["inspection"] == expected_probe,

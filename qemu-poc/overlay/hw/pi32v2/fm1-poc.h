@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #ifndef HW_PI32V2_FM1_POC_H
 #define HW_PI32V2_FM1_POC_H
-#include "hw/boards.h"
-#include "hw/irq.h"
+#include "hw/core/boards.h"
+#include "hw/core/irq.h"
 #include "qemu/timer.h"
 #include "cpu.h"
 #include "fm1-lcd.h"

@@ -5,7 +5,8 @@ from pathlib import Path
 import shutil
 
 HERE = Path(__file__).resolve().parent
-SOURCE = HERE / ".cache/qemu-10.0.0"
+QEMU = "11.1.2"
+SOURCE = HERE / f".cache/qemu-{QEMU}"
 
 
 def append_once(path, line):
@@ -20,8 +21,8 @@ def write_changed(path, content):
 
 
 def main():
-    if (SOURCE / "VERSION").read_text().strip() != "10.0.0":
-        raise SystemExit("expected QEMU 10.0.0")
+    if (SOURCE / "VERSION").read_text().strip() != QEMU:
+        raise SystemExit(f"expected QEMU {QEMU}")
     for path in (HERE / "overlay").rglob("*"):
         if path.is_file():
             dest = SOURCE / path.relative_to(HERE / "overlay")
@@ -36,11 +37,11 @@ def main():
     for directory in ["hw", "target"]:
         append_once(SOURCE / directory / "meson.build", "subdir('pi32v2')")
         append_once(SOURCE / directory / "Kconfig", "source pi32v2/Kconfig")
-    arch = SOURCE / "include/system/arch_init.h"
+    arch = SOURCE / "include/qemu/base-arch-defs.h"
     content = arch.read_text()
     if "QEMU_ARCH_PI32V2" not in content:
-        arch.write_text(content.replace("    QEMU_ARCH_ALL = -1,",
-            "    QEMU_ARCH_ALL = -1,\n    QEMU_ARCH_PI32V2 = (1 << 24),"))
+        arch.write_text(content.replace("    QEMU_ARCH_ALL =         UINT32_MAX,",
+            "    QEMU_ARCH_PI32V2 =      (1UL << SYS_EMU_TARGET_PI32V2),\n    QEMU_ARCH_ALL =         UINT32_MAX,"))
     # Explicitly approved by the user: isolated QEMU QMP architecture enum.
     qapi = SOURCE / "qapi/machine.json"
     content = qapi.read_text()

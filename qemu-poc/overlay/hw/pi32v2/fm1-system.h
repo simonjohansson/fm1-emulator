@@ -2,7 +2,7 @@
 #ifndef HW_PI32V2_FM1_SYSTEM_H
 #define HW_PI32V2_FM1_SYSTEM_H
 
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "qemu/timer.h"
 #include "cpu.h"
 

@@ -2,7 +2,7 @@
 #ifndef HW_PI32V2_FM1_USB_H
 #define HW_PI32V2_FM1_USB_H
 
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 
 /* Private cold-power-on, host-absent controller model. The SIE bridge has no

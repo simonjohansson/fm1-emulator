@@ -3,6 +3,8 @@
 #define PI32V2_CPU_H
 #include "cpu-qom.h"
 #include "exec/cpu-defs.h"
+#include "exec/cpu-common.h"
+#include "exec/cpu-interrupt.h"
 
 /* Register numbering: Apache-2.0 Quarkslab pi32v2.slaspec. */
 enum { RETI = 0, RETS = 3, PSR = 5, ICFG = 11, USP = 12, SSP = 13, SP = 14 };
@@ -57,13 +59,4 @@ void pi32v2_check_access(CPUPi32v2State *env, uint32_t address,
                          unsigned size, unsigned flags);
 void pi32v2_note_branch(CPUPi32v2State *env);
 G_NORETURN void pi32v2_fail(CPUPi32v2State *env, const char *reason);
-#include "exec/cpu-all.h"
-
-static inline void cpu_get_tb_cpu_state(CPUPi32v2State *env, vaddr *pc,
-                                       uint64_t *cs_base, uint32_t *flags)
-{
-    *pc = env->pc;
-    *cs_base = 0;
-    *flags = env->in_irq;
-}
 #endif
