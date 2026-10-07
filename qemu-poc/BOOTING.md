@@ -721,11 +721,11 @@ label; main repo `.deps/qemu-parallel-packed-multiply-2026-10-07/` preserves
 focused gates, actual boot captures and reference probes. Home and synthesis
 remain unverified.
 
-### Signed halfword loads and latest checkpoint
+### Signed halfword loads checkpoint
 
 Exact ED54/55 now load signed little-endian halfwords using an even unsigned
 offset of 0..510 and the incoming base. Destination/base aliases and PSR are
-preserved. Odd operand bit zero and ED56/57 remain explicitly unsupported;
+preserved. Operands with bit 0 set and ED56/57 remain explicitly unsupported;
 the existing unsigned load and parallel paths are unchanged.
 
 ```sh
@@ -737,7 +737,7 @@ It covers sign/offset boundaries, all GPR fields and aliases, readable regions,
 guards, PSR, conditional sizing and retirement. Fault state is a model check,
 not hardware validation. Full ISA, 98 profiles, ten IRQ cases and boot pass.
 
-Unchanged Felucca stops at DB01, PC `0x02002eba`, after 43,279,745 instructions
+After this milestone, unchanged Felucca stopped at DB01, PC `0x02002eba`, after 43,279,745 instructions
 and 346,237,968 virtual ns: 169 instructions beyond ED54. The vendor bundle is
 `r1 *= r0 #` paired with `[sp+64] = r3`; scalar multiply already exists, but
 its parallel-head destination is not classified. IRQ11 still has no ack/return,
@@ -748,6 +748,33 @@ Whole SRAM is not compared across loader modes. Caches use
 `.deps/qemu-signed-halfword-load-2026-10-07/` retains raw probes and acceptance
 logs, including the repaired test capture-profile failure. Home and synthesis
 remain unverified.
+
+### Compact multiply bundle and latest checkpoint
+
+The existing scalar 1B00 multiply now has a parallel-head destination mask.
+This is one classifier entry; scalar arithmetic, incoming register reads,
+bundle order and four/six-byte sizing remain unchanged for every image.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_parallel_register_multiply.py
+```
+
+The gate passes 41 reference cases, one generic replay and eight faults.
+Nonzero products, incoming aliases, every register field, square/overflow
+boundaries, PSR, conditional sizing and retirement are checked. Hardware fault
+state remains unverified. Full ISA, 98 profiles, ten IRQ cases and boot pass.
+
+Unchanged Felucca stops at EDD8/302A, PC `0x02001c58`, after 43,279,913
+instructions and 346,239,312 virtual ns: 168 instructions beyond DB01.
+Vendor disassembly shows `r3 = h[r2+r0<<1] (s)`, followed by the alias form
+`r0 = h[r2+r0<<1] (s)`. IRQ11 still has no ack/return, five captured halves
+are zero and the splash is intact. Renamed generic loading matches captured
+state except the profile label and all sample/LCD bytes; whole SRAM is not
+compared across loader modes. Caches use `after-parallel-register-multiply`
+and its `-generic` label; main repo
+`.deps/qemu-parallel-register-multiply-2026-10-07/` retains probes and gates.
+Home and synthesis remain unverified. CPU changes are held for the next
+local ALNK reset lifecycle milestone.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

@@ -90,7 +90,7 @@ stable Rust API changes or physical flashing are authorized by this plan.
   before overlapping controllers are added. Define reset, power cycle and
   storage erase separately. Test pending IRQ/DMA/timer cancellation, clock
   transitions and mid-transfer buffer mutation. Complete reached CPU/device
-  gaps, including the current DB01 parallel-head blocker, then real audio IRQ return,
+  gaps, including the current EDD8 signed indexed-load blocker, then real audio IRQ return,
   sustained home frames, 30 guest seconds and physical input acceptance.
 - [ ] **4. Demonstrate compatibility.** Inventory and attempt unchanged
   Felucca plus available stock/other firmware using the same machine. Record
@@ -225,6 +225,15 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   `.deps/qemu-signed-halfword-load-2026-10-07/`. Audio IRQ acknowledgment and
   return remain open.
 
+- 2026-10-07: Stage 3 compact 1B00 multiply parallel classification complete
+  and independently reviewed. Only one destination-mask entry changes.
+  Focused gate passes 41 reference cases, one generic replay and eight faults;
+  full ISA, 98 profiles, ten IRQ cases and boot gates pass. Unchanged Felucca
+  advances 168 instructions to EDD8 at `0x02001c58`; renamed generic state,
+  samples and LCD match. Evidence:
+  `.deps/qemu-parallel-register-multiply-2026-10-07/`. CPU changes are held
+  during the next resettable ALNK acceptance milestone.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -351,7 +360,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is DB01, recorded below.
+  latest firmware blocker is EDD8, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -361,31 +370,46 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: compact multiply parallel head DB01
+## Current firmware blocker: signed indexed halfword load EDD8
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-halfword-load/`.
-Signed halfword loads now execute through the shared CPU path. Execution fails
-explicitly at the next unclassified parallel multiply:
+Latest unchanged boot: `.cache/felucca-validation/after-parallel-register-multiply/`.
+The compact multiply bundle now executes with existing shared CPU arithmetic.
+Execution fails explicitly at the signed sine-table lookup:
 
-- PC: `0x02002eba`; words `DB01 + 3083`.
-- Vendor disassembly: `r1 *= r0 #` with `[sp+64] = r3`. The scalar
-  `1B00` family already exists; establish its destination mask independently.
-- Instructions: 43,279,745; virtual time: 346,237,968 ns.
+- PC: `0x02001c58`; opcode words `EDD8/302A`.
+- Vendor disassembly: `r3 = h[r2+r0<<1] (s)`, followed by the alias form
+  `EDD8/002A`, `r0 = h[r2+r0<<1] (s)`. Resolve exact fields independently.
+- Instructions: 43,279,913; virtual time: 346,239,312 ns.
 - IRQ11 entries: 1; IRQ11 returns: 0; IRQ63 entries/returns: 0.
 - ALNK: five completions, four coalesced, zero skipped, 2,560 zero sample words;
   pending `0x80`, no acknowledgment. Splash intact, guard messages and watchdog
   expiry zero. Audio service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256:
-  `a3a9f83f5e6d0dc33db91b192df7e4ced80aee9574d6f21bf1ce66aa7a0df2e8`.
-- Generic replay: `.cache/felucca-validation/after-signed-halfword-load-generic/`.
-- Durable evidence: main repo `.deps/qemu-signed-halfword-load-2026-10-07/`;
+- QEMU SHA-256: `f824623ca5fbdb2dbbd9042ffa42868badadb663cf389f4d87302427bb3962b7`.
+- Generic replay:
+  `.cache/felucca-validation/after-parallel-register-multiply-generic/`.
+- Durable evidence: main repo `.deps/qemu-parallel-register-multiply-2026-10-07/`;
   preceding CPU, syscon, upgrade and architecture checkpoints are retained.
+
+### Resolved DB01 compact multiply parallel head
+
+Only the existing scalar 1B00 family's destination mask is added to the
+parallel classifier. Product arithmetic, incoming-register snapshots, tail
+execution and four/six-byte bundle sizing remain unchanged for all images.
+
+`validate_parallel_register_multiply.py` passes 41 separate-reference cases,
+one generic replay and eight faults. It verifies nonzero products, old
+destination/source/address aliases, all register fields, squares, modulo-32
+products, full PSR, conditional sizing and one retirement. Hardware fault
+state remains unverified. Full ISA, 98 profiles, ten IRQ cases and boot gates
+pass. Unchanged Felucca advances 168 instructions to EDD8. Renamed default
+loading matches state except the profile label and all sample/LCD bytes;
+whole SRAM is not compared across loader modes.
 
 ### Resolved ED54/55 signed halfword loads
 
 Exact ED54/55 load a little-endian halfword and sign-extend it to 32 bits.
 The even unsigned offset spans 0..510, addresses use the incoming base and
-PSR is preserved. Odd operand bit zero and ED56/57 remain explicitly unsupported
+PSR is preserved. Operands with bit 0 set and ED56/57 remain explicitly unsupported
 because independent encoding evidence is insufficient for those forms.
 Existing unsigned loads and the parallel classifier are unchanged.
 
@@ -479,14 +503,17 @@ Next implementation sequence:
 
 1. Preserve the QEMU 11.1.2 upgrade gate and source pin above while continuing
    reached instruction and device bring-up.
-2. Assign DB01 compact multiply parallel classification to the CPU worker.
-   Inspect existing scalar 1B00 and incoming-register machinery; add only the
-   independently evidenced destination mask. Test nonzero products, aliases,
-   modulo-32 arithmetic, PSR, four/six-byte sizing, retirement and faults.
-3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
+2. Keep the CPU revision fixed while converting ALNK to a resettable QEMU
+   device. Verify local reset cancellation, pending IRQ clearing, repeated
+   reset/reconfiguration and preservation of syscon, SRAM and unrelated
+   controllers. Compare unchanged fixture/generic captures before and after.
+3. Then assign EDD8 signed indexed halfword load to the CPU worker. Establish
+   exact size/shift/register fields independently; test sign extension,
+   address wrapping, incoming aliases, PSR/retirement, conditionals and faults.
+4. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new evidence label. Commit only
    validated changes. Repeat for each actual subsequent CPU/MMIO failure.
-4. Hardware path: shared CLK_CON1/CLK_CON2/IOMAP_CON5 ownership is complete.
+5. Hardware path: shared CLK_CON1/CLK_CON2/IOMAP_CON5 ownership is complete.
    Convert ALNK to the first resettable QEMU device, retaining canonical shared
    words and rates. Verify timer cancellation, pending IRQ clearing,
    repeated reset and reconfiguration without resetting unrelated controllers.
