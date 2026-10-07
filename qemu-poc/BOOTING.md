@@ -864,7 +864,7 @@ Caches use `after-arithmetic-shift` and its `-generic` label; main repo
 `.deps/qemu-arithmetic-shift-2026-10-08/` retains primary/reference evidence
 and acceptance. Home and synthesis remain unverified.
 
-### Signed register greater-than and latest checkpoint
+### Signed register greater-than checkpoint
 
 Exact `(op & 0xfff0) == 0xee00` compares signed32 second-word bits15:12
 against opcode bits3:0, with signed9 word displacement from PC+4. Only
@@ -891,7 +891,7 @@ Unchanged Felucca advances ten instructions to F0E0; renamed default loading
 matches captured state except profile and all sample/LCD bytes. Whole SRAM
 is not compared across initialization modes.
 
-Latest stop: F0E0/BC00 +3580 at `0x02002fde`, 43,279,936
+At this milestone: F0E0/BC00 +3580 at `0x02002fde`, 43,279,936
 instructions and 346,239,496 ns. Vendor pairs `r0 = r11 + 0x8000`
 with `[sp+84] = incoming r0`. IRQ11 still has no ack/return; captured halves
 are zero and the splash intact. Caches use `after-signed-register-branch`
@@ -900,6 +900,38 @@ retains primary/reference disagreements and acceptance. Home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_branch.py
+```
+
+### Packed-add parallel classification and latest checkpoint
+
+Only the existing E0E0 scalar family's destination mask is added to the
+parallel classifier. Packed literals, ALU flags, incoming-register snapshots
+and tail-first bundle execution are unchanged for every image.
+
+`validate_parallel_packed_add.py` passes 71 separate-reference cases, one
+generic replay and nine model faults. Packed constants, signed/unsigned sum
+boundaries, aliases, old store source/address, six/eight-byte conditional
+sizing and one retirement are checked. A disjoint ALU tail produces different
+flags from the head, confirming existing head-last flag order for that case.
+Upper PSR bits are retained. Flag authority is existing scalar model policy
+plus executable reference; primary SLEIGH specifies arithmetic result only.
+Disputed repeated-byte literal modes remain outside this change.
+
+Four precheck and five tail-access faults retain original GPR/PSR/memory
+before add effects/retirement; hardware fault state remains unverified. Full
+ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
+980 instructions to ED34; renamed default loading matches state except
+profile and all sample/LCD bytes. Whole SRAM is not compared across modes.
+
+Latest stop: ED34/4000 at `0x02002010`, 43,280,916 instructions
+and 346,247,336 ns. Vendor `ifs (r4 >= 0)` selects two instructions.
+IRQ11 still has no ack/return; captured halves are zero and the splash intact.
+Caches use `after-parallel-packed-add` and its `-generic` label; main repo
+`.deps/qemu-parallel-packed-add-2026-10-08/` retains primary/reference evidence
+and acceptance. Home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_parallel_packed_add.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

@@ -90,7 +90,7 @@ stable Rust API changes or physical flashing are authorized by this plan.
   before overlapping controllers are added. Define reset, power cycle and
   storage erase separately. Test pending IRQ/DMA/timer cancellation, clock
   transitions and mid-transfer buffer mutation. Complete reached CPU/device
-  gaps, including the current packed-add parallel blocker, then real audio IRQ return,
+  gaps, including the current signed-literal IF blocker, then real audio IRQ return,
   sustained home frames, 30 guest seconds and physical input acceptance.
 - [ ] **4. Demonstrate compatibility.** Inventory and attempt unchanged
   Felucca plus available stock/other firmware using the same machine. Record
@@ -273,6 +273,15 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   policy are recorded explicitly. Evidence:
   `.deps/qemu-signed-register-branch-2026-10-08/`. Audio service remains open.
 
+- 2026-10-08: Stage 3 E0E0 packed-add parallel classification complete and
+  independently reviewed. Sole destination-mask entry preserves scalar/bundle
+  behavior. Focused gate passes 71 reference cases, one generic replay and
+  nine faults; full ISA/profile/IRQ/boot pass. Unchanged firmware advances
+  980 instructions to ED34 at `0x02002010`; renamed generic state/sample/LCD
+  match. Evidence: `.deps/qemu-parallel-packed-add-2026-10-08/`. ADC research
+  now records command-style start and separate shared analog ownership.
+  Audio service remains open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -399,7 +408,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is F0E0, recorded below.
+  latest firmware blocker is ED34, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -409,22 +418,43 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: packed-add parallel head F0E0
+## Current firmware blocker: signed-literal IF ED34
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-register-branch/`.
-Signed register greater-than now executes through shared CPU behavior. Next stop:
+Latest unchanged boot: `.cache/felucca-validation/after-parallel-packed-add/`.
+Packed adds now use the shared parallel classifier. Next stop:
 
-- PC `0x02002fde`, words `F0E0/BC00 + 3580`: vendor `r0 = r11 + 0x8000`
-  paired with `[sp+84] = incoming r0`. Check the existing scalar E0E0
-  operation's parallel destination classification independently.
-- Instructions 43,279,936; virtual time 346,239,496 ns.
+- PC `0x02002010`, words `ED34/4000`: vendor `ifs (r4 >= 0)` selecting
+  two instructions. Establish the signed-literal IF family independently;
+  the later EEB4 form remains deferred until reached/evidenced.
+- Instructions 43,280,916; virtual time 346,247,336 ns.
 - One IRQ11 entry, no acknowledgment/return; no IRQ63 entries/returns.
 - Five ALNK completions, four coalesced, 2,560 zero sample words; pending
   `0x80`. Splash intact, guard messages and watchdog expiry zero. Audio
   service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `7d69214d604c9130f5460e80ce0d7774c42c94a6ab14e8c5fe6e6a3df61d6965`.
-- Generic replay: `after-signed-register-branch-generic`.
-- Durable evidence: main repo `.deps/qemu-signed-register-branch-2026-10-08/`.
+- QEMU SHA-256: `003465a7b107bb01251764971134db2767131880d4fc23402fccc656f1fbc4cb`.
+- Generic replay: `after-parallel-packed-add-generic`.
+- Durable evidence: main repo `.deps/qemu-parallel-packed-add-2026-10-08/`.
+
+### Resolved E0E0 packed-add parallel classification
+
+Only the existing E0E0 scalar family's destination mask is added to the
+parallel classifier. Packed literals, ALU flags, incoming-register snapshots
+and tail-first bundle execution are unchanged for every image.
+
+`validate_parallel_packed_add.py` passes 71 separate-reference cases, one
+generic replay and nine model faults. Packed constants, signed/unsigned sum
+boundaries, aliases, old store source/address, six/eight-byte conditional
+sizing and one retirement are checked. A disjoint ALU tail produces different
+flags from the head, confirming existing head-last flag order for that case.
+Upper PSR bits are retained. Flag authority is existing scalar model policy
+plus executable reference; primary SLEIGH specifies arithmetic result only.
+Disputed repeated-byte literal modes remain outside this change.
+
+Four precheck and five tail-access faults retain original GPR/PSR/memory
+before add effects/retirement; hardware fault state remains unverified. Full
+ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
+980 instructions to ED34; renamed default loading matches state except
+profile and all sample/LCD bytes. Whole SRAM is not compared across modes.
 
 ### Resolved EE00 signed register greater-than branch
 
@@ -603,12 +633,12 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign the reached EE01 signed register greater-than branch to the CPU
-   worker. Establish exact opcode mask, register fields and signed displacement
-   independently; preserve existing branch/memory forms. Probe conditional
-   completion separately from the FF0C six-byte limitation. Test signed
-   boundaries/equality, fields/aliases, displacements, PSR/RETS/count,
-   conditionals, generic replay and explicit model faults.
+2. Assign the reached ED34 signed-literal IF to the CPU worker. Establish
+   exact opcode/literal fields and arm counts independently, preserving common
+   predicate helpers. Check signed boundaries, register fields, selected/skipped
+   THEN/ELSE arms, variable instruction sizes, PSR/RETS/count, generic replay
+   and explicit model faults. Keep generic predicate exits as a separate
+   evidenced milestone; implement later neighboring forms only when reached.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
@@ -637,13 +667,25 @@ support from current balanced nonnested probes.
 No ADC model is implemented yet. Prior inspection predicts first foreground
 ADC control write at `0x020059ac` to `0x13100`, then WLA read at
 `0x020059ae` from `0x11900` (confirm actual execution first).
-Planned private registers: CON `0x13100`, RES `0x13104`, WLA `0x11900`, exact
-aligned words. Guest uses channels3 battery and4 master, start/clear bit6,
-read-only done bit7, enable bit4, with conversion interrupts disabled.
-Proposed deterministic raw inputs: battery600, master512; functional 10 us
-latency, explicitly not hardware calibration. Cover conversion, ack,
-cancel/restart, read-only result, width/configuration faults and stale timer
-cancellation. Preserve existing device maps and public Rust boundaries.
+Primary SDK facts: SAR CON `0x13100` RW32 and RES `0x13104` RO32;
+WLA_CON0 `0x11900` belongs to a separate shared analog block. Ordinary ADC
+channels clear its bit14 analog-test route; other consumers own other fields.
+Do not make the whole WLA word ADC-owned or assume a whole-word zero reset.
+Guest uses channels3 battery and4 master, enable bit4, interrupt enable bit5
+(disabled here), kick/start bit6 and completion pending bit7. Driver repeated
+bit6 writes without a software clear support command/pulse behavior; a stored
+zero-to-one transition is insufficient. Exact bit6 readback/self-clear, busy
+restart and acknowledgment details still require explicit model policy and
+review. SAR interrupt24 remains unsupported until evidenced and reached.
+
+Proposed deterministic raw inputs battery600/master512 and functional 10 us
+latency are assumptions, not hardware calibration. The SDK documents divider6
+as divide96 and startup delay in eight-clock units; source clock/conversion
+latency remain unknown. Cover conversion, clear, cancel/restart, result/width/
+configuration faults and stale timer cancellation. Preserve canonical shared
+ownership, existing device maps and public Rust boundaries. Primary research
+and exact SDK/file identities are retained in the main repo's
+`.deps/qemu-adc-research-2026-10-08/primary-evidence.md`. No model exists yet.
 
 ### Reach a complete home frame
 
