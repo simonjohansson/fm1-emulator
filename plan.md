@@ -423,6 +423,17 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   strategy is retained for the later HOME/30-second acceptance.
   Evidence: `.deps/qemu-sp-relative-halfword-2026-10-08/`.
 
+- 2026-10-08: Stage 3 exact EA10 register-AND IF nonzero selector complete,
+  independently reviewed. Two-line selector/admission change preserves existing
+  equality form and predicate machinery. Focused 260 reference positives,
+  one generic replay and 29 modeled faults pass, with full/adjacent gates.
+  First fault test mixed cold-zero QEMU and poisoned reference neighbors;
+  only its QEMU expectation was corrected after review, with failed evidence
+  retained. Unchanged boot advances 17,601 instructions to ECD0/684E
+  at `0x0200996c` in cv_rect; renamed captures match state/sample/PPM.
+  Audio103/103 and timer5173/5173 return normally; HOME frame1/stage3
+  remains unfinished. Evidence: `.deps/qemu-register-and-if-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -549,7 +560,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is EA13 register-bitwise-AND IF, recorded below.
+  latest firmware blocker is ECD0 immediate pre-indexed word load, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -559,28 +570,71 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: EA13 register-bitwise-AND IF
+## Current firmware blocker: ECD0 immediate pre-indexed word load
 
-Latest unchanged boot: `.cache/felucca-validation/after-sp-relative-halfword/`.
-Vendor `if ((r3 & r1) != 0) { r9 = 2; }` is reached inside `ui_draw`.
-Establish the exact register-bitwise-AND conditional constructor, selector
-fields and THEN/ELSE sizing before implementing through existing predicate
-machinery. HOME flag/frame1/stage3 and increased LCD transfers show drawing
-in progress, without a completed frame.
+Latest unchanged boot: `.cache/felucca-validation/after-register-and-if/`.
+Vendor `r6 = [++r4=140]` is reached in `cv_rect` during HOME drawing.
+The preceding literal sets r4 to `0x01c116f0`. Establish exact primary
+constructor, byte displacement, direction, pre-update and alias semantics.
+HOME frame1/stage3 and idle LCD are an intermediate draw snapshot,
+not a completed HOME endpoint.
 
-- PC `0x0200a842`, words `EA13/0180`.
-- Instructions 117,571,062; virtual time 940,568,504 ns.
+- PC `0x0200996c`, words `ECD0/684E`.
+- Instructions 117,588,663; virtual time 940,709,312 ns.
 - IRQ11 entries/returns 103/103;
-  IRQ63 entries/returns 5172/5172.
+  IRQ63 entries/returns 5173/5173.
 - ALNK completions 108, acknowledgments 103,
   coalesced 5, pending `0x0`;
   55,296 captured sample words, 0 nonzero.
-- LCD visible=True, busy=True; guard debug message
+- LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
-  Audio and timer service return successfully; HOME flag/frame1/stage3 and increasing LCD transfers establish drawing in progress, without completed HOME or synthesis.
-- QEMU SHA-256: `1c45d0efc9cd04360b77a34c6927f0aeaa637273d8deecd718adf4ac23ac518f`.
-- Generic replay: `after-sp-relative-halfword-generic`.
-- Durable evidence: main repo `.deps/qemu-sp-relative-halfword-2026-10-08/`.
+  Audio and timer service return successfully. HOME flag/frame1/stage3 and idle LCD establish a later intermediate drawing snapshot, without completed HOME or synthesis.
+- QEMU SHA-256: `2f6b87f6f32bb36163e9b9363edebf4a8e726e7183439653708f78f63f153989`.
+- Generic replay: `after-register-and-if-generic`.
+- Durable evidence: main repo `.deps/qemu-register-and-if-2026-10-08/`.
+
+### Resolved EA13 register-bitwise-AND IF
+
+The production change is limited to kind A1 register-bitwise-AND IF:
+accept canonical low bytes 00 and 80, compute the existing masked condition,
+and select equality or inequality with zero from bit 7. The inherited
+zero-form behavior, operand fields, latched condition, arm scanner/helper,
+sizing/count, common predicate state and IRQ rules remain unchanged.
+THEN count is 1..4; ELSE count is 0..3. No zero-length THEN is encoded.
+
+Pinned primary constructors and vendor EA13/0180 agree on the nonzero form.
+Standalone research has 570 probes and 566 verified expected completions
+without mismatches. Eighteen noncanonical low-byte reference completions
+are retained separately; primary constrains the full low byte to 00 or 80,
+and QEMU preserves explicit rejection of other patterns. These are model
+canonical policies, not a hardware-invalid claim. Four inherited nested,
+final CALL, final FF0C and taken-exit outcomes retain raw reference
+completions, without changing existing modeled restrictions.
+
+The primary nonzero constructor has an erroneous duplicated equality
+comment; its explicit inequality form/body and the vendor agree. Eight
+supplemental calls retain the actual captured values, precise inherited
+FF41 outcome, two reference-valid PC-guard completions and four fatal
+access categories. These are separate from the original 570-probe research.
+
+A private inherited CALL discriminator initially masked an even callee
+address with 1 and therefore skipped the intended selected call. Its raw
+exploratory record is retained; the validator corrects the compared right
+operand to all ones so the same call target keeps THEN selected. This is
+a fixture correction, not a production or helper change. The original
+skipped result is not used as selected-CALL fault-policy evidence.
+The corrected call target is 0x020001d6 with right operand 0xffffffff.
+The reference completes 36 instructions and updates RETS; the existing
+model-policy expectation faults at CALL 0x020001c8, count 31, fetch span
+two bytes, before CALL effects. Hardware fault state remains unverified.
+
+The private final gate check retained 289 oracle calls: 281 full-state
+comparisons, four fatal-access categories and four raw inherited outcomes.
+The first parent QEMU run passed all 260 positives plus generic replay,
+then exposed a fault-test expectation mixing poisoned reference SRAM
+with the alnk-probe cold-zero profile. Only the QEMU fault memory
+expectation is corrected; failed evidence and reference initialization
+are retained. Production decoding and fault phase remain fixed.
 
 ### Resolved E9D8 SP-relative halfword memory
 
@@ -1262,13 +1316,13 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached EA13/0180 register-bitwise-AND IF to the CPU worker.
-   Establish pinned primary/vendor condition and operand fields, zero/nonzero
-   selection, canonical bits and arm counts. Probe varied-width selected/skipped
-   THEN/ELSE arms, following independent IF, full state/count/memory and
-   modeled nested/unsupported combinations. Prefer exact narrow selector
-   decoding through existing helpers; preserve common predicate state and
-   inherited IRQ/conditional limitations. Review design and validator first.
+2. Assign reached ECD0/684E immediate pre-indexed word load to the CPU worker.
+   Establish pinned primary/vendor operand fields, direction, signed displacement,
+   update and alias semantics. Probe fields, offset extremes, memory/count/full
+   state, selected/skipped predicate contexts and precise access/writeback
+   fault order. Prefer a narrow exact path; preserve neighboring decoders,
+   helper/scanner rules and existing conditional limitations. Review design
+   and validator before parent acceptance.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.

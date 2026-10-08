@@ -1562,7 +1562,7 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_sp_relative_byte_store.py
 ```
 
-### E9D8 SP-relative halfword memory and latest checkpoint
+### E9D8 SP-relative halfword memory checkpoint
 
 The exact E9D8 scalar family uses operand bit 0 to select store or unsigned
 load. Operand bits 12..15 select an ordinary GPR; the unsigned byte offset
@@ -1605,7 +1605,7 @@ incomplete. Renamed default-loader replay matches every captured state field
 except profile and all LCD/latest-half sample bytes; whole SRAM is not
 compared across different initialization modes. Samples remain zero.
 
-Latest stop: EA13/0180 at `0x0200a842`, 117,571,062
+At this milestone: EA13/0180 at `0x0200a842`, 117,571,062
 instructions and 940,568,504 ns. Vendor `if ((r3 & r1) != 0) { r9 = 2; }` is reached inside `ui_draw`.
 Establish the exact register-bitwise-AND conditional constructor, selector
 fields and THEN/ELSE sizing before implementing through existing predicate
@@ -1617,6 +1617,63 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_sp_relative_halfword.py
+```
+
+### EA13 register-bitwise-AND IF and latest checkpoint
+
+The production change is limited to kind A1 register-bitwise-AND IF:
+accept canonical low bytes 00 and 80, compute the existing masked condition,
+and select equality or inequality with zero from bit 7. The inherited
+zero-form behavior, operand fields, latched condition, arm scanner/helper,
+sizing/count, common predicate state and IRQ rules remain unchanged.
+THEN count is 1..4; ELSE count is 0..3. No zero-length THEN is encoded.
+
+Pinned primary constructors and vendor EA13/0180 agree on the nonzero form.
+Standalone research has 570 probes and 566 verified expected completions
+without mismatches. Eighteen noncanonical low-byte reference completions
+are retained separately; primary constrains the full low byte to 00 or 80,
+and QEMU preserves explicit rejection of other patterns. These are model
+canonical policies, not a hardware-invalid claim. Four inherited nested,
+final CALL, final FF0C and taken-exit outcomes retain raw reference
+completions, without changing existing modeled restrictions.
+
+The primary nonzero constructor has an erroneous duplicated equality
+comment; its explicit inequality form/body and the vendor agree. Eight
+supplemental calls retain the actual captured values, precise inherited
+FF41 outcome, two reference-valid PC-guard completions and four fatal
+access categories. These are separate from the original 570-probe research.
+
+A private inherited CALL discriminator initially masked an even callee
+address with 1 and therefore skipped the intended selected call. Its raw
+exploratory record is retained; the validator corrects the compared right
+operand to all ones so the same call target keeps THEN selected. This is
+a fixture correction, not a production or helper change. The original
+skipped result is not used as selected-CALL fault-policy evidence.
+The corrected call target is 0x020001d6 with right operand 0xffffffff.
+The reference completes 36 instructions and updates RETS; the existing
+model-policy expectation faults at CALL 0x020001c8, count 31, fetch span
+two bytes, before CALL effects. Hardware fault state remains unverified.
+
+The private final gate check retained 289 oracle calls: 281 full-state
+comparisons, four fatal-access categories and four raw inherited outcomes.
+The first parent QEMU run passed all 260 positives plus generic replay,
+then exposed a fault-test expectation mixing poisoned reference SRAM
+with the alnk-probe cold-zero profile. Only the QEMU fault memory
+expectation is corrected; failed evidence and reference initialization
+are retained. Production decoding and fault phase remain fixed.
+
+Latest stop: ECD0/684E at `0x0200996c`, 117,588,663
+instructions and 940,709,312 ns. Vendor `r6 = [++r4=140]` is reached in `cv_rect` during HOME drawing.
+The preceding literal sets r4 to `0x01c116f0`. Establish exact primary
+constructor, byte displacement, direction, pre-update and alias semantics.
+HOME frame1/stage3 and idle LCD are an intermediate draw snapshot,
+not a completed HOME endpoint.
+Caches use `after-register-and-if` and its `-generic` label; main repo
+`.deps/qemu-register-and-if-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 103/103; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_register_and_if.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

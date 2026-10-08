@@ -376,10 +376,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         TCGv_i32 left = read_gpr(d, op & 15), right, result = tcg_temp_new_i32();
         TCGCond cond;
         if (kind == 0xa1) {
-            if (x & 255) { goto illegal; }
+            if (x & 127) { goto illegal; }
             TCGv_i32 masked = tcg_temp_new_i32();
             tcg_gen_and_i32(masked, left, read_gpr(d, (x >> 8) & 15));
-            left = masked; right = tcg_constant_i32(0); cond = TCG_COND_EQ;
+            left = masked; right = tcg_constant_i32(0); cond = x & 128 ? TCG_COND_NE : TCG_COND_EQ;
         } else if (kind == 0xa2 || kind == 0xa3) {
             TCGv_i32 masked = tcg_temp_new_i32();
             tcg_gen_andi_i32(masked, left, packed_mask(x));
