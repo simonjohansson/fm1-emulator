@@ -4,7 +4,7 @@ Resumed with explicit user authorization on 2026-10-07 after reviewing the
 three-layer architecture against the POC. The user approved updating this
 plan and working through it. The 2026-10-06 pause is superseded.
 
-Main agent: **Astra high**. Every subagent: **Sol 6.1 Extra high**, configured
+Main agent: **Sol 6.1 High**. Every subagent: **Sol 6.1 High**, configured
 explicitly as described below. Target **macOS only** initially; Linux and
 Windows are deferred. Keep the existing Cocoa frontend initially.
 
@@ -595,7 +595,7 @@ Recheck status and applicable instructions. Never use `git -C`.
 
 **Use subagents throughout the resumed bring-up. Every subagent, including
 any nested agent, must explicitly use `model="gpt-6.1-sol"` and
-`reasoning_effort="xhigh"`.** Use `fork_turns="none"` with a self-contained
+`reasoning_effort="high"`.** Use `fork_turns="none"` with a self-contained
 assignment and absolute handover/plan paths, or a supported positive history
 count. Full-history forks do not accept these overrides. If the requested
 configuration is unavailable, report it; do not silently substitute.
@@ -665,7 +665,7 @@ independent semantic evidence before implementation; retain explicit faults for
 deferred privileged/fatal/cache/control behavior rather than no-op admission.
 Subdivide D where alias/update/fault-order disagreement needs separate review.
 
-Main agent: Astra high; subagents: Sol 6.1 Extra high. Assign workers private
+Main agent: Sol 6.1 High; subagents: Sol 6.1 High. Assign workers private
 patch/test ownership and nonoverlapping forms; the parent integrates shared
 files. Approve one finite primary/copied-reference matrix per batch before
 probes; retain raw disagreements and named canonical/model-policy limits.
