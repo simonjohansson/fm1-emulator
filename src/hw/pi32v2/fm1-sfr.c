@@ -27,6 +27,7 @@ typedef struct FM1SfrPage {
         hwaddr offset, size;
         MemoryRegion *mr;
         bool locked;
+        uint8_t direct;             /* access sizes the block's handlers take as is */
     } block[SFR_BLOCKS];
     uint8_t owner[SFR_PAGE / 4];    /* block index + 1 per word; 0 unowned */
 } FM1SfrPage;
@@ -35,7 +36,7 @@ static FM1SfrPage pages[SFR_PAGES];
 static unsigned page_count;
 
 static MemoryRegion *block_at(FM1SfrPage *p, hwaddr addr, unsigned size,
-                              hwaddr *offset, bool *locked)
+                              hwaddr *offset, bool *locked, bool *direct)
 {
     unsigned b = p->owner[addr / 4];
     if (!b--) {
@@ -46,43 +47,63 @@ static MemoryRegion *block_at(FM1SfrPage *p, hwaddr addr, unsigned size,
     }
     *offset = addr - p->block[b].offset;
     *locked = p->block[b].locked;
+    *direct = (p->block[b].direct & size) && !(*offset & (size - 1));
     return p->block[b].mr;
+}
+
+/* An aligned access of a size the block both accepts and implements calls
+ * its handler as QEMU's accessor would; anything else takes the block's
+ * full dispatch, including its validity failure. */
+static MemTxResult block_read(MemoryRegion *mr, hwaddr offset, uint64_t *data,
+                              unsigned size, bool direct, MemTxAttrs attrs)
+{
+    if (direct) {
+        *data = mr->ops->read(mr->opaque, offset, size) & MAKE_64BIT_MASK(0, size * 8);
+        return MEMTX_OK;
+    }
+    return memory_region_dispatch_read(mr, offset, data, size_memop(size) | MO_LE, attrs);
+}
+
+static MemTxResult block_write(MemoryRegion *mr, hwaddr offset, uint64_t data,
+                               unsigned size, bool direct, MemTxAttrs attrs)
+{
+    if (direct) {
+        mr->ops->write(mr->opaque, offset, data & MAKE_64BIT_MASK(0, size * 8), size);
+        return MEMTX_OK;
+    }
+    return memory_region_dispatch_write(mr, offset, data, size_memop(size) | MO_LE, attrs);
 }
 
 static MemTxResult sfr_read(void *opaque, hwaddr addr, uint64_t *data,
                             unsigned size, MemTxAttrs attrs)
 {
     hwaddr offset;
-    bool locked;
-    MemoryRegion *mr = block_at(opaque, addr, size, &offset, &locked);
+    bool locked, direct;
+    MemoryRegion *mr = block_at(opaque, addr, size, &offset, &locked, &direct);
     if (!mr) {
         return MEMTX_DECODE_ERROR;
     }
     if (locked && !bql_locked()) {
         BQL_LOCK_GUARD();
-        return memory_region_dispatch_read(mr, offset, data,
-                                           size_memop(size) | MO_LE, attrs);
+        return block_read(mr, offset, data, size, direct, attrs);
     }
-    return memory_region_dispatch_read(mr, offset, data,
-                                       size_memop(size) | MO_LE, attrs);
+    return block_read(mr, offset, data, size, direct, attrs);
 }
 
 static MemTxResult sfr_write(void *opaque, hwaddr addr, uint64_t data,
                              unsigned size, MemTxAttrs attrs)
 {
     hwaddr offset;
-    bool locked;
-    MemoryRegion *mr = block_at(opaque, addr, size, &offset, &locked);
+    bool locked, direct;
+    MemoryRegion *mr = block_at(opaque, addr, size, &offset, &locked, &direct);
     if (!mr) {
         return MEMTX_DECODE_ERROR;
     }
     if (!bql_locked()) {
         BQL_LOCK_GUARD();
-        return memory_region_dispatch_write(mr, offset, data,
-                                            size_memop(size) | MO_LE, attrs);
+        return block_write(mr, offset, data, size, direct, attrs);
     }
-    return memory_region_dispatch_write(mr, offset, data,
-                                        size_memop(size) | MO_LE, attrs);
+    return block_write(mr, offset, data, size, direct, attrs);
 }
 
 /* Width and alignment are the owning block's decision. */
@@ -110,6 +131,25 @@ static FM1SfrPage *page_for(hwaddr base)
     return p;
 }
 
+/* Sizes (1, 2, 4 as a mask) dispatched to plain little-endian handlers
+ * without adjustment: inside both the valid and the implemented range. */
+static uint8_t direct_sizes(const MemoryRegionOps *ops)
+{
+    unsigned vmin = ops->valid.min_access_size ?: 1, vmax = ops->valid.max_access_size ?: 4;
+    unsigned imin = ops->impl.min_access_size ?: 1, imax = ops->impl.max_access_size ?: 4;
+    uint8_t sizes = 0;
+    if (!ops->read || !ops->write || ops->valid.accepts ||
+        ops->endianness != DEVICE_LITTLE_ENDIAN) {
+        return 0;
+    }
+    for (unsigned size = 1; size <= 4; size <<= 1) {
+        if (size >= MAX(vmin, imin) && size <= MIN(vmax, imax)) {
+            sizes |= size;
+        }
+    }
+    return sizes;
+}
+
 static void map_block(hwaddr address, MemoryRegion *mr, bool locked)
 {
     hwaddr base = address & ~(hwaddr)(SFR_PAGE - 1), offset = address - base;
@@ -125,6 +165,7 @@ static void map_block(hwaddr address, MemoryRegion *mr, bool locked)
     p->block[p->count].size = size;
     p->block[p->count].mr = mr;
     p->block[p->count].locked = locked;
+    p->block[p->count].direct = direct_sizes(mr->ops);
     p->count++;
 }
 
