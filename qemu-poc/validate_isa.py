@@ -495,6 +495,19 @@ def main():
         image = CACHE / f"halfword-post-{name}.bin"
         words = [*literal(0, base), 0xedd0, operand]
         image.write_bytes(struct.pack("<" + "H" * len(words), *words) + b"\0" * 16)
+        if name == "store":
+            # Promote the exact preexisting EDD0/2105 image; no fixture bytes
+            # or surrounding negative cases are changed.
+            state = compare(image.stem, image, ENTRY + len(words) * 2)
+            expected = [0x10203040 + i * 0x01010101 for i in range(16)]
+            expected[0] = 0x01c08004
+            inspection = [0xa5a5a5a5] * 5 + [0] * 3 + [0xa5a5a5a5] * 4
+            inspection[0] = 0xa5a53242
+            validate.check(state["pc"] == 0x0200012a and state["instructions"] == 2 and
+                           state["registers"] == expected and state["specials"] == [0] * 16 and
+                           state["inspection"] == inspection,
+                           "promoted EDD0 store old-base/low-halfword/stride/full state differs")
+            continue
         fault_pc = ENTRY + (len(words) - 2) * 2
         env = dict(os.environ, FM1_POC_STOP_PC=hex(ENTRY + len(words) * 2),
                    FM1_POC_MAX_INSTRUCTIONS="1000000")

@@ -410,6 +410,25 @@ def generic_replay(image,expected,words):
     print('PASS generic-replay: actual reached load state and owned/default-loader memory')
 
 
+def promoted_original_control(**settings):
+    # fault_fixture is unchanged: setup, opcode, continuation and bytes retain
+    # the original legacy image. Only its now-obsolete fault assertion moves.
+    name = settings['name']
+    guest, original, words, metadata = fault_fixture(**settings)
+    expected, expected_words, qualification = reference_expectation(guest, original, words, metadata)
+    image = save_image(name, guest)
+    state = isa.compare(name, image, guest.pc, limit=100)
+    validate.check(state['registers'] == expected and state['specials'] == specials() and
+                   state['pc'] == guest.pc and state['instructions'] == guest.instructions and
+                   state['inspection'] == inspection(expected_words),
+                   f'{name}: promoted full state or owned inspection differs')
+    (CACHE / f'{name}-promoted.json').write_text(json.dumps(dict(
+        fixture_sha256=hashlib.sha256(image.read_bytes()).hexdigest(),
+        original_fixture_construction_unchanged=True,
+        outside_inspection_store_data_not_reference_observed=settings['stage']=='store' and bool(metadata['first_word']&2),
+        hardware_validation=False, **qualification), indent=2)+'\n')
+
+
 def main():
     CACHE.mkdir(parents=True,exist_ok=True)
     isa.CACHE=CACHE
@@ -420,19 +439,24 @@ def main():
         if case['name']=='actual-ED58-3E44': replay=result
     generic_replay(*replay)
     faults=fault_specs()
+    promoted = [case for case in faults if
+                (case['stage'] == 'signed' and case.get('opcode') == 0xED5C) or
+                (case['stage'] == 'store' and case.get('dest', 3) != case.get('base', 4))]
+    faults = [case for case in faults if case not in promoted]
+    for case in promoted: promoted_original_control(**case)
     for case in faults: fault_case(**case)
     summary=dict(passed=True,instruction='ED58..5B nonalias unsigned pre-indexed immediate halfword load',
-        reference_compared_cases=len(cases),generic_replays=1,model_fault_cases=len(faults),
+        reference_compared_cases=len(cases)+len(promoted),promoted_original_fixture_controls=len(promoted),generic_replays=1,model_fault_cases=len(faults),
         static_alias_faults_before_effects=18,data_read_faults_after_modeled_writeback=5,
-        PC_guard_fetch4_before_writeback=2,deferred_store_faults=5,deferred_signed_load_faults=4,
-        deferred_C000_extended_load_tail_faults=1,separate_reference_full_sampled_completions=29,
+        PC_guard_fetch4_before_writeback=2,deferred_store_faults=1,deferred_signed_load_faults=3,
+        deferred_C000_extended_load_tail_faults=1,separate_reference_full_sampled_fault_completions=24,
         reference_fatal_access_categories_without_CPU_snapshot=6,
         exact_primary_constructor_present=False,
         authority='vendor witness and independent executable discrimination; primary plain-load/preindex analogues only',
         observed_alias='48 address-wins reference characterizations; absent exact primary/hardware alias contract',
         alias_policy='conservative rejection before effects/access/count; not ISA invalidity or a primary/reference contradiction',
         fault_policy='existing model baseWB before dataread; fetch/admission before WB; no reference/hardware fault-state proof',
-        store_qualification='reference ED5A/B samples use unsigned high2; target data outside inspection is not directly observed; stores deferred',
+        store_qualification='Distinct stores admitted by independent Batch D unsigned-offset matrix; these exact original ED5A/B fixtures retain outside-inspection reference-data qualification; source-base alias deferred',
         original_research_calls=150,original_research_alias_characterizations=48,
         private_preparation_historical_calls=151,final_private_exact_fixture_records=109,
         final_private_full_sampled_state_checks=103,final_private_fatal_categories=6,
@@ -442,7 +466,7 @@ def main():
         qemu_sha256=hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
         reference_fault_state_available=False,hardware_fault_state_validation=False,hardware_validation=False)
     (CACHE/'validation.json').write_text(json.dumps(summary,indent=2)+'\n')
-    print(f'PASS pre-indexed unsigned halfword: {len(cases)} comparisons, generic replay and{len(faults)} model faults')
+    print(f'PASS pre-indexed halfword: {len(cases)+len(promoted)} comparisons, generic replay and{len(faults)} model faults')
 
 
 if __name__=='__main__':

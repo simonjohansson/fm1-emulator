@@ -346,6 +346,21 @@ def fault_case(name, store=False, stack=INSPECTION, offset=0, opcode=0xE9D8,
     print(f"PASS {name}: unchanged state before modeled halfword/decode fault")
 
 
+def promoted_signed_sp_control():
+    # Keep the exact old E9D9/8000 neighbor image, including its setup.
+    name = "unverified-reference-valid-e9d9"
+    guest, expected = setup({8: 0x812345EF}, INSPECTION)
+    guest.emit(0xE9D9, 0x8000)
+    guest.literal(13, CONTINUATION)
+    image = save_image(name, guest)
+    state = isa.compare(name, image, guest.pc, limit=100)
+    expected[8] = 0x5678
+    expected[13] = CONTINUATION
+    check_success(name, state, expected, INSPECTION_WORDS, guest, INSPECTION)
+    # This original value is sign-neutral. Signed boundary authority comes
+    # from the independently frozen Batch D load matrix, not this one control.
+
+
 def main():
     CACHE.mkdir(parents=True, exist_ok=True)
     isa.CACHE = CACHE
@@ -395,29 +410,29 @@ def main():
     for store in (False, True):
         fault_case(f"PC-guard-{int(store)}", store, guard="pc",
                    reason="guest PC lies outside both configured guard windows", reference_kind="pc-policy")
-    fault_case("unverified-reference-valid-e9d9", opcode=0xE9D9, reference_kind="neighbor")
+    promoted_signed_sp_control()
     for opcode in (0xE9DA, 0xE9DB):
         fault_case(f"unverified-{opcode:04x}", opcode=opcode, reference_kind="unsupported")
     summary = {"passed": True, "instruction": "exact E9D8 SP-relative unsigned halfword load/store",
-               "reference_positive_cases": len(cases) + 25, "ordinary_reference_cases": len(cases),
+               "reference_positive_cases": len(cases) + 26, "promoted_original_E9D9_control": 1, "ordinary_reference_cases": len(cases),
                "actual_prefix_cases": 1, "boundary_cases": 4, "XIP_read_cases": 1,
                "balanced_conditional_cases": 16, "skipped_access_cases": 3,
                "generic_replays": 1, "data_access_faults": 12, "pc_guard_faults": 2,
-               "unverified_reference_valid_neighbor_faults": 1, "unverified_neighbor_faults": 2,
-               "total_model_faults": 17, "reference_valid_model_fault_completions": 3,
+               "unverified_reference_valid_neighbor_faults": 0, "unverified_neighbor_faults": 2,
+               "total_model_faults": 16, "reference_valid_model_fault_completions": 2,
                "reference_fatal_category_comparisons": 14,
                "primary_stack_blob": "6efa433503fa134bac981a20ebd33cdc09cfe82e",
                "all_low12_operand_bits_offset_or_direction": True,
                "load_zero_extends_store_truncates_low16": True,
-               "SP_PSR_RETS_unchanged": True, "E9D9_reference_valid_unverified_deferred": True,
-               "E9D9_signedness_not_established": True,
+               "SP_PSR_RETS_unchanged": True, "E9D9_reference_valid_unverified_deferred": False,
+               "E9D9_signedness_not_established": False, "E9D9_signedness_authority": "independent Batch D matrix",
                "pc_guard_reference_completes_model_policy_difference": True,
                "successful_address_wrap_not_observed": True,
                "qemu_sha256": hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
                "hardware_validation": False, "hardware_fault_state_validation": False,
                "reference_fault_state_available": False}
     (CACHE / "validation.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print(f"PASS SP-relative halfword: {len(cases) + 25} oracle positives, generic and 17 model faults")
+    print(f"PASS SP-relative halfword: {len(cases) + 26} oracle positives, generic and 16 model faults")
 
 
 if __name__ == "__main__":

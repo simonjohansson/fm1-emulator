@@ -215,6 +215,25 @@ def check_reference_completion(record,guest,expected,words,name):
     record["reference_full_completion_checked"]=True
 
 
+def promoted_kind3_distinct():
+    # Preserve the exact old deferred-kind3-distinct setup, operation and NOP.
+    name, dest, base, offset, address = "deferred-kind3-distinct", 6, 4, 140, INSPECTION
+    base_value = (address - offset) & 0xFFFFFFFF
+    guest, expected, words = setup({base: base_value}, address, VALUE, base_value)
+    op, x = operand(dest, base, offset, 3)
+    guest.emit(op, x)
+    guest.emit(0)
+    image = save_image(name, guest)
+    incoming_source = expected[dest]
+    expected[base] = address
+    words[address] = incoming_source
+    state = isa.compare(name, image, guest.pc, limit=100)
+    validate.check(state["pc"] == guest.pc and state["instructions"] == guest.instructions and
+                   state["registers"] == expected and state["specials"] == specials() and
+                   state["inspection"] == inspection(words),
+                   "promoted distinct kind3 store full state, value or neighbors differ")
+
+
 def fault_case(name,dest=6,base=4,offset=140,address=INSPECTION,kind=2,
                reason=None,guard=None,conditional=False,opcode=None,reference_category=None):
     base_value=(address-offset)&0xFFFFFFFF
@@ -367,14 +386,14 @@ def main():
     fault_case("read-past-SRAM",address=0x01C80000,reason="unmapped access at 0x01c80000",reference_category="unmapped")
     for guard in ("pc-before","pc-last-byte"):
         fault_case(guard,guard=guard,reason="guest PC lies outside both configured guard windows")
-    fault_case("deferred-kind3-distinct",kind=3)
+    promoted_kind3_distinct()
     fault_case("deferred-kind3-source-base-alias",kind=3,dest=4)
     fault_case("unchanged-EC50-kind2",opcode=0xEC50)
     summary={"passed":True,"instruction":"ECD0..7 kind2 signed11 nonalias pre-indexed word immediate",
-             "reference_compared_cases":len(cases),"generic_replays":1,"model_fault_cases":28,
+             "reference_compared_cases":len(cases)+1,"generic_replays":1,"model_fault_cases":27,
              "alias_before_effects_faults":18,"data_read_faults_after_modeled_writeback":5,
-             "PC_guard_faults_before_writeback":2,"deferred_kind3_faults":2,"unchanged_EC50_boundary_faults":1,
-             "separate_reference_full_completions":21,"reference_fatal_access_categories":6,
+             "PC_guard_faults_before_writeback":2,"deferred_kind3_faults":1,"unchanged_EC50_boundary_faults":1,
+             "separate_reference_full_completions":20,"reference_fatal_access_categories":6,
              "reference_rejected_unverified_EC50":1,"original_research_primary_alias_mismatches_retained":48,
              "supplemental_alias_characterization_does_not_relabel_originals":True,
              "primary_loadstore_blob":"b6b9ba01a407a86e613cdb8717bfb4f8d2d3de05",
@@ -386,7 +405,7 @@ def main():
              "qemu_sha256":hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
              "reference_fault_state_available":False,"hardware_fault_state_validation":False,"hardware_validation":False}
     (CACHE/"validation.json").write_text(json.dumps(summary,indent=2)+"\n")
-    print(f"PASS pre-indexed word immediate: {len(cases)} comparisons, generic replay and28 model faults")
+    print(f"PASS pre-indexed word immediate: {len(cases)+1} comparisons, generic replay and27 model faults")
 
 
 if __name__=="__main__":

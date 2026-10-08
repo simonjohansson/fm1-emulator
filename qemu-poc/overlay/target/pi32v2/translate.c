@@ -471,6 +471,24 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_mov_i32(pc, dest); tcg_gen_exit_tb(NULL, 0);
         db->is_jmp = DISAS_NORETURN;
         next = here + 4;
+    } else if ((op & 0xfff0) == 0xeb20) {
+        uint16_t bitmap = fetch(d, here + 2);
+        if (!bitmap) { goto illegal; }
+        /* Vendor traversal and independent probes store ascending selected
+         * registers at the incoming base. The primary has no GPR writeback,
+         * but its predecrement memory direction conflicts with this evidence. */
+        translator_io_start(db);
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_mov_i32(addr, read_gpr(d, op & 15));
+        for (unsigned reg = 0; reg < 16; reg++) {
+            if (bitmap & (1u << reg)) {
+                /* Earlier stores remain visible if a later word access fails.
+                 * This sequential partial-fault order is model policy only. */
+                store(d, read_gpr(d, reg), addr, MO_LEUL | MO_ALIGN);
+                tcg_gen_addi_i32(addr, addr, 4);
+            }
+        }
+        next = here + 4;
     } else if ((op & 0xffc0) == 0xea40) {
         uint16_t x = fetch(d, here + 2);
         TCGv_i32 addr = tcg_temp_new_i32();
@@ -497,6 +515,20 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             else if (kind == 3) { tcg_gen_andc_i32(value, value, operand); }
             else { goto illegal; }
         }
+        store(d, value, addr, MO_LEUL | MO_ALIGN);
+        next = here + 4;
+    } else if (op == 0xe868) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned kind = x & 3;
+        if (kind != 0 && kind != 2) { goto illegal; }
+        /* Exact primary word RMW: one read and one write, including zero.
+         * End this TB before MMIO can replay a prior read side effect. */
+        translator_io_start(db);
+        TCGv_i32 addr = tcg_temp_new_i32(), value = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), x & 252);
+        load(d, value, addr, MO_LEUL | MO_ALIGN);
+        if (kind == 0) { tcg_gen_add_i32(value, value, read_gpr(d, (x >> 8) & 15)); }
+        else { tcg_gen_sub_i32(value, value, read_gpr(d, (x >> 8) & 15)); }
         store(d, value, addr, MO_LEUL | MO_ALIGN);
         next = here + 4;
     } else if (op == 0xe86c) {
@@ -551,6 +583,14 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (op & 128) { store(d, read_gpr(d, a), read_gpr(d, b), MO_LEUL | MO_ALIGN); }
         else { load(d, gpr[a], read_gpr(d, b), MO_LEUL | MO_ALIGN); }
         tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 4);
+    } else if ((op & 0xff88) == 0x0600) {
+        if (a == b) { goto illegal; }
+        load(d, gpr[a], read_gpr(d, b), MO_LEUW | MO_ALIGN);
+        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 2);
+    } else if ((op & 0xff88) == 0x0708) {
+        if (a == b) { goto illegal; }
+        load(d, gpr[a], read_gpr(d, b), MO_UB);
+        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), -1);
     } else if ((op & 0xff88) == 0x0700) {
         if (a == b) { goto illegal; }
         load(d, gpr[a], read_gpr(d, b), MO_UB);
@@ -564,14 +604,23 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xfff0) == 0xee50) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = op & 15;
-        if (kind != 0 && kind != 2 && kind != 4 && kind != 8 && kind != 10) { goto illegal; }
+        if (kind != 0 && kind != 1 && kind != 2 && kind != 4 && kind != 8 && kind != 10) { goto illegal; }
         unsigned base = (x >> 4) & 15, reg = x >> 12;
         if ((kind == 8 || kind == 10) && base == reg) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
-        tcg_gen_addi_i32(addr, read_gpr(d, base), (x & 15) | ((x >> 8) & 15) * 16);
+        int32_t offset = (x & 15) | ((x >> 8) & 15) * 16;
+        if (kind == 1) { offset -= 256; }
+        tcg_gen_addi_i32(addr, read_gpr(d, base), offset);
         if (kind == 2 || kind == 10) { store(d, read_gpr(d, x >> 12), addr, MO_UB); }
         else { load(d, gpr[x >> 12], addr, kind == 4 ? MO_SB : MO_UB); }
         if (kind == 8 || kind == 10) { tcg_gen_mov_i32(gpr[base], addr); }
+        next = here + 4;
+    } else if (op == 0xeed0) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, dest = x >> 12;
+        if (base == dest) { goto illegal; }
+        load(d, gpr[dest], read_gpr(d, base), MO_UB);
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 15) | ((x >> 8) & 15) * 16);
         next = here + 4;
     } else if (op == 0xeed2) {
         uint16_t x = fetch(d, here + 2);
@@ -599,6 +648,19 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (kind == 1) { store(d, read_gpr(d, x >> 12), addr, MO_UB); }
         else { load(d, gpr[x >> 12], addr, kind == 2 ? MO_SB : MO_UB); }
         next = here + 4;
+    } else if (op == 0xeedc && (fetch(d, here + 2) & 15) == 1) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, source = x >> 12;
+        /* Vendor and independent probes use source12:15/index8:11;
+         * the primary constructor swaps them. Source==base is deferred. */
+        if (base == source) { goto illegal; }
+        translator_io_start(db);
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_add_i32(addr, read_gpr(d, base), read_gpr(d, (x >> 8) & 15));
+        /* Preserve the existing modeled pre-index writeback-before-access. */
+        tcg_gen_mov_i32(gpr[base], addr);
+        store(d, read_gpr(d, source), addr, MO_UB);
+        next = here + 4;
     } else if (op == 0xeedc) {
         uint16_t x = fetch(d, here + 2);
         if (x & 15) { goto illegal; }
@@ -606,6 +668,19 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (base == dest) { goto illegal; }
         tcg_gen_add_i32(gpr[base], read_gpr(d, base), read_gpr(d, (x >> 8) & 15));
         load(d, gpr[dest], gpr[base], MO_UB);
+        next = here + 4;
+    } else if ((op & 0xfff8) == 0xecd0 && (fetch(d, here + 2) & 3) == 3) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, source = x >> 12;
+        /* Exact primary stores after writeback, while the reference stores
+         * the incoming source. Keep their source==base disagreement explicit. */
+        if (base == source) { goto illegal; }
+        int32_t offset = sext(op & 7, 3) * 256 + ((x >> 8) & 15) * 16 + ((x >> 2) & 3) * 4;
+        translator_io_start(db);
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, read_gpr(d, base), offset);
+        tcg_gen_mov_i32(gpr[base], addr);
+        store(d, read_gpr(d, source), addr, MO_LEUL | MO_ALIGN);
         next = here + 4;
     } else if ((op & 0xfff8) == 0xecd0 && (fetch(d, here + 2) & 3) == 2) {
         uint16_t x = fetch(d, here + 2);
@@ -639,12 +714,19 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0xecd8) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 15;
-        if (kind != 2 && kind != 3 && kind != 10 && kind != 11) { goto illegal; }
-        TCGv_i32 addr = tcg_temp_new_i32();
-        tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), kind & 8 ? 2 : 0);
-        tcg_gen_add_i32(addr, addr, read_gpr(d, (x >> 4) & 15));
-        if (!(kind & 1)) { load(d, gpr[x >> 12], addr, MO_LEUL | MO_ALIGN); }
-        else { store(d, read_gpr(d, x >> 12), addr, MO_LEUL | MO_ALIGN); }
+        if ((x & 3) == 0) {
+            unsigned base = (x >> 4) & 15, dest = x >> 12;
+            if (base == dest) { goto illegal; }
+            load(d, gpr[dest], read_gpr(d, base), MO_LEUL | MO_ALIGN);
+            tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 12) | ((x >> 8) & 15) * 16);
+        } else {
+            if (kind != 2 && kind != 3 && kind != 10 && kind != 11) { goto illegal; }
+            TCGv_i32 addr = tcg_temp_new_i32();
+            tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), kind & 8 ? 2 : 0);
+            tcg_gen_add_i32(addr, addr, read_gpr(d, (x >> 4) & 15));
+            if (!(kind & 1)) { load(d, gpr[x >> 12], addr, MO_LEUL | MO_ALIGN); }
+            else { store(d, read_gpr(d, x >> 12), addr, MO_LEUL | MO_ALIGN); }
+        }
         next = here + 4;
     } else if (op == 0xecdc) {
         uint16_t x = fetch(d, here + 2);
@@ -675,6 +757,25 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_mov_i32(gpr[base], addr);
         load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN);
         next = here + 4;
+    } else if (op == 0xedd4) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, dest = x >> 12;
+        if ((x & 1) || base == dest) { goto illegal; }
+        /* Vendor EDD4 C032 and finite independent probes agree on the
+         * old-base read/postupdate. The primary display agrees, but its
+         * body uses an offset read without writeback; retain that caveat. */
+        load(d, gpr[dest], read_gpr(d, base), MO_LESW | MO_ALIGN);
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 14) | ((x >> 8) & 15) * 16);
+        next = here + 4;
+    } else if (op == 0xedd0 && (fetch(d, here + 2) & 1)) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, source = x >> 12;
+        /* Vendor EDD0/10F3 and independent probes establish an old-base
+         * low-halfword store followed by an unsigned even byte stride. */
+        translator_io_start(db);
+        store(d, read_gpr(d, source), read_gpr(d, base), MO_LEUW | MO_ALIGN);
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 14) | ((x >> 8) & 15) * 16);
+        next = here + 4;
     } else if (op == 0xedd0) {
         uint16_t x = fetch(d, here + 2);
         unsigned base = (x >> 4) & 15, dest = x >> 12;
@@ -687,14 +788,27 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0xedd8) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 15;
-        if (kind != 8 && kind != 9 && kind != 10) { goto illegal; }
+        if (kind != 2 && kind != 8 && kind != 9 && kind != 10) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
         /* Felucca's palette loop EDD8 2108/2139 uses index << 1. */
-        tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), 1);
+        tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), kind == 2 ? 0 : 1);
         tcg_gen_add_i32(addr, addr, read_gpr(d, (x >> 4) & 15));
         if (kind == 8) { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
-        else if (kind == 10) { load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN); }
+        else if (kind == 2 || kind == 10) { load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN); }
         else { store(d, read_gpr(d, x >> 12), addr, MO_LEUW | MO_ALIGN); }
+        next = here + 4;
+    } else if ((op & 0xfffc) == 0xed58 && (fetch(d, here + 2) & 1)) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, source = x >> 12;
+        /* Vendor and independent store probes use unsigned high2 offset
+         * bits, unlike the existing signed load direction. Alias is deferred. */
+        if (base == source) { goto illegal; }
+        unsigned offset = (op & 3) * 256 + ((x >> 8) & 15) * 16 + (x & 14);
+        translator_io_start(db);
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, read_gpr(d, base), offset);
+        tcg_gen_mov_i32(gpr[base], addr);
+        store(d, read_gpr(d, source), addr, MO_LEUW | MO_ALIGN);
         next = here + 4;
     } else if ((op & 0xfffc) == 0xed58) {
         uint16_t x = fetch(d, here + 2);
@@ -708,6 +822,17 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         /* Preserve the modeled pre-index writeback-before-access policy. */
         tcg_gen_mov_i32(gpr[base], addr);
         load(d, gpr[dest], addr, MO_LEUW | MO_ALIGN);
+        next = here + 4;
+    } else if (op == 0xed5c) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, dest = x >> 12;
+        if ((x & 1) || base == dest) { goto illegal; }
+        /* A preupdate before MMIO must not be repeated by an icount replay. */
+        translator_io_start(db);
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, read_gpr(d, base), (x & 14) | ((x >> 8) & 15) * 16);
+        tcg_gen_mov_i32(gpr[base], addr);
+        load(d, gpr[dest], addr, MO_LESW | MO_ALIGN);
         next = here + 4;
     } else if ((op & 0xfffe) == 0xed50) {
         uint16_t x = fetch(d, here + 2);
@@ -743,6 +868,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_addi_i32(addr, spr[SP], x & 4094);
         if (x & 1) { store(d, read_gpr(d, x >> 12), addr, MO_LEUW | MO_ALIGN); }
         else { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
+        next = here + 4;
+    } else if (op == 0xe9d9) {
+        uint16_t x = fetch(d, here + 2);
+        if (x & 1) { goto illegal; }
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, spr[SP], x & 4094);
+        load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN);
         next = here + 4;
     } else if (op == 0xe9dc) {
         uint16_t x = fetch(d, here + 2);
@@ -1042,6 +1174,10 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     if ((op & 0xff80) == 0x0500 || (op & 0xff80) == 0x0580) {
         if (op & 8) { return -1; }
         return (1u << ((op >> 4) & 7)) | (op & 128 ? 0 : 1u << (op & 7));
+    }
+    if ((op & 0xff88) == 0x0600) {
+        if ((op & 7) == ((op >> 4) & 7)) { return -1; }
+        return (1u << ((op >> 4) & 7)) | (1u << (op & 7));
     }
     if ((op & 0xff88) == 0x0700) {
         if ((op & 7) == ((op >> 4) & 7)) { return -1; }

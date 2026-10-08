@@ -217,6 +217,23 @@ def generic_replay(image, expected, markers):
     print("PASS generic-replay: default application mode matches indexed load architecture and memory")
 
 
+def promoted_unscaled_control():
+    # Exact bytes of the old deferred-kind-2 fixture are retained.
+    name = "deferred-kind-2"
+    guest, expected, markers = setup({15: INSPECTION - 4, 14: 2}, 0x8123)
+    guest.emit(0xEDD8, operand(15, 15, 14, 2))
+    guest.literal(13, CONTINUATION)
+    image = save_image(name, guest)
+    state = isa.compare(name, image, guest.pc, limit=100)
+    expected[15], expected[13] = 0x7654, CONTINUATION
+    inspection = list(INITIAL_INSPECTION)
+    inspection[:4] = markers[1:]
+    validate.check(state["registers"] == expected and state["specials"] == specials(PSR) and
+                   state["pc"] == guest.pc and state["instructions"] == guest.instructions and
+                   state["inspection"] == inspection,
+                   "promoted kind2: unscaled address, full state, continuation or memory differs")
+
+
 def main():
     CACHE.mkdir(parents=True, exist_ok=True)
     isa.CACHE = CACHE
@@ -268,13 +285,14 @@ def main():
                "unmapped access at 0x00000000", compare_reference=True)
     fault_case("pc-guard-rejects-load-fetch", {15: INSPECTION - 4, 14: 2},
                "guest PC lies outside both configured guard windows", guard="pc")
-    deferred = [kind for kind in range(16) if kind not in (8, 9, 10)]
+    promoted_unscaled_control()
+    deferred = [kind for kind in range(16) if kind not in (2, 8, 9, 10)]
     for kind in deferred:
         fault_case(f"deferred-kind-{kind:x}", {15: INSPECTION - 4, 14: 2},
                    "unsupported instruction 0xedd8", kind=kind)
     summary = {"passed": True, "instruction": "EDD8 kind-A signed indexed halfword load",
-               "positive_reference_cases": len(cases), "generic_replays": 1,
-               "fault_cases": 17, "deferred_kinds": deferred,
+               "positive_reference_cases": len(cases) + 1, "promoted_original_kind2_control": 1, "generic_replays": 1,
+               "fault_cases": 16, "deferred_kinds": deferred,
                "reference_fault_state_available": False, "hardware_fault_state_validation": False,
                "primary_source_discrepancy": "kind-A SLEIGH body omits shift stated by comment/vendor",
                "address_evidence": "distinct scaled/unscaled halfwords, negative index and alias probes",

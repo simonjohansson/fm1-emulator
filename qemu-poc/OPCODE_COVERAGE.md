@@ -1,362 +1,93 @@
-# FM-1 QEMU known-firmware instruction gaps
+# FM-1 QEMU saved-firmware instruction coverage
 
-## Current production after Batch C (2026-10-08)
+## Current status
 
-Ten exact scalar forms are admitted; EC20 remains deferred and E8A0 admission
-is confined to operand low12 zero. Static and bounded runtime results follow.
+Batch D reviewed 18 saved-corpus forms: 16 have tested qualified implementations;
+EE53 byte signed-offset store and EC50 kind3 doubleword pre-store stay
+unsupported. These admission totals come from the final production decoder
+extraction; focused and relevant QEMU regression checks passed.
 
-| Revision | Admitted | Rejected | Known width gaps |
+| Revision | Admitted sites | Rejected sites | Known width gaps |
 | --- | ---: | ---: | ---: |
-| Accepted Batch B | 117,937 | 2,899 | 0 |
-| Batch C actual production | 118,062 | 2,774 | 0 |
+| Frozen baseline | 117,088 | 3,748 | 496 |
+| Accepted A | 117,441 | 3,395 | 496 |
+| Accepted B | 117,937 | 2,899 | 0 |
+| Accepted C | 118,062 | 2,774 | 0 |
+| Current D | 118,358 | 2,478 | 0 |
 
-Fresh actual-production C extraction: 75 host static sanity and 72 unpadded short-context checks pass.
-Same 21 executable payloads / 120,836 confirmed sites: 125
-new admissions, zero regressions, 118,062
-admitted / 2,774 rejected, 0 known width gaps.
-39 identified saved-corpus forms / 44
-role rows remain;
-unchanged Felucca has 301 rejected static sites.
-Deferred EC20, compact RETS push 04C8 and unsigned parallel maximum mode0,
-71 opaque E53F regions / 12 complete raw patterns remain separate.
-E8A0 nonzero-operand packed-NE research remains explicitly unsupported;
-the opaque and additional research limits do not extend the counted corpus.
-Static admission establishes no reachability, frequency, performance or
-complete firmware compatibility. These are actual production-extraction counts;
-974 new sites are cumulative across A/B/C.
+Current remaining forms / role rows: **23 / 27**.
+New admissions since C: **296**, with **0**
+admission regressions. Unchanged Felucca rejected sites: **197**.
 
-Grouped Batch C admits ten exact scalar forms: E920 unsigned
-GE packed; E990 unsigned LT register; EC30 unsigned GT literal12; EC90
-unsigned LE register; ECA0 unsigned LE packed; ED20 signed GE packed;
-EE30 signed GT signed12; E8A0 register nonzero with operand low12 zero;
-FA00 register-mask-zero branch; and compact TBB0100. EC20 remains deferred.
-E990/EC90 retain canonical zero low operand byte. E8A0 nonzero operand low12
-remains an explicit fault. Existing packed expansion remains model policy.
+**Static admission is not runtime correctness.** The offline inventory does
+not establish reachability, execution frequency, performance, flags, memory,
+predicate completion, IRQ behavior or complete firmware compatibility.
+Focused execution gates and unchanged-firmware progress are separate evidence.
+The latest runtime checkpoint and next reached gap are in [BOOTING.md](BOOTING.md).
 
-IF forms are four bytes and latch their comparison before the selected arm.
-THEN count is operand bits14:15+1; ELSE count is bits12:13. Existing arm
-scanning, parallel bundle counting, helper completion, nested/call/taken-exit
-limits and IRQ policy are preserved. FA00's low opcode nibble selects the left
-register and the next nibble selects the right; it compares their full 32-bit
-AND to zero and uses signed16 word displacement from PC+4. TBB reads one
-unsigned byte at uint32(PC+2+incoming GPR) and branches to
-uint32(PC+2+2*entry). Odd byte addresses are valid. Both preserve GPR/SPR,
-PSR/RETS and owned memory; table reads precede retirement and target-fetch
-faults follow it. No scanner-width change is required for these four/two-byte forms.
+## Inputs and method
 
-Exact-primary gaps, packed-repeat disagreements, EC30 primary packed versus
-literal12 and EE30 signed12 authority are retained as qualified evidence.
-EC20's entire vendor-only form remains deferred: neither an exact primary
-constructor nor reference results establish sufficient general operand behavior.
-E8A0 nonzero-operand research indicates packed-NE behavior beyond the admitted
-zero-low12 subset. It remains a separate unsupported research limit and is
-not automatically an extra form in the frozen saved-corpus denominator.
-No firmware name, hash or guestPC selects production semantics. CPU/hardware
-bring-up remains the current priority; host UI/playback is outside this batch.
-Helpers, IRQs, devices, loader paths and stable capture/API schemas are fixed.
+The frozen union contains **37 artifact paths, 35 ELF identities and 21
+executable byte/VMA payloads**, with **120,836 confirmed instruction sites**.
+The target is QEMU 11.1.2. Primary encoding evidence is Apache SLEIGH commit
+`e1bd0707874b77b759401555d24839ad43af1267`, checked against saved vendor bytes.
+Seventeen loader contexts share executable contents and count once.
+The corrected starting denominator is **76 missing forms / 82 role rows**;
+the original 75/81 inventory merged an unsigned maximum placement incorrectly.
 
-Control research retains 657 copied-public-CLI records: 639 original full-state
-matches, nine independently explained completions and nine one-byte read fatal
-results. The nine completions are one observer-before-FA00 fixture, two
-ignored target guards, four nested IF completions and two final selected THEN
-CALL returns into ELSE. All 648 success expectations were independently
-constructed from finite layout; reference fatal CPU state is unavailable.
-The displacement -2 self-target fixture stops before FA00 executes and is
-explicitly excluded as evidence of selfbranch execution. Current QEMU model
-rejections remain separate from reference completion and hardware semantics.
-The focused control matrix has 661 fixtures; its QEMU gate uses existing cold
-captures and checks all 16 GPR/SPR, retirement, exact access stage and full SRAM.
-Two old TBH-gate TBB controls become positives with byte-identical images;
-all 69 legacy fixture byte identities and the C111 parallel rejection remain.
+Inputs are saved ELF/vendor-disassembly pairs for unchanged Felucca,
+diagnostic, display, probe, foundation, diagnostic variants and their loaders.
+The instrumented Felucca profile is an inventory input only. Artifact hashes
+establish identity; they do not establish a reproducible build from current
+source. Stock raw wrappers and SDK ELFs without matching disassembly are outside
+this corpus. Other compiler configurations can expose further instructions.
 
-IF research retains 9,861 copied-public-CLI records: 8,314 successes, 1,547
-fatals and zero timeouts. There are 6,770 complete original-model matches,
-160 packed-NE alternatives beyond E8A0's admitted zero operand and 1,384
-unadopted complete software contradictions. Fatal categories are 256
-mis-sized-displacement unsupported results, 256 scanner limits, 128 body
-faults and 907 unsupported EC20 cases. EC30 literal boundaries include 384
-full-state cases, 128 distinguishing the primary packed interpretation.
-Reference outcomes are software evidence; hardware and direct private
-predicate-state runtime capture remain unvalidated.
-Independent source/test review: approved combined source and focused tests in review/combined-source-tests-approval.json.
-Serialized build: one successful pinned QEMU 11.1.2 production build. Focused acceptance: all 9,776 cases passed: 8,544 successes and 1,232 precise model faults (9,115 IF and 661 control cases), with zero fresh reference launches.
-Twelve required/affected gates: all 12 passed against the accepted QEMU hash; gate-results.json retains exact commands and return codes.
-Copied CLI initial/affected counts: 10,518 initial finite calls (9,861 IF and 657 control), plus 1,393 actual regression calls including four approved new IF controls; the existing TBH gate remains 69 calls with byte-identical fixtures.
-All counts distinguish copied-reference research from focused QEMU acceptance
-and the later required/affected regression gates.
+Parsing checks vendor bytes against executable ELF sections, uses symbol
+boundaries and excludes verified data. The host harness extracts the actual
+ordered C decoder, parallel classifier and instruction-width scanner; it
+does not execute QEMU or the copied reference. Destination-conflict rejection
+and unsupported runtime policies remain distinct from opcode gaps.
 
-Unchanged MAX 200,000,000 boot now stops at ED5C/23EA, PC 0x0200c17e,
-vendor instruction `r2 = h[++r14=58] (s)`, after 120,346,793 instructions /
-962,774,352 virtual ns. This advances 23,350 instructions / 186,800 virtual ns
-from Batch B's E99C/8D00 checkpoint. Next is planned group D's 18
-memory/update/RMW/bitmap forms, beginning with this signed halfword update
-load. EC20 and the other named deferred limits remain explicit faults.
+Detailed paths, hashes, every counted site, parser exclusions and frozen form
+mappings remain in the evidence directories listed below. The **71 opaque
+E53F regions / 12 complete raw patterns** stay outside confirmed form counts.
 
-IRQ11 records 107 entries / 107 returns; IRQ63 records 5,364 / 5,364.
-ALNK records 112 completions, 107 acknowledgments, five coalesced completions,
-pending zero and zero nonzero words among all 57,344 captured sample words
-(28,672 frames). Debug observation is stage6/home1/uiFrames1; completed HOME
-remains unverified. Bootguard has pending1/failed0; no guard or watchdog fault
-is recorded. Synthesis, 30 guest seconds, physical input, native running and
-hardware validation remain incomplete.
+## Remaining groups and qualified limits
 
-The renamed default-loader replay matches captured JSON except profile;
-LCD PPM and latest ALNK bytes are also byte-equal. Within each fixture/generic
-loader, B-to-C
-comparison records the same 23,350-instruction / 186,800-ns advance: CPU/device
-JSON and whole SRAM differ at the new checkpoint; LCD PPM and latest ALNK bytes
-remain equal. This records checkpoint progress without a full-state equality
-claim. Cross-loader whole SRAM is excluded. See observation.json,
-generic-replay-comparison.json and prior-milestone-comparison.json in the
-durable Batch C evidence directory.
+| Group | Remaining work |
+| --- | --- |
+| A carry-over | Compact RETS push 04C8; unsigned parallel maximum mode0 |
+| C | EC20 vendor-only IF; E8A0 nonzero low12 operands remain outside its admitted subset |
+| D | EE53 signed-offset byte store; EC50 kind3 doubleword pre-store |
+| E | Eight register-pair arithmetic/shift forms |
+| F | Four special-register/control forms: extended push, SSYNC, trigger, IDLE |
+| G | Four testset, flag-EQ branch and repeat forms |
+| H | Two qualified floating branches; opaque decoding research is separate |
 
-Durable evidence: main repo .deps/qemu-batch-c-2026-10-08/.
-Accepted translator SHA256: eaba7b300dac2e14dc8c45fa02822cbb2abd3dd682e7094d6d482d4c975907b3.
-Accepted QEMU SHA256: e21e9bfd9af98aca5697800f7f694a4f957ff1a52daf8aad6fbf6bf42b3f6a27.
-Public copied reference SHA256:
-c96ed8b21d73bd2934127b72f1a21f31d82acdb6a0792ec2b130852e478dec94.
-Acceptance status: source, one build, focused gates, twelve regression gates, actual static inventory and bounded fixture/generic replay verified; commit identity and signature verification belong to the final parent release record.
+D update-load destination/base aliases remain restricted. ED5C admission is
+confined to the reviewed canonical selector; ED5D–F, odd operands and stores
+stay unsupported. ECD8 selectors6/E and E9D9 odd lowbit stay unsupported.
+EEDC, ED58-store and ECD0-store source/base aliases remain explicit faults.
+EB20 requires a nonempty bitmap, stores ascending selected registers from the
+incoming base and does not update that GPR; its primary memory direction
+disagreement is retained. Parallel admission retains explicit destination-conflict checks.
 
-## Accepted Batch B inventory (historical, 2026-10-08)
+Access-fault writeback and bitmap partial stores are qualified model policies,
+without hardware fault-state proof. E868 add/sub performs one word read and
+one word write, including operand zero; failed writes retain earlier MMIO read
+effects. Existing-device success observations and source-inspected read
+retention after a failed write are recorded separately. Private predicate state
+is not captured.
+No firmware name, hash or guest PC selects production CPU behavior.
 
-**49 missing forms / 54 role rows remain.** Batch B admits all 15 reviewed
-six-byte scalar branch forms and fixes their exact scanner widths. On the
-same 21 executable payloads / 120,836 confirmed sites:
+## Evidence and next action
 
-| Revision | Admitted | Rejected | Known width gaps |
-| --- | ---: | ---: | ---: |
-| Frozen pre-batch baseline | 117,088 | 3,748 | 496 |
-| Accepted Batch A | 117,441 | 3,395 | 496 |
-| Accepted Batch B | 117,937 | 2,899 | 0 |
+Frozen inventory: `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-opcode-coverage-2026-10-08/`.
+Current D evidence: `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-batch-d-2026-10-08/`.
+Manifests and acceptance receipts retain exact source, QEMU, copied-reference,
+firmware and fixture hashes, raw disagreements and actual check results.
 
-Batch B adds 496 admitted sites with zero regressions (849 cumulative new
-sites across A/B). Unchanged Felucca has 346 rejected static sites. The
-corrected 76-form / 82-role baseline retains the unsigned-maximum placement
-correction described below. Deferred 04C8 and unsigned parallel maximum,
-71 opaque E53F regions / 12 raw patterns remain separate.
-
-Actual production translator SHA-256:
-`ea56ba039c93c1b941eb34c4e867e1cc48a05a51fa94187d0c2ea1d598ea2ae5`.
-Fresh exact-C extraction, 51 static sanity checks, 45 short-context checks,
-original-input replays and independent review: main repo
-`.deps/qemu-batch-b-2026-10-08/`. Static admission does not establish runtime
-reachability, frequency, performance or complete firmware compatibility.
-
-Separate runtime acceptance passes 1,754 focused cases and eleven broad/affected
-gates. Unchanged/default-loader firmware still stops at E99C/8D00,
-0x0200a2fa, with the same count and device state as A; no reached boot advance.
-Completed HOME and nonzero audio remain unverified. Next is grouped Batch C.
-
-## Accepted Batch A inventory (historical, 2026-10-08)
-
-**64 missing forms / 69 role rows remain.** Batch A admits 12 forms / 13
-role rows; exact compact RETS push 04C8 remains deferred. One unsigned maximum
-parallel placement was wrongly merged into the original signed-maximum form:
-instrumented F434/0100 + 2E01 at 0x0200DBA4. Correct baseline is 76 forms / 82
-role rows. Signed maximum is admitted; unsigned mode0 remains an explicit
-parallel fault. The published 75/81 baseline below remains frozen history.
-
-| Same 21 executable payloads / 120,836 confirmed sites | Admitted | Rejected |
-| --- | ---: | ---: |
-| Frozen baseline | 117,088 | 3,748 |
-| Accepted Batch A decoder | 117,441 | 3,395 |
-
-353 new sites are admitted, with zero regressions and no admitted width
-mismatch. Unchanged Felucca has 414 remaining rejected static sites (was 516).
-All 496 rejected width gaps and the 71 opaque E53F regions / 12 complete raw
-patterns remain. Static coverage establishes no runtime reachability,
-frequency, performance or universal compatibility.
-
-Production translator SHA-256:
-`81e7caef8f6d1e2bb9e20d792e7f1d581ea66fb2f33d578d8e40b4e6dd8147d5`.
-Fresh exact-C extraction, 20 sanity checks, original-input replays and
-independent correction review: main repo `.deps/qemu-batch-a-2026-10-08/`.
-Focused/full regression acceptance and unchanged/default-loader boot are
-separate runtime evidence. Latest stop is E99C/8D00 at 0x0200a2fa; HOME and
-nonzero audio remain unverified.
-
-## Frozen pre-batch inventory
-
-Reviewed offline on 2026-10-08 against signed CPU commit `f9f80c0842a9a972f9ecd76c1b6ebc8ea66d9e24` (QEMU 11.1.2).
-
-The saved-artifact corpus has **75 identified missing encoding/placement forms**: **68 scalar forms** and **7 additional parallel placements** of operations already admitted in scalar form. The core firmware set accounts for 61 forms; the supplemental builds add 14. Unchanged Felucca uses 60 of the missing forms at 516 static sites.
-
-There are also **71 unresolved E53F code regions**, containing **12 distinct complete byte patterns**. They are kept outside the confirmed instruction/form counts. Their saved disassembly splits probable instructions into unknown halfwords and misleading compact operations. Twelve byte patterns are not twelve established ISA forms; these need a grouped decoding/specification investigation.
-
-A form retains operation, width, signedness, comparison, addressing/update mode and distinct encoding. Different register numbers, constants and branch displacements are instances of a form. Scalar/head/tail rows retain placements without counting a scalar form twice when it also needs parallel admission. Destination conflicts remain separate model-policy rejections.
-
-## Corpus and admission comparison
-
-The manifest contains 37 artifact paths and 35 distinct ELF artifacts, containing 21 distinct executable-section byte/VMA payloads. Those payloads have 120,836 confirmed instruction sites, of which 3,748 are rejected by the current decoder/classifier: 3,747 form-gap sites and one destination-conflict policy site. All 17 loader contexts have identical executable contents even when their ELF metadata differs. They count once in these code totals. Exact executable identity is not whole-image or runtime identity. The table retains every path context so duplicates are auditable.
-
-| Artifact context | Static sites | Decoder admits | Decoder rejects | ELF SHA-256 prefix |
-| --- | ---: | ---: | ---: | --- |
-| felucca | 24,395 | 23,879 | 516 | `9404c41dcd5c` |
-| diagnostic | 4,329 | 4,155 | 174 | `aaa5c1bfaf3f` |
-| display | 5,183 | 5,008 | 175 | `91b0d497dff0` |
-| foundation | 197 | 197 | 0 | `31a73717fef8` |
-| display-fixture | 1,031 | 1,031 | 0 | `929077b8a5e3` |
-| probe | 50 | 50 | 0 | `0c6b78f995df` |
-| diagnostic-loader | 2,361 | 2,322 | 39 | `95b0eb9d0cf5` |
-| display-loader | 2,361 | 2,322 | 39 | `95b0eb9d0cf5` |
-| trial-arithmetic | 4,521 | 4,333 | 188 | `469c6c901d6d` |
-| trial-arithmetic-loader | 2,361 | 2,322 | 39 | `ae17d16b6e5c` |
-| trial-atomic | 4,738 | 4,538 | 200 | `d4f835a211b4` |
-| trial-atomic-loader | 2,361 | 2,322 | 39 | `e0dce7decc24` |
-| trial-bt-indirect | 4,524 | 4,347 | 177 | `e675f9a59f31` |
-| trial-bt-indirect-loader | 2,361 | 2,322 | 39 | `7c290064c08e` |
-| trial-float-branch | 4,539 | 4,349 | 190 | `9e5db809373d` |
-| trial-float-branch-loader | 2,361 | 2,322 | 39 | `b2d279e6b40a` |
-| trial-float-probe | 4,876 | 4,701 | 175 | `328f50136869` |
-| trial-float-probe-loader | 2,361 | 2,322 | 39 | `3df8943bfca3` |
-| trial-idle | 4,468 | 4,294 | 174 | `950e116b3a5e` |
-| trial-idle-loader | 2,361 | 2,322 | 39 | `a4310cd41107` |
-| trial-irq-context | 4,487 | 4,312 | 175 | `594fae062587` |
-| trial-irq-context-loader | 2,361 | 2,322 | 39 | `02bec4861932` |
-| trial-predicate-irq | 4,434 | 4,260 | 174 | `00948072298f` |
-| trial-predicate-irq-loader | 2,361 | 2,322 | 39 | `c3da477a1e45` |
-| trial-repeat | 4,490 | 4,296 | 194 | `789d5f64e489` |
-| trial-repeat-loader | 2,361 | 2,322 | 39 | `700f9286351d` |
-| trial-repeat-irq | 4,426 | 4,252 | 174 | `a12e80f80345` |
-| trial-repeat-irq-loader | 2,361 | 2,322 | 39 | `ec9fe519dda4` |
-| trial-rf-probe | 4,537 | 4,362 | 175 | `832f0ae4503b` |
-| trial-rf-probe-loader | 2,361 | 2,322 | 39 | `db7b4fa41b55` |
-| trial-temperature | 4,420 | 4,247 | 173 | `7b5594aa3ecd` |
-| trial-temperature-loader | 2,361 | 2,322 | 39 | `1348a5211eea` |
-| trial-usb-io | 4,377 | 4,203 | 174 | `0680b9a836a5` |
-| trial-usb-io-loader | 2,361 | 2,322 | 39 | `b31f2109b65b` |
-| felucca-profile-instrumented | 24,453 | 23,952 | 501 | `50cb2606936d` |
-| felucca-profile-loader | 2,361 | 2,322 | 39 | `95b0eb9d0cf5` |
-| felucca-loader | 2,361 | 2,322 | 39 | `4fc238ea1987` |
-
-Inputs are existing ELF and vendor-disassembly pairs from the Felucca build, main diagnostic/display/probe/foundation builds, saved diagnostic variants, their loaders and the instrumented Felucca profile build. The table counts confirmed code sites; the 71 opaque regions remain separately retained. The profile image is useful for instruction inventory and is excluded from unchanged-firmware acceptance. Artifact hashes establish identity, not correspondence to current source or a reproducible build.
-
-Unknown-source stock raw ELF wrappers and SDK ELF files without a matching disassembly are outside this source-known corpus. Stock/package/ROM boot compatibility remains a separate planned gate. New compiler configurations can produce additional instructions.
-
-## Method and limits
-
-The parser compares saved vendor bytes with executable ELF sections, uses sized function/object symbols, preserves untyped assembler rows for audit, and pairs genuine parallel prefixes with their adjacent tails. It excludes proven literal tables, objects, raw dumps and the independently checked display font/label data. Disassembling every byte in `.text` would count large embedded data regions as instructions.
-
-The supplemental audit added the saved `testset`, `ifeq` and `rep` syntaxes that the initial recognizer omitted. Sixteen floating-condition branch sites use a saved alternate disassembly whose four-byte rows match ELF bytes exactly: eight `iff >` and eight `iff u<=`. The alternate spelling and authority limits remain explicit; architectural semantics are not established by disassembly. The 142 raw rows surrounding the 71 E53F starts are quarantined together, including their apparent operand instructions. Initial parser outputs and every correction are preserved.
-
-The host-only C harness extracts the production `decode_operation`, `parallel_writes`, `operation_size` and `instruction_end` functions exactly, including ordered matches, operand fetches and C guards. TCG/runtime emission is stubbed. Twenty retained host sanity cases exercise scalar admission, guards, bundles, conflicts and emitted runtime checks. The inventory neither runs QEMU nor calls the copied reference emulator.
-
-**Admission is not runtime correctness.** This analysis does not execute arithmetic, flags, memory accesses, predicate completion, IRQ delivery or device effects. Static occurrence counts do not show reachability, execution frequency, throughput or universal ISA support. Existing runtime helper and alias policies can still stop an admitted instruction.
-
-The union has 720 context-level sizing mismatches (496 after executable payload deduplication): rejected six-byte branches currently modeled as four bytes. They are the same missing branch forms, not extra instructions. Their batch must update exact decoder and scanner widths together. The review receipt retains each mismatch and the parser audits.
-
-The existing destination-overlap bundle rejections stay explicit. Both components already admit individually; adding an opcode cannot resolve their architectural ordering policy.
-
-Pinned primary descriptions disagree with vendor wide-shift direction and wide-multiply signedness selectors. These variants remain distinct in the inventory, with the disagreement recorded. Their batch needs discriminating runtime evidence before semantics are selected. Specialized controls require evidenced effects; unsupported operations must not be admitted as arbitrary no-ops.
-
-## Missing forms and placements
-
-The following 81 role rows account for 75 distinct missing forms. Exact operand values, first-word matches, source branches, widths, image counts, authority qualifications and example addresses remain in the machine-readable mapping.
-
-| Form | Role | Unique executable-payload sites | Felucca sites | Signature | Intent |
-| --- | --- | ---: | ---: | --- | --- |
-| `compact-register-asr-1a88` | scalar | 5 | 3 | `(op&FF88)==1A88` | Compact arithmetic right shift by register |
-| `register-add-carry-e0b8-mode0` | scalar | 3 | 0 | `op==E0B8` | Register add with carry |
-| `register-subtract-borrow-e0b8-mode2` | scalar | 4 | 0 | `op==E0B8` | Register subtract with inverted carry |
-| `subtract-packed-e0f0` | head | 15 | 7 | `(op&FFF0)==E0F0` | Register minus packed immediate |
-| `subtract-packed-e0f0` | scalar | 247 | 64 | `(op&FFF0)==E0F0` | Register minus packed immediate |
-| `word-bitmap-store-eb20` | scalar | 6 | 2 | `(op&FFF0)==EB20` | Register-bitmap word store |
-| `flag-equal-branch-e840` | scalar | 12 | 0 | `op==E840` | Branch on equal status flag |
-| `register-mask-zero-branch-fa00` | scalar | 7 | 3 | `(op&FF00)==FA00` | Branch when register AND is zero |
-| `long-literal-branch-ff0b` | scalar | 9 | 3 | `op==FF0B` | Long signed literal LT branch |
-| `long-literal-branch-ff0d` | scalar | 17 | 1 | `op==FF0D` | Long signed literal LE branch |
-| `long-packed-branch-ff20` | scalar | 55 | 3 | `op==FF20` | Long unsigned packed EQ branch |
-| `long-packed-branch-ff21` | scalar | 7 | 3 | `op==FF21` | Long unsigned packed NE branch |
-| `long-packed-branch-ff23` | scalar | 81 | 10 | `op==FF23` | Long unsigned packed LT branch |
-| `long-packed-branch-ff28` | scalar | 176 | 20 | `op==FF28` | Long unsigned packed GT branch |
-| `long-packed-branch-ff29` | scalar | 4 | 2 | `op==FF29` | Long unsigned packed LE branch |
-| `long-packed-branch-ff2a` | scalar | 36 | 3 | `op==FF2A` | Long signed packed GE branch |
-| `long-packed-branch-ff2b` | scalar | 24 | 4 | `op==FF2B` | Long signed packed LT branch |
-| `long-packed-branch-ff2d` | scalar | 6 | 3 | `op==FF2D` | Long signed packed LE branch |
-| `long-register-branch-ff40` | scalar | 28 | 7 | `op==FF40` | Long unsigned register EQ branch |
-| `long-register-branch-ff42` | scalar | 12 | 5 | `op==FF42` | Long unsigned register GE branch |
-| `long-register-branch-ff43` | scalar | 35 | 3 | `op==FF43` | Long unsigned register LT branch |
-| `long-register-branch-ff48` | scalar | 4 | 0 | `op==FF48` | Long unsigned register GT branch |
-| `long-register-branch-ff4a` | scalar | 2 | 1 | `op==FF4A` | Long signed register GE branch |
-| `idle-0001` | scalar | 1 | 0 | `op==0001` | IDLE |
-| `ssync-0022` | scalar | 53 | 3 | `op==0022` | System synchronization |
-| `trigger-e870` | scalar | 17 | 1 | `op==E870` | Trigger control operation |
-| `float-register-branch-ee02` | scalar | 8 | 0 | `op==EE02` | Floating register branch GT |
-| `float-register-branch-ee82` | scalar | 8 | 0 | `op==EE82` | Floating register branch u<= (alternate spelling) |
-| `compact-half-post-store-0680` | tail | 2 | 1 | `(op&FF88)==0680` | Compact halfword post-index store |
-| `parallel-divide-unsigned-mode0` | head | 14 | 6 | `op==E1F4` | Unsigned division |
-| `parallel-packed-minus-register-e0a0` | head | 27 | 14 | `(op&FFF0)==E0A0` | Packed immediate minus register |
-| `parallel-packed-xor-e150` | head | 3 | 2 | `(op&FFF0)==E150` | Packed immediate XOR |
-| `parallel-smax-mode1` | head | 5 | 2 | `op==E434` | Signed maximum |
-| `parallel-umin-mode0` | head | 22 | 2 | `op==E435` | Unsigned minimum |
-| `rev8-e070` | head | 2 | 1 | `op==E070` | Byte reversal (REV8) |
-| `byte-signed-offset-ee51` | scalar | 32 | 15 | `op==EE51` | Unsigned byte load signed offset |
-| `byte-signed-offset-ee53` | scalar | 2 | 1 | `op==EE53` | Byte store signed offset |
-| `half-signed-sp-load-e9d9` | scalar | 2 | 1 | `op==E9D9` | Signed SP-relative halfword load |
-| `half-signed-unscaled-index-edd8-kind2` | scalar | 8 | 4 | `op==EDD8` | Signed halfword unscaled register-index load |
-| `if-e920-packed` | scalar | 6 | 3 | `(op&FFF0)==E920` | Unsigned packed GE IF |
-| `if-e990` | scalar | 8 | 4 | `(op&FFF0)==E990` | Unsigned register LT IF |
-| `if-ec20-packed` | scalar | 17 | 1 | `(op&FFF0)==EC20` | Unsigned packed GT IF |
-| `if-ec30-immediate` | scalar | 1 | 0 | `(op&FFF0)==EC30` | Unsigned immediate GT IF |
-| `if-ec90` | scalar | 36 | 10 | `(op&FFF0)==EC90` | Unsigned register LE IF |
-| `if-eca0-packed` | scalar | 4 | 2 | `(op&FFF0)==ECA0` | Unsigned packed LE IF |
-| `if-ed20-packed` | scalar | 26 | 13 | `(op&FFF0)==ED20` | Signed packed GE IF |
-| `if-ee30-literal` | scalar | 18 | 1 | `(op&FFF0)==EE30` | Signed literal GT IF |
-| `register-ne-zero-if-e8a0` | scalar | 1 | 0 | `(op&FFF0)==E8A0` | Register nonzero IF |
-| `repeat-immediate-count-8000` | scalar | 2 | 0 | `(op&E00F)==8000` | Repeat block with immediate count |
-| `repeat-register-count-0300` | scalar | 20 | 0 | `(op&FF00)==0300` | Repeat block with register count |
-| `byte-testset-00b0` | scalar | 12 | 0 | `(op&FFF0)==00B0` | Byte test-and-set |
-| `word-memory-add-e868` | scalar | 130 | 49 | `op==E868` | Word memory add with GPR operand |
-| `word-memory-subtract-e868` | scalar | 17 | 8 | `op==E868` | Word memory subtract with GPR operand |
-| `compact-push-rets` | scalar | 2176 | 128 | `op==04C8` | Compact RETS push |
-| `extended-push-special-map` | scalar | 17 | 1 | `op==E958` | Special-register bitmap push |
-| `special-sp-immediate-add-e8f0` | scalar | 5 | 0 | `op==E8F0` | Special SP immediate addition |
-| `tbb-0100` | scalar | 18 | 9 | `(op&FFF0)==0100` | Table byte branch |
-| `byte-post-load-eed0` | scalar | 21 | 10 | `op==EED0` | Unsigned byte post-index load |
-| `byte-pre-store-eedc-kind1` | scalar | 38 | 3 | `op==EEDC` | Byte register pre-index store |
-| `compact-byte-post-decrement-load-0708` | scalar | 1 | 0 | `(op&FF88)==0708` | Compact unsigned byte post-decrement load |
-| `compact-half-post-load-0600` | scalar | 1 | 1 | `(op&FF88)==0600` | Compact unsigned halfword post-index load |
-| `compact-half-post-load-0600` | tail | 1 | 0 | `(op&FF88)==0600` | Compact unsigned halfword post-index load |
-| `doubleword-pre-store-ec50-kind3` | scalar | 2 | 1 | `(op&FFF8)==EC50` | Doubleword immediate pre-index store |
-| `half-post-store-edd0` | scalar | 2 | 1 | `op==EDD0` | Halfword immediate post-index store |
-| `half-pre-store-ed58-family` | scalar | 18 | 1 | `(op&FFFC)==ED58` | Halfword immediate pre-index store |
-| `half-signed-post-load-edd4` | scalar | 6 | 3 | `op==EDD4` | Signed halfword immediate post-index load |
-| `half-signed-pre-load-ed5c` | scalar | 2 | 1 | `op==ED5C` | Signed halfword immediate pre-index load |
-| `word-post-load-ecd8` | scalar | 6 | 3 | `op==ECD8` | Word immediate post-index load |
-| `word-pre-store-ecd0-kind3` | scalar | 5 | 2 | `(op&FFF8)==ECD0` | Word immediate pre-index store |
-| `wide-arithmetic-right-shift-e1d0` | scalar | 6 | 3 | `op==E1D0` | Register-pair arithmetic-right immediate shift (vendor intent) |
-| `wide-left-register-shift-e1d8` | scalar | 7 | 0 | `op==E1D8` | Register-pair left shift by register |
-| `wide-left-shift-e1d0` | scalar | 4 | 2 | `op==E1D0` | Register-pair left immediate shift (vendor intent) |
-| `wide-logical-right-shift-e1d0` | head | 4 | 2 | `op==E1D0` | Register-pair logical-right immediate shift (vendor intent) |
-| `wide-logical-right-shift-e1d0` | scalar | 46 | 23 | `op==E1D0` | Register-pair logical-right immediate shift (vendor intent) |
-| `wide-signed-divide-e1f6` | scalar | 2 | 1 | `op==E1F6` | Signed register-pair division |
-| `wide-signed-muladd-e1fc` | head | 3 | 2 | `op==E1FC` | Signed multiply-accumulate register pair |
-| `wide-signed-muladd-e1fc` | scalar | 23 | 11 | `op==E1FC` | Signed multiply-accumulate register pair |
-| `wide-signed-multiply-e1f8` | head | 2 | 1 | `op==E1F8` | Signed multiply to register pair (vendor intent) |
-| `wide-signed-multiply-e1f8` | scalar | 10 | 5 | `op==E1F8` | Signed multiply to register pair (vendor intent) |
-| `wide-unsigned-multiply-e1f8` | head | 2 | 1 | `op==E1F8` | Unsigned multiply to register pair (vendor intent) |
-| `wide-unsigned-multiply-e1f8` | scalar | 20 | 10 | `op==E1F8` | Unsigned multiply to register pair (vendor intent) |
-
-## Batch implementation and acceptance
-
-Use the batch membership and ordering in [plan.md](../plan.md). The main agent remains Astra high; workers and independent reviewers use Sol 6.1 Extra high. Workers prepare private patches and focused validators for nonoverlapping forms. The parent owns shared-file integration, builds, firmware runs, documentation and signed commits.
-
-For each batch: collect one finite primary/copied-reference evidence matrix, retain raw disagreements, independently review the combined source and per-form validators, integrate once, build once, run focused and relevant broad regression gates, then run unchanged bounded Felucca and renamed generic replay once. Fix any failing gate before accepting the batch. Recompute the offline inventory from the accepted production decoder and publish static admission separately from tested runtime behavior.
-
-This removes the repeated full build/regression/boot cycle after each individual opcode. Focused semantic checks remain necessary. Keep CPU behavior generic: no firmware names, hashes or PCs select instruction semantics. The CPU, reusable SoC/board hardware and macOS host retain their separate responsibilities.
-
-CPU admission alone cannot complete the boot: MMIO, ROM services, loader contracts, peripheral timing and runtime policies remain independent possible blockers. The acceptance goal stays completed HOME, 30 guest seconds, physical-input effects and a native viewer left executing, then broader unchanged firmware and macOS host acceptance.
-
-## Reproducible evidence
-
-Full evidence lives at `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-opcode-coverage-2026-10-08`. Core inputs/outputs remain frozen; `expanded/` contains the complete union. Manifests retain full ELF/disassembly paths and SHA-256 identities. `sites.jsonl`, `requests.txt`, admission outputs, rejected-site records and parser exclusions preserve every counted site. `harness/` retains the exact C extraction, host runner, provenance and sanity checks; the review directory retains normalized forms and receipts. `expanded/unknown-code-regions.json` retains the unresolved sequences. The report does not assign a final total ISA-gap count to those sequences.
-
-Production translator SHA-256:
-
-`9a83e582471872649173199a0e6307171eceddafb885fc204a6546a7c323472b`
-
-Accepted QEMU binary SHA-256:
-
-`2a05c3ae0571a81b59745dc8d15adefa60a1b88c83750deda60785e6026fc817`
-
-This milestone changes documentation and saved analysis only. Firmware artifacts, production CPU/device behavior, public capture formats and the Rust emulator are unchanged. No firmware rebuild or flashing occurred.
+Continue from the observed bootguard state using [plan.md](../plan.md). The
+firmware runs for 30 guest seconds from entry. Verified healthy HOME, bootguard
+clearance, nonzero synthesis, physical input, the running native viewer and
+broader unchanged-firmware compatibility remain acceptance goals.
