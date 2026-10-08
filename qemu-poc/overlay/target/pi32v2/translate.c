@@ -451,6 +451,20 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         }
         store(d, value, addr, MO_LEUL | MO_ALIGN);
         next = here + 4;
+    } else if (op == 0xe86c) {
+        uint16_t x = fetch(d, here + 2);
+        if (x & 3) { goto illegal; }
+        /* Vendor E86C 3704 and separate executable probes establish an
+         * immediate left shift; the pinned SLEIGH has no exact constructor. */
+        translator_io_start(db);
+        TCGv_i32 addr = tcg_temp_new_i32(), value = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), x & 252);
+        load(d, value, addr, MO_LEUL | MO_ALIGN);
+        tcg_gen_shli_i32(value, value, (x >> 8) & 15);
+        /* Count zero still performs both accesses; a failed write does not
+         * undo any preceding MMIO read effect. */
+        store(d, value, addr, MO_LEUL | MO_ALIGN);
+        next = here + 4;
     } else if ((op & 0xffe0) == 0xebc0) {
         uint16_t x = fetch(d, here + 2);
         TCGv_i32 addr = tcg_temp_new_i32(), value = tcg_temp_new_i32();

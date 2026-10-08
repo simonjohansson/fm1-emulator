@@ -128,9 +128,9 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
 - NOR supports reads but not persistent write/erase or full hardware boot.
   ADC, UART and connected USB MIDI/CDC remain missing. Current build captures
   audio samples but does not enable CoreAudio playback.
-- Saved results prove unchanged splash and first audio IRQ entry, not a
-  completed audio ISR, synthesis or real-time throughput. Keep controlled
-  single-threaded tests separate from interactive timing. The proposal's
+- Saved results now prove unchanged splash and completed audio/timer IRQ
+  service. Synthesis, home and real-time throughput remain unverified. Keep
+  controlled single-threaded tests separate from interactive timing. The proposal's
   2x offline synthesis and 30-minute live targets are unmeasured goals;
   benchmark fresh guest-produced frames, not merely a WAV sink or UI pacing.
 
@@ -355,6 +355,14 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   Evidence: `.deps/qemu-signed-preindexed-halfword-load-2026-10-08/`.
   Audio service remains open.
 
+- 2026-10-08: Stage 3 exact E86C word memory left-shift complete and independently
+  reviewed. Gate: 189 reference cases, one generic replay, one modeled USB case
+  and 13 faults; adjacent signed-load and full ISA/profile/IRQ/boot pass. Actual audio/timer service now completes:
+  extended unchanged replay has 101 IRQ11 and 5,104 IRQ63 returns; renamed captured
+  state/sample/LCD match. Next missing mapping is SAR CON `0x13100`, parent
+  bundle PC `0x020059a8`; no home/nonzero synthesis yet. Evidence:
+  `.deps/qemu-memory-left-shift-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -481,7 +489,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is E86C, recorded below.
+  latest firmware blocker is unmapped SAR ADC control, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -491,26 +499,66 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: word memory left-shift E86C
+## Current firmware blocker: unmapped SAR ADC control
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-preindexed-halfword-load/`.
-Vendor `[r3+4] <<= 7` is reached while scaling interleaved audio samples.
-Establish exact memory word-shift fields, supported modes, flags and read/write
-fault phases independently. Preserve existing RMW families and I/O fencing.
+Latest unchanged boot: `.cache/felucca-validation/after-memory-left-shift/`.
+The first ADC control write 0 to `0x13100` is reached in the compact store tail
+at `0x020059ac`, inside the parallel bundle whose reported PC is `0x020059a8`.
+CPU encoding is supported; the register mapping is missing. The head would
+form WLA address `0x11900`, whose following read at `0x020059ae` has not yet
+executed. Implement reviewed generic SAR/analog ownership and board inputs.
 
-- PC `0x02003aac`, words `E86C/3704`.
-- Instructions 43,292,172; virtual time 346,337,384 ns.
-- IRQ11 entries/returns 1/0;
-  IRQ63 entries/returns 0/0.
-- ALNK completions 6, acknowledgments 0,
-  coalesced 5, pending `0x80`;
-  3,072 captured sample words, 0 nonzero.
-- LCD visible=True, busy=False; guard debug message
+- PC `0x020059a8`, words `F123/2800 +60A1`.
+- Instructions 116,552,281; virtual time 932,418,256 ns.
+- IRQ11 entries/returns 101/101;
+  IRQ63 entries/returns 5104/5104.
+- ALNK completions 106, acknowledgments 101,
+  coalesced 5, pending `0x0`;
+  54,272 captured sample words, 0 nonzero.
+- LCD visible=True, busy=True; guard debug message
   `0x0`, watchdog expirations 0.
-  Audio service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `e8ffbd0f321106a1765ce47e5a7da86fcc6825a283a31174eb3900f315dc180f`.
-- Generic replay: `after-signed-preindexed-halfword-load-generic`.
-- Durable evidence: main repo `.deps/qemu-signed-preindexed-halfword-load-2026-10-08/`.
+  Audio and timer service return successfully; synthesis and home remain incomplete.
+- QEMU SHA-256: `4177a8633bdadb3e1dce439a0cd8fdf11436250ad5df0321a027221eb4757a72`.
+- Generic replay: `after-memory-left-shift-generic`.
+- Durable evidence: main repo `.deps/qemu-memory-left-shift-2026-10-08/`.
+
+### Resolved E86C word memory left-shift
+
+Exact scalar E86C low2 mode0 reads an aligned little-endian word at incoming
+base+(x&252), shifts it left by count nibble0..15 and writes it once. Address
+arithmetic wraps modulo32; all GPRs and PSR are preserved, with one retirement
+only after a successful store. Count zero still performs both accesses. The
+local I/O fence prevents repeated MMIO reads during replay; common helpers,
+classifiers, older RMW families and device code remain fixed.
+
+The exact constructor is absent from the verified pinned Apache slaspec and
+included instruction sources. Direct vendor E86C/3704 and separate executable
+probes supply encoding/semantics authority. Research retains 473 canonical left
+successes and 32 full right-mode completions: logical-right mode2 and arithmetic-
+right mode3 are valid in the reference and remain deferred in this left-only
+milestone. Low2 bits are modes, not high count bits. Reference access failures
+establish metadata but expose no CPU fault snapshot. Read-before-write/no-
+retirement fault handling is model policy; MMIO read effects are not rolled
+back. Hardware fault ordering and atomicity remain unverified.
+
+The focused gate passes 189 separate-reference comparisons, one default-loader
+replay, one model-only USB check and 13 faults. Data/count boundaries, all base
+fields and aligned offsets, PSR, selected/skipped conditionals with following IF,
+incoming base outside SRAM with mapped effective address, last SRAM word and
+the actual adjacent store are checked. Count0 unaligned, XIP and write-guard
+faults prevent eliminating either access. Captured fault metadata distinguishes
+four failed reads and four failed writes; PC and mode prechecks precede access.
+The existing diagnostic USB counters observe exactly one poll read and one
+identity repost, without adding state fields or claiming hardware equivalence.
+Adjacent signed pre-index halfword and full ISA/profile/IRQ/boot gates pass.
+
+The initial 100-million-instruction replay completes 79 audio IRQ11 returns
+and 3,944 timer IRQ63 returns. Extending the bound to 200 million reaches the
+first missing SAR control write after 116,552,281 instructions and
+932,418,256 ns, with 101 audio returns/acknowledgments and 5,104 timer returns.
+Audio samples remain zero and home frames remain absent. Renamed unchanged generic-image captured
+state except profile and all captured sample/LCD bytes match; whole SRAM is not
+compared across different initialization modes.
 
 ### Resolved EDDC signed pre-indexed halfword load
 
@@ -935,13 +983,15 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached E86C/3704 word memory left-shift to the CPU worker. Establish
-   exact register/offset/shift fields, mode constraints, PSR behavior and access
-   phases from available primary facts, vendor and independent probes. Preserve
-   existing RMW forms/helpers and I/O fencing; avoid repeated MMIO read effects.
-   Check data/shift boundaries, fields/offsets, neighboring memory, PSR/count,
-   conditionals, generic replay and precise read/write/PC faults. Record direct
-   primary absence or disagreements explicitly if encountered.
+2. Assign reached SAR control write 0 at `0x13100` to the device worker. Its
+   parent parallel bundle PC is `0x020059a8`, compact store tail `0x020059ac`;
+   the following shared WLA read remains predicted. Review reusable resettable
+   SAR, separate canonical analog ownership, board raw-input bindings and exact
+   supported configuration/command/pending lifecycle. Preserve other devices,
+   stable capture formats and Rust; qualify timing/reset/command policies.
+   Test repeated kick, RMW pending, cancel/restart/fresh phase, local reset,
+   unsupported configuration without partial commit, shared word preservation,
+   width/alignment faults and renamed generic replay.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
@@ -951,25 +1001,26 @@ Next implementation sequence:
 
 ## Next milestones after the blocker
 
-### Complete real audio and timer service
+### Preserve completed audio and timer service
 
-Observe actual IRQ11 acknowledgment/RTI, rendered-half counters, TIMER5 IRQ63
-activity and foreground progress. Source11 vector is `0x01c7fe2c`, priority3;
-source63 vector is `0x01c7fefc`, priority1. Both device levels remain pending
-until their own acknowledgment; never clear another source on selection.
+The E86C milestone completes actual IRQ11 acknowledgment/RTI and TIMER5
+IRQ63 service. At the first ADC stop, audio entries/returns/acknowledgments are
+101/101/101 and timer entries/returns are 5,104/5,104. Samples remain zero;
+verify synthesis using physical virtual inputs after reaching home.
 
-The current CPU deliberately blocks nesting as before. Only introduce the
-nesting actually required by captured firmware behavior, with explicit
-higher-priority admission, supervisor/foreground stack handling, prior IRQ
-context/RETI/ICFG restoration and independent validation. Wrapper source alone
-cannot establish undocumented hardware shadow behavior. Do not claim nesting
-support from current balanced nonnested probes.
+Source11 vector is `0x01c7fe2c`, priority3; source63 vector is `0x01c7fefc`,
+priority1. Both device levels remain pending until their own acknowledgment;
+never clear another source on selection. Preserve nonnested service. Introduce
+nesting only if captured firmware behavior requires it, with independently
+reviewed admission, stack/context restoration and focused validation. Current
+captures do not prove undocumented hardware shadow or nesting behavior.
 
 ### Implement ADC only when reached
 
-No ADC model is implemented yet. Prior inspection predicts first foreground
-ADC control write at `0x020059ac` to `0x13100`, then WLA read at
-`0x020059ae` from `0x11900` (confirm actual execution first).
+No ADC model is implemented yet. The first foreground CON write 0 to
+`0x13100` is captured at compact tail `0x020059ac`, with parent bundle PC
+`0x020059a8`. Its header has not committed on the failed tail. The following
+WLA read at `0x020059ae` from `0x11900` remains predicted, not captured.
 Primary SDK facts: SAR CON `0x13100` RW32 and RES `0x13104` RO32;
 WLA_CON0 `0x11900` belongs to a separate shared analog block. Ordinary ADC
 channels clear its bit14 analog-test route; other consumers own other fields.

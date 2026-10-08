@@ -1218,7 +1218,7 @@ unverified. Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmwa
 advances seven instructions to EDDC; renamed state except profile and sample/LCD
 bytes match. Whole SRAM is not compared across initialization modes.
 
-Latest stop: EDDC/3312 at `0x020039fc`, 43,289,460
+At this milestone: EDDC/3312 at `0x020039fc`, 43,289,460
 instructions and 346,315,688 ns. Vendor `r3 = h[++r1=r3] (s)` is reached in the table lookup.
 Establish exact halfword indexing, sign extension and writeback from pinned
 load/store facts plus independent probes. Preserve existing word/indexed forms,
@@ -1231,7 +1231,7 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_lt_branch.py
 ```
 
-### EDDC signed pre-indexed halfword load and latest checkpoint
+### EDDC signed pre-indexed halfword load checkpoint
 
 Exact scalar EDDC kind2 uses an unscaled incoming base+index sum modulo32,
 writes the effective address to base, then loads a signed aligned halfword.
@@ -1257,7 +1257,7 @@ Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
 2,712 instructions to E86C; renamed captured state except profile and sample/LCD
 bytes match. Whole SRAM is not compared across initialization modes.
 
-Latest stop: E86C/3704 at `0x02003aac`, 43,292,172
+At this milestone: E86C/3704 at `0x02003aac`, 43,292,172
 instructions and 346,337,384 ns. Vendor `[r3+4] <<= 7` is reached while scaling interleaved audio samples.
 Establish exact memory word-shift fields, supported modes, flags and read/write
 fault phases independently. Preserve existing RMW families and I/O fencing.
@@ -1267,6 +1267,58 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_preindexed_halfword_load.py
+```
+
+### E86C word memory left-shift and latest checkpoint
+
+Exact scalar E86C low2 mode0 reads an aligned little-endian word at incoming
+base+(x&252), shifts it left by count nibble0..15 and writes it once. Address
+arithmetic wraps modulo32; all GPRs and PSR are preserved, with one retirement
+only after a successful store. Count zero still performs both accesses. The
+local I/O fence prevents repeated MMIO reads during replay; common helpers,
+classifiers, older RMW families and device code remain fixed.
+
+The exact constructor is absent from the verified pinned Apache slaspec and
+included instruction sources. Direct vendor E86C/3704 and separate executable
+probes supply encoding/semantics authority. Research retains 473 canonical left
+successes and 32 full right-mode completions: logical-right mode2 and arithmetic-
+right mode3 are valid in the reference and remain deferred in this left-only
+milestone. Low2 bits are modes, not high count bits. Reference access failures
+establish metadata but expose no CPU fault snapshot. Read-before-write/no-
+retirement fault handling is model policy; MMIO read effects are not rolled
+back. Hardware fault ordering and atomicity remain unverified.
+
+The focused gate passes 189 separate-reference comparisons, one default-loader
+replay, one model-only USB check and 13 faults. Data/count boundaries, all base
+fields and aligned offsets, PSR, selected/skipped conditionals with following IF,
+incoming base outside SRAM with mapped effective address, last SRAM word and
+the actual adjacent store are checked. Count0 unaligned, XIP and write-guard
+faults prevent eliminating either access. Captured fault metadata distinguishes
+four failed reads and four failed writes; PC and mode prechecks precede access.
+The existing diagnostic USB counters observe exactly one poll read and one
+identity repost, without adding state fields or claiming hardware equivalence.
+Adjacent signed pre-index halfword and full ISA/profile/IRQ/boot gates pass.
+
+The initial 100-million-instruction replay completes 79 audio IRQ11 returns
+and 3,944 timer IRQ63 returns. Extending the bound to 200 million reaches the
+first missing SAR control write after 116,552,281 instructions and
+932,418,256 ns, with 101 audio returns/acknowledgments and 5,104 timer returns.
+Audio samples remain zero and home frames remain absent. Renamed unchanged generic-image captured
+state except profile and all captured sample/LCD bytes match; whole SRAM is not
+compared across different initialization modes.
+
+Latest stop: F123/2800 +60A1 at `0x020059a8`, 116,552,281
+instructions and 932,418,256 ns. The first ADC control write 0 to `0x13100` is reached in the compact store tail
+at `0x020059ac`, inside the parallel bundle whose reported PC is `0x020059a8`.
+CPU encoding is supported; the register mapping is missing. The head would
+form WLA address `0x11900`, whose following read at `0x020059ae` has not yet
+executed. Implement reviewed generic SAR/analog ownership and board inputs.
+Caches use `after-memory-left-shift` and its `-generic` label; main repo
+`.deps/qemu-memory-left-shift-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 101/101; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_memory_left_shift.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
