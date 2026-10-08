@@ -13,6 +13,7 @@
 #include "fm1-syscon.h"
 #include "fm1-adc.h"
 #include "fm1-analog.h"
+#include "fm1-input.h"
 
 #define TYPE_FM1_POC_MACHINE MACHINE_TYPE_NAME("fm1-poc")
 #define FM1_POC_MAX_ALNK_RESETS 16
@@ -45,6 +46,7 @@ struct FM1PocState {
     FM1PocSyscon syscon;
     FM1PocADC adc;
     FM1PocAnalog analog;
+    FM1PocInput input;
     unsigned frames;
     const char *frame_dir;
     QEMUTimer *display_key_timer;

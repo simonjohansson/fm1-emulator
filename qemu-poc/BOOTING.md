@@ -8,27 +8,35 @@ Follow [plan.md](../plan.md) for authorization, review and licensing boundaries.
 
 ## Current verified state
 
-Batch D adds 16 qualified memory-operation forms. The accepted QEMU binary is
-SHA-256 `88e01320c617087e3f38760ca5f3fdc20342fdc4291bd057e2f7f26f6231607d`;
-translator SHA-256 `d4567f2c6059a6e251d0d6e21892d531335b26b8f56890bd9361ab94da33e58a`.
-Use `git log -1` and `git verify-commit HEAD` for the signed milestone.
+The unchanged application passed **4,625,000,000 instructions / 37 guest
+seconds**, reaching **36,999 firmware milliseconds** with bootguard magic
+`0x42475244`, failed=0/pending=0. UI frames advanced to 2,143; IRQ11 returned
+6,315/6,315 and IRQ63 318,764/318,764. No instruction, watchdog, guard, guest
+crash or LCD/P33 timeout was observed. A separate stage9 HOME capture at 1,017
+firmware milliseconds has an idle visible LCD and complete pixels. The final
+37-second budget stops during a transfer; it is not an idle-frame endpoint.
 
-The unchanged application ran **3,750,000,000 instructions / 30,000,000,008 ns**
-from entry, stopping at the instruction budget (`0x0200049e`). It advanced
-1,734 UI frames; IRQ11 returned 5,109/5,109 times and IRQ63 258,174/258,174.
-There were no instruction, watchdog or guard faults. ALNK captured 2,618,368
-sample words, all zero in this idle run. LCD was active at the arbitrary stop.
-Bootguard failed=0/pending=1; firmware time was **29,999 ms**. Complete healthy
-HOME, bootguard clearance, physical input and nonzero synthesis remain unproven.
+Three note presses generate nonzero PCM; all releases clear the note bitmap
+and reduce sample energy below 1.3% of held levels after 500 guest ms. ALNK
+captured 3,235,840 sample words, including 232,958 nonzero words. Octave minus/
+plus, BPM 120→121, ENV decay 55→56→57 and repeated page/HOME navigation pass
+through standard KEY events and the guest's GPIO scans. Input duplicate,
+simultaneous, pause/rearming, overflow recovery and shutdown checks passed.
+Existing three-frame display captures remain byte-identical to saved QEMU output.
 
-Focused QEMU checks passed **1,071 cases (796 success / 275 modeled faults)**;
-existing CPU/profile (98), machine-map (32) and IRQ (10) checks passed.
-The short 200-million-instruction generic renamed/default-loader replay matched
-captured state, LCD and audio; whole SRAM was not compared across loader modes.
-Initial instruction research used the separate reference; no subsequent fresh
-reference calls or full reference-heavy ISA regression sweep were run.
-Raw results are in the [Batch D evidence](/Users/simonjohansson/src/fm1-emulator/.deps/qemu-batch-d-2026-10-08/),
-including `long-30s/run.json` and `observation-30s.json`.
+The accepted binary SHA-256 is
+`10a9f3ebc851285637d469ccb78b00b23ca4d5593becd1c2d065b609116440e2`.
+Batch D's CPU forms and translator are unchanged; its 1,071 focused cases and
+QEMU-only profile/map/IRQ gates were not rerun. Guest behavior and affected
+input/display checks are the validation for this change.
+
+Durable captures and the executable are in the main repository's
+`.deps/qemu-behavior-2026-10-08/`, especially `accepted-37s/`, `lifecycle/` and
+`display-compat/`. The earlier 31-second bootguard run is in
+`.deps/qemu-bootguard-2026-10-08/`. Use `git log -1` and `git verify-commit HEAD`
+for the signed milestone. Raw DMA snapshots are observations, not continuous
+host audio; their release-energy assertion was checked against all six saved
+note/release captures without repeating the unchanged guest run.
 
 ## Reproduce a bounded boot
 
@@ -53,13 +61,34 @@ names/hashes/PCs must not alter CPU semantics or the implemented hardware map.
 Compare fixture/default-loader runs through existing profile/map checks;
 different loader initialization means whole SRAM need not match across modes.
 
-For the next bootguard check, start with **31 guest seconds**: use the command
-recorded in `long-30s/run.json`, a fresh state directory, instruction budget
-`3875000000`, and a host timeout of at least 600 seconds. The 30-second run took
-187 host seconds, exceeding the runner's fixed 180-second timeout; run the
-recorded QEMU command directly with a larger external bound. This requires no
-runner/API change. Inspect firmware time and bootguard rather than inferring
-clearance from the instruction budget.
+The compact full behavior regression has a 600-second host bound and checks
+actual scan cadence, bootguard, repeated contacts and guest audio:
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_felucca_behavior.py --label next-behavior
+```
+
+It refuses existing capture labels. The default 37 guest seconds took about
+256 host seconds. Keep the quick bounded runner for first-failure feedback.
+
+## Continuous Cocoa display
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/run_felucca.py --display cocoa
+```
+
+This uses the same CPU/board model in ordinary application mode, with no
+instruction budget, checkpoint observer or hold. Close the window to quit.
+Felucca requires `shift=3`; the display demo's `shift=8` advances time too fast
+for its startup and expires the watchdog. Cocoa uses align=off/sleep=on and may
+run slower than real time. Headless correctness timing remains unchanged.
+
+Z/C play two notes, X/V lower/raise octave, P opens ENV, O opens the second page
+family, and H returns HOME on a short release. A/S expose BPM encoder phases;
+D/F expose encoder3 (ENV DEC). A positive detent is S down, A down, S up, A up
+(or F down, D down, F up, D up), with stable phases and rest between detents.
+These are physical contacts; the firmware owns their meaning. Keyboard bindings
+are shared by Cocoa and standard QMP input. Host speaker output is not connected.
 
 ## Next-fix checks
 
@@ -81,26 +110,14 @@ Workers freeze assigned files before the parent serializes builds and runs.
 Do not read/change/rebuild Rust or firmware implementations, flash hardware,
 or change public APIs/capture contracts without explicit user authorization.
 
-## Completion still required
+## Remaining limits
 
-- **HOME:** verify the complete visible frame, foreground loop, advancing UI
-  frames and idle completed LCD transfers; an early HOME flag is insufficient.
-- **30 seconds:** begin from healthy HOME, reach at least 30,001 guest ms,
-  verify bootguard magic `0x42475244`, failed=0/pending=0, no watchdog/guard
-  faults and continued audio/timer service, including IRQ coalescing facts.
-  At functional 8 ns/instruction, 30 seconds takes about 3.75 billion
-  instructions; the default 100 million covers only 0.8 seconds. Increase
-  instruction and host-time bounds deliberately; a short run proves less.
-- **Physical inputs:** after bootguard, inject genuine matrix closures and
-  encoder phases; verify note/release, octave and BPM effects plus nonzero
-  actual ALNK samples. Host callbacks must not modify guest variables.
-- **Native viewer:** use the accepted same binary, existing Cocoa frontend
-  and normal running policy; leave it executing without checkpoint hold.
-
-Existing private [sustained-HOME design](/Users/simonjohansson/src/fm1-emulator/.deps/qemu-sustained-home-2026-10-08/),
-[physical-input design](/Users/simonjohansson/src/fm1-emulator/.deps/qemu-physical-input-design-2026-10-08/)
-and [native-launch design](/Users/simonjohansson/src/fm1-emulator/.deps/qemu-felucca-native-launch-design-2026-10-08/)
-retain the detailed scenarios. Their design/host checks do not prove guest acceptance.
+Cocoa runs continuously; input transport and guest samples share the headless
+hardware model. The sustained run, complete HOME pixels and compact behavior
+suite establish this pinned workload, not all-firmware or hardware compatibility.
+System-reset input registration is implemented, but whole-machine reset and
+its controller behavior remain unverified. ROM/SPL/flash boot is separate from
+application-entry loading.
 
 Functional clock rates, completion-time buffer capture and current application
 handoff are limited models. Hardware timing, active-buffer streaming, whole

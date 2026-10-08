@@ -22,7 +22,8 @@ The tested build needs macOS's native compiler/make and GLib development files;
 network access is needed only for missing pinned downloads. Python is managed
 with mise. Edit `overlay/`, not generated `.cache/qemu-*` copies.
 Caches are disposable; preserve useful captures under the main repo's `.deps`.
-The firmware runner checks unchanged saved artifacts and executes headlessly.
+The firmware runner checks unchanged saved artifacts and supports bounded
+headless runs or a continuous `--display cocoa` window; see BOOTING for controls.
 A bounded successful run does not establish complete firmware compatibility.
 
 The small timer/key-matrix demonstration has a continuous Cocoa viewer:
@@ -32,7 +33,7 @@ mise exec python@3.13.15 -- python qemu-poc/run_display.py
 ```
 
 It runs until the window closes and animates physical key closures. It is a
-separate display fixture, not Felucca, and does not map keyboard/mouse controls.
+separate display fixture; Felucca has its own native launcher and behavior gate.
 Its `icount shift=8` pacing differs from headless correctness runs at `shift=3`.
 Neither setting is a hardware-cycle or throughput calibration.
 

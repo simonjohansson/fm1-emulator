@@ -182,13 +182,15 @@ static uint64_t gpio_read(void *opaque, hwaddr offset, unsigned size)
     if (offset == 4) {
         uint32_t inputs = m->gpio[port][4] & ~m->gpio[port][5] & m->gpio[port][2] & m->gpio[port][3];
         for (unsigned col = 0; col < 11; col++) {
+            uint8_t closures = m->matrix[col] | m->input.matrix[col];
+
             if (!(m->latched & (1u << col))) {
                 if (port == 1) {
-                    if (m->matrix[col] & 32) { inputs &= ~(1u << 7); }
+                    if (closures & 32) { inputs &= ~(1u << 7); }
                 } else {
-                    if (m->matrix[col] & 1) { inputs &= ~1u; }
+                    if (closures & 1) { inputs &= ~1u; }
                     for (unsigned row = 1; row < 5; row++) {
-                        if (m->matrix[col] & (1u << row)) { inputs &= ~(1u << (row + 4)); }
+                        if (closures & (1u << row)) { inputs &= ~(1u << (row + 4)); }
                     }
                 }
             }
@@ -376,6 +378,9 @@ static void machine_init(MachineState *ms)
     memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 8);
     memory_region_add_subregion(get_system_memory(), 0x5101c, &m->iomap_mmio);
     fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
+    object_initialize_child(OBJECT(m), "board-input", &m->input, TYPE_FM1_INPUT);
+    fm1_input_bind(&m->input, m->cpu);
+    qdev_realize(DEVICE(&m->input), NULL, &error_fatal);
     fm1_test_start(m);
 }
 static void machine_class_init(ObjectClass *oc, const void *data)
