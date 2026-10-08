@@ -99,11 +99,17 @@ def main():
     config_host = build / "config-host.h"
     needs_cocoa = cocoa and (not config_host.exists() or
                              "#define CONFIG_COCOA" not in config_host.read_text().splitlines())
-    if args.reconfigure or not (build / "build.ninja").exists() or needs_cocoa:
+    build_options = build / "meson-info/intro-buildoptions.json"
+    lto_enabled = build_options.exists() and any(
+        option["name"] == "b_lto" and option["value"] is True
+        for option in json.loads(build_options.read_text()))
+    needs_lto = cocoa and not lto_enabled
+    if args.reconfigure or not (build / "build.ninja").exists() or needs_cocoa or needs_lto:
         run([source / "configure", "--target-list=pi32v2-softmmu", f"--python={venv / 'bin/python'}",
              "--without-default-features", "--enable-tcg", "--disable-fdt", "--disable-docs",
              "--disable-user", "--disable-tools", "--disable-guest-agent", "--disable-slirp",
-             "--disable-capstone", "--enable-werror", *(["--enable-cocoa"] if cocoa else [])],
+             "--disable-capstone", "--enable-werror",
+             *(["--enable-cocoa", "--enable-lto"] if cocoa else [])],
             build, env, "configure.log")
     run([venv / "bin/ninja", "-j8", "qemu-system-pi32v2"], build, env, "build.log")
     print(f"Built {build / 'qemu-system-pi32v2'} (QEMU {QEMU}, {QEMU_COMMIT})")
