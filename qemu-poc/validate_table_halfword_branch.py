@@ -19,12 +19,13 @@ completion checks. Taken exits beyond an arm retain the existing predicate
 state, so a following IF faults after TBH retirement; reference completes it.
 Retained predicate IRQ blocking is source-inspected, not validated here.
 
-TBB neighbors and genuine C111+NOP remain model-deferred. The exploratory
+TBB unsigned-byte and odd-byte controls now execute as ordinary positives.
+The genuine C111+NOP remains model-deferred. The exploratory
 C111 reference completes with count53 rather than primary-candidate count38;
 original mismatch is retained, with a separate full sampled-state check.
 Fifteen padded NOPs are compatible with that difference, not an execution
 trace, general parallel-TBH semantics or hardware validity proof. Scalar TBH
-alone is admitted; helpers, scanner, classifiers and predicate logic stay fixed.
+and TBB are admitted; helpers, scanner, classifiers and predicate logic stay fixed.
 
 Normal references/diag poison unowned inspection bytes; alnk-probe/default
 loader leave them cold-zero except explicit guest writes. Generic replay uses
@@ -191,9 +192,9 @@ def make_fixtures():
  for side in ('then','else'):
   for position in ('final','nonfinal'):
    fixtures.append((f'exit-{side}-{position}','exit-characterization',conditional_fixture(side,position,0 if side=='then' else 1,outside=True)))
- # Two deferred TBB controls retain direct primary facts, not admitted scope.
- fixtures.append(('deferred-TBB-unsigned-byte','deferred-TBB',ordinary_fixture(tbb=True,index=8,value=0x80)))
- fixtures.append(('deferred-TBB-odd-byte','deferred-TBB',ordinary_fixture(tbb=True,index=9,value=0x7F)))
+ # Two scalar TBB controls retain unsigned-byte and odd-byte address assertions.
+ fixtures.append(('TBB-unsigned-byte','ordinary',ordinary_fixture(tbb=True,index=8,value=0x80)))
+ fixtures.append(('TBB-odd-byte','ordinary',ordinary_fixture(tbb=True,index=9,value=0x7F)))
  for label,EA,marker in [('unaligned',INSPECTION+1,'unaligned access'),('unmapped',0x18000000,'unmapped'),
                         ('wrap-zero',0,'unmapped'),('wrap-high',0xFFFFFFFE,'unmapped'),('past-SRAM',0x01C80000,'unmapped')]:
   fixture=ordinary_fixture(EA=EA);fixture[-1]['fatal_category']=marker
@@ -358,18 +359,18 @@ def main():
  CACHE.mkdir(parents=True,exist_ok=True);isa.CACHE=CACHE
  fixtures=make_fixtures();positives=[x for x in fixtures if x[1] in ('ordinary','conditional')]
  faults=[x for x in fixtures if x[1] not in ('ordinary','conditional')]
- assert len(positives)==55 and len(faults)==14
+ assert len(positives)==57 and len(faults)==12
  replay=None
  for name,category,fixture in positives:
   result=success_case(name,fixture)
   if name=='actual-0111-index8-value0056':replay=result
  generic_replay(*replay)
  for name,category,fixture in faults:fault_case(name,category,fixture)
- summary=dict(passed=True,instruction='exact compact TBH0110/FFF0',reference_compared_cases=55,
-  ordinary_reference_cases=37,balanced_conditional_cases=16,skipped_bad_table_read_cases=2,
-  generic_replays=1,model_fault_cases=14,table_read_faults_before_retirement=5,PC_guard_faults=2,
-  inherited_taken_exit_following_IF_faults=4,deferred_TBB_policy_faults=2,deferred_C111_classifier_faults=1,
-  separate_reference_policy_completions=9,reference_fatal_categories_without_CPU_snapshot=5,
+ summary=dict(passed=True,instruction='exact compact TBH0110/FFF0 and two scalar TBB0100 controls',reference_compared_cases=57,
+  ordinary_reference_cases=39,balanced_conditional_cases=16,skipped_bad_table_read_cases=2,
+  generic_replays=1,model_fault_cases=12,table_read_faults_before_retirement=5,PC_guard_faults=2,
+  inherited_taken_exit_following_IF_faults=4,deferred_TBB_policy_faults=0,deferred_C111_classifier_faults=1,
+  separate_reference_policy_completions=7,reference_fatal_categories_without_CPU_snapshot=5,
   private_reference_calls=69,private_original_primary_expected_full_matches=63,
   private_separately_characterized_C111_completion=1,private_fatal_categories=5,
   C111_original_count_mismatch=dict(primary_candidate=38,observed=53,retained=True),

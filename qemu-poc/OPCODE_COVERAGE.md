@@ -1,6 +1,123 @@
 # FM-1 QEMU known-firmware instruction gaps
 
-## Current production after Batch B (2026-10-08)
+## Current production after Batch C (2026-10-08)
+
+Ten exact scalar forms are admitted; EC20 remains deferred and E8A0 admission
+is confined to operand low12 zero. Static and bounded runtime results follow.
+
+| Revision | Admitted | Rejected | Known width gaps |
+| --- | ---: | ---: | ---: |
+| Accepted Batch B | 117,937 | 2,899 | 0 |
+| Batch C actual production | 118,062 | 2,774 | 0 |
+
+Fresh actual-production C extraction: 75 host static sanity and 72 unpadded short-context checks pass.
+Same 21 executable payloads / 120,836 confirmed sites: 125
+new admissions, zero regressions, 118,062
+admitted / 2,774 rejected, 0 known width gaps.
+39 identified saved-corpus forms / 44
+role rows remain;
+unchanged Felucca has 301 rejected static sites.
+Deferred EC20, compact RETS push 04C8 and unsigned parallel maximum mode0,
+71 opaque E53F regions / 12 complete raw patterns remain separate.
+E8A0 nonzero-operand packed-NE research remains explicitly unsupported;
+the opaque and additional research limits do not extend the counted corpus.
+Static admission establishes no reachability, frequency, performance or
+complete firmware compatibility. These are actual production-extraction counts;
+974 new sites are cumulative across A/B/C.
+
+Grouped Batch C admits ten exact scalar forms: E920 unsigned
+GE packed; E990 unsigned LT register; EC30 unsigned GT literal12; EC90
+unsigned LE register; ECA0 unsigned LE packed; ED20 signed GE packed;
+EE30 signed GT signed12; E8A0 register nonzero with operand low12 zero;
+FA00 register-mask-zero branch; and compact TBB0100. EC20 remains deferred.
+E990/EC90 retain canonical zero low operand byte. E8A0 nonzero operand low12
+remains an explicit fault. Existing packed expansion remains model policy.
+
+IF forms are four bytes and latch their comparison before the selected arm.
+THEN count is operand bits14:15+1; ELSE count is bits12:13. Existing arm
+scanning, parallel bundle counting, helper completion, nested/call/taken-exit
+limits and IRQ policy are preserved. FA00's low opcode nibble selects the left
+register and the next nibble selects the right; it compares their full 32-bit
+AND to zero and uses signed16 word displacement from PC+4. TBB reads one
+unsigned byte at uint32(PC+2+incoming GPR) and branches to
+uint32(PC+2+2*entry). Odd byte addresses are valid. Both preserve GPR/SPR,
+PSR/RETS and owned memory; table reads precede retirement and target-fetch
+faults follow it. No scanner-width change is required for these four/two-byte forms.
+
+Exact-primary gaps, packed-repeat disagreements, EC30 primary packed versus
+literal12 and EE30 signed12 authority are retained as qualified evidence.
+EC20's entire vendor-only form remains deferred: neither an exact primary
+constructor nor reference results establish sufficient general operand behavior.
+E8A0 nonzero-operand research indicates packed-NE behavior beyond the admitted
+zero-low12 subset. It remains a separate unsupported research limit and is
+not automatically an extra form in the frozen saved-corpus denominator.
+No firmware name, hash or guestPC selects production semantics. CPU/hardware
+bring-up remains the current priority; host UI/playback is outside this batch.
+Helpers, IRQs, devices, loader paths and stable capture/API schemas are fixed.
+
+Control research retains 657 copied-public-CLI records: 639 original full-state
+matches, nine independently explained completions and nine one-byte read fatal
+results. The nine completions are one observer-before-FA00 fixture, two
+ignored target guards, four nested IF completions and two final selected THEN
+CALL returns into ELSE. All 648 success expectations were independently
+constructed from finite layout; reference fatal CPU state is unavailable.
+The displacement -2 self-target fixture stops before FA00 executes and is
+explicitly excluded as evidence of selfbranch execution. Current QEMU model
+rejections remain separate from reference completion and hardware semantics.
+The focused control matrix has 661 fixtures; its QEMU gate uses existing cold
+captures and checks all 16 GPR/SPR, retirement, exact access stage and full SRAM.
+Two old TBH-gate TBB controls become positives with byte-identical images;
+all 69 legacy fixture byte identities and the C111 parallel rejection remain.
+
+IF research retains 9,861 copied-public-CLI records: 8,314 successes, 1,547
+fatals and zero timeouts. There are 6,770 complete original-model matches,
+160 packed-NE alternatives beyond E8A0's admitted zero operand and 1,384
+unadopted complete software contradictions. Fatal categories are 256
+mis-sized-displacement unsupported results, 256 scanner limits, 128 body
+faults and 907 unsupported EC20 cases. EC30 literal boundaries include 384
+full-state cases, 128 distinguishing the primary packed interpretation.
+Reference outcomes are software evidence; hardware and direct private
+predicate-state runtime capture remain unvalidated.
+Independent source/test review: approved combined source and focused tests in review/combined-source-tests-approval.json.
+Serialized build: one successful pinned QEMU 11.1.2 production build. Focused acceptance: all 9,776 cases passed: 8,544 successes and 1,232 precise model faults (9,115 IF and 661 control cases), with zero fresh reference launches.
+Twelve required/affected gates: all 12 passed against the accepted QEMU hash; gate-results.json retains exact commands and return codes.
+Copied CLI initial/affected counts: 10,518 initial finite calls (9,861 IF and 657 control), plus 1,393 actual regression calls including four approved new IF controls; the existing TBH gate remains 69 calls with byte-identical fixtures.
+All counts distinguish copied-reference research from focused QEMU acceptance
+and the later required/affected regression gates.
+
+Unchanged MAX 200,000,000 boot now stops at ED5C/23EA, PC 0x0200c17e,
+vendor instruction `r2 = h[++r14=58] (s)`, after 120,346,793 instructions /
+962,774,352 virtual ns. This advances 23,350 instructions / 186,800 virtual ns
+from Batch B's E99C/8D00 checkpoint. Next is planned group D's 18
+memory/update/RMW/bitmap forms, beginning with this signed halfword update
+load. EC20 and the other named deferred limits remain explicit faults.
+
+IRQ11 records 107 entries / 107 returns; IRQ63 records 5,364 / 5,364.
+ALNK records 112 completions, 107 acknowledgments, five coalesced completions,
+pending zero and zero nonzero words among all 57,344 captured sample words
+(28,672 frames). Debug observation is stage6/home1/uiFrames1; completed HOME
+remains unverified. Bootguard has pending1/failed0; no guard or watchdog fault
+is recorded. Synthesis, 30 guest seconds, physical input, native running and
+hardware validation remain incomplete.
+
+The renamed default-loader replay matches captured JSON except profile;
+LCD PPM and latest ALNK bytes are also byte-equal. Within each fixture/generic
+loader, B-to-C
+comparison records the same 23,350-instruction / 186,800-ns advance: CPU/device
+JSON and whole SRAM differ at the new checkpoint; LCD PPM and latest ALNK bytes
+remain equal. This records checkpoint progress without a full-state equality
+claim. Cross-loader whole SRAM is excluded. See observation.json,
+generic-replay-comparison.json and prior-milestone-comparison.json in the
+durable Batch C evidence directory.
+
+Durable evidence: main repo .deps/qemu-batch-c-2026-10-08/.
+Accepted translator SHA256: eaba7b300dac2e14dc8c45fa02822cbb2abd3dd682e7094d6d482d4c975907b3.
+Accepted QEMU SHA256: e21e9bfd9af98aca5697800f7f694a4f957ff1a52daf8aad6fbf6bf42b3f6a27.
+Public copied reference SHA256:
+c96ed8b21d73bd2934127b72f1a21f31d82acdb6a0792ec2b130852e478dec94.
+Acceptance status: source, one build, focused gates, twelve regression gates, actual static inventory and bounded fixture/generic replay verified; commit identity and signature verification belong to the final parent release record.
+
+## Accepted Batch B inventory (historical, 2026-10-08)
 
 **49 missing forms / 54 role rows remain.** Batch B admits all 15 reviewed
 six-byte scalar branch forms and fixes their exact scanner widths. On the

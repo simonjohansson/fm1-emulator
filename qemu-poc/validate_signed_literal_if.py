@@ -14,7 +14,7 @@ final THEN CALL with ELSE and final THEN FF0C with ELSE are model unsupported.
 Taken exits may retain predicate state and fault at a following IF after branch
 retirement; source inspection shows that retained state blocks IRQ admission.
 That limit is recorded with reference disagreement, not completion/IRQ proof.
-ED20 stays deferred. Hardware faults and undocumented predicate shadow state
+ED20 packed GE has two inherited-path positive controls. Hardware faults and undocumented predicate shadow state
 are unverified; no reference fault-state or ISA-invalid claim is made.
 """
 import hashlib
@@ -192,17 +192,38 @@ def fault_snapshot(name,guest,expected,stop,pc,count,reason,access,oracle=False)
     return directory,record
 
 
-def policy_fault(opcode):
-    name=f"deferred-exact-{opcode:04x}"
-    guest,expected=setup({4:0},seed=True)
-    pc,count=guest.pc,guest.instructions
-    guest.emit(opcode,0x4000)
-    guest.emit(0xE04D,0x3344)
-    directory,record=fault_snapshot(name,guest,expected,guest.pc,pc,count,
-        f"unsupported instruction 0x{opcode:04x}",{"address":pc,"size":4,"flags":2})
-    (directory/"run.json").write_text(json.dumps(record,indent=2)+"\n")
-    print(f"PASS {name}: deferred family remains model unsupported")
-
+def packed_ge_control(value,selected):
+    # ED24/5C00 is signed packed GE32768: two THEN and one ELSE.
+    # 32767/32768 discriminate packed32768 from signed12 C00=-1024.
+    name=f"admitted-packed-ge-{selected}"
+    guest,expected=setup({4:value},seed=True)
+    inspection=list(INITIAL_INSPECTION)
+    inspection[:3]=MARKERS
+    guest.emit(0xED24,0x5C00)
+    guest.emit(0xE048,0x1111)
+    guest.emit(0xE049,0x2222)
+    guest.emit(0xE049,0x3333)
+    validate.check((signed(value)>=32768)==selected,
+                   f"{name}: independent packed predicate fixture truth differs")
+    if selected:
+        expected[8]=0x1111
+        expected[9]=0x2222
+    else:
+        expected[9]=0x3333
+    # The next independent IF proves exact completion of the packed block.
+    guest.emit(0xE810,0)
+    guest.emit(0)
+    guest.emit(0)
+    image=save_image(name,guest)
+    state=isa.compare(name,image,guest.pc,limit=100)
+    skipped=1 if selected else 2
+    validate.check(state["pc"]==guest.pc and state["instructions"]==guest.instructions-skipped,
+                   f"{name}: packed arm selection, completion or retirement differs")
+    validate.check(state["registers"]==expected and state["specials"]==specials(),
+                   f"{name}: packed comparison, PSR or RETS effects differ")
+    validate.check(state["inspection"]==inspection,
+                   f"{name}: memory markers or neighboring words changed")
+    print(f"PASS {name}: admitted packed GE control and following IF")
 
 def inherited_fixture(kind):
     registers={4:0}
@@ -375,13 +396,14 @@ def main():
         result=success_case(**case)
         if case["name"]=="reached-True": replay=result
     generic_replay(*replay)
-    for opcode in (0xED24,): policy_fault(opcode)
+    for value,selected in ((32767,False),(32768,True)):
+        packed_ge_control(value,selected)
     for kind in ("nested","final-call","final-ff0c","taken-exit"): inherited_fault(kind)
     for stage in ("header","body"): guard_fault(stage)
     for kind in ("unaligned","unmapped","read-only","guarded"): store_fault(kind)
     summary={"passed":True,"instruction":"exact ED30/FFF0 signed12 GE IF",
-             "reference_compared_cases":len(cases),"generic_replays":1,"total_model_faults":11,
-             "deferred_families":1,"inherited_predicate_limits":4,"pc_guard_faults":2,
+             "reference_compared_cases":len(cases)+2,"generic_replays":1,"total_model_faults":10,
+             "deferred_families":0,"admitted_packed_ge_controls":2,"inherited_predicate_limits":4,"pc_guard_faults":2,
              "selected_body_access_faults":4,"primary_if_blob":"4ee88595bc41e98cd2d58bcdde90bc19f4c19a57",
              "primary_discrepancy":"unsigned imm1627 token; vendor and independent oracle establish signed12",
              "conditional_completion":"balanced nonnested arms verified; inherited control-transfer limits retained",
@@ -389,7 +411,7 @@ def main():
              "qemu_sha256":hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
              "hardware_validation":False,"hardware_fault_state_validation":False}
     (CACHE/"validation.json").write_text(json.dumps(summary,indent=2)+"\n")
-    print(f"PASS ED30: {len(cases)} reference comparisons, generic replay and eleven model faults")
+    print(f"PASS ED30: {len(cases)+2} reference comparisons, generic replay and ten model faults")
 
 
 if __name__=="__main__":

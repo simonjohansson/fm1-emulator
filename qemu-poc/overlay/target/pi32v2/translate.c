@@ -389,7 +389,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                (op & 0xfff0) == 0xec10 ||
                (op & 0xfff0) == 0xecb0 ||
                (op & 0xfff0) == 0xed30 || (op & 0xfff0) == 0xeeb0 ||
-               (op & 0xfff0) == 0xed10 || (op & 0xfff0) == 0xee90) {
+               (op & 0xfff0) == 0xed10 || (op & 0xfff0) == 0xee90 ||
+               (op & 0xfff0) == 0xe920 || (op & 0xfff0) == 0xe990 ||
+               (op & 0xfff0) == 0xec30 ||
+               (op & 0xfff0) == 0xec90 || (op & 0xfff0) == 0xeca0 ||
+               (op & 0xfff0) == 0xed20 || (op & 0xfff0) == 0xee30 ||
+               (op & 0xfff0) == 0xe8a0) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = (op >> 4) & 255;
         TCGv_i32 left = read_gpr(d, op & 15), right, result = tcg_temp_new_i32();
@@ -404,11 +409,32 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             tcg_gen_andi_i32(masked, left, packed_mask(x));
             left = masked; right = tcg_constant_i32(0);
             cond = kind == 0xa2 ? TCG_COND_EQ : TCG_COND_NE;
-        } else if (kind == 0x81 || kind == 0x89 || kind == 0x91 || kind == 0xc1) {
+        } else if (kind == 0x92 || kind == 0xca || kind == 0xd2) {
+            /* E920/ED20 have pinned packed constructors. Saved vendor
+             * ECA1/0980 and complete-state oracle cases establish packed LE.
+             * Preserve the existing repeated-byte expansion policy. */
+            right = tcg_constant_i32(packed_mask(x));
+            cond = kind == 0x92 ? TCG_COND_GEU :
+                   kind == 0xca ? TCG_COND_LEU : TCG_COND_GE;
+        } else if (kind == 0x8a) {
+            /* Vendor E8A3/9000 and complete-state zero-operand cases
+             * establish nonzero IF. Other operands select packed NE in the
+             * oracle; that separate operand form remains unsupported. */
+            if (x & 4095) { goto illegal; }
+            right = tcg_constant_i32(0); cond = TCG_COND_NE;
+        } else if (kind == 0xc3 || kind == 0xe3) {
+            /* Full-state literal boundaries establish EC30 unsigned12,
+             * contradicting the primary packed constructor. Vendor EE30/6FFF
+             * and signed-boundary cases establish > -1; primary is absent. */
+            right = tcg_constant_i32(kind == 0xe3 ? sext(x & 4095, 12) : x & 4095);
+            cond = kind == 0xe3 ? TCG_COND_GT : TCG_COND_GTU;
+        } else if (kind == 0x81 || kind == 0x89 || kind == 0x91 || kind == 0xc1 ||
+                   kind == 0x99 || kind == 0xc9) {
             if (x & 255) { goto illegal; }
             right = read_gpr(d, (x >> 8) & 15);
             cond = kind == 0x81 ? TCG_COND_EQ : kind == 0x89 ? TCG_COND_NE :
-                   kind == 0x91 ? TCG_COND_GEU : TCG_COND_GTU;
+                   kind == 0x91 ? TCG_COND_GEU : kind == 0xc1 ? TCG_COND_GTU :
+                   kind == 0x99 ? TCG_COND_LTU : TCG_COND_LEU;
         } else if (kind == 0xd1) {
             /* Admit the constructor's canonical zero low byte. */
             if (x & 255) { goto illegal; }
@@ -847,12 +873,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_andi_i32(masked, read_gpr(d, op & 15), 1u << (x >> 11));
         next = here + 4;
         count(d); branch(d, next + sext(x & 511, 9) * 2, next, masked, x & 512);
-    } else if ((op & 0xff00) == 0xfb00) {
+    } else if ((op & 0xff00) == 0xfa00 || (op & 0xff00) == 0xfb00) {
         int32_t delta = (int16_t)fetch(d, here + 2) * 2;
         TCGv_i32 masked = tcg_temp_new_i32();
         tcg_gen_and_i32(masked, read_gpr(d, op & 15), read_gpr(d, (op >> 4) & 15));
         next = here + 4;
-        count(d); branch(d, next + delta, next, masked, true);
+        count(d); branch(d, next + delta, next, masked, (op & 0x0100) != 0);
     } else if (op == 0xff60 || op == 0xff61) {
         uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
         TCGv_i32 masked = tcg_temp_new_i32();
@@ -976,10 +1002,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (kind == 0x31 || kind >= 0x3a) { immediate = sext(immediate, 10); }
         count(d); compare_branch(d, next + sext(x & 511, 9) * 2, next, cond,
                                  read_gpr(d, op & 15), tcg_constant_i32(immediate));
-    } else if ((op & 0xfff0) == 0x0110) {
+    } else if ((op & 0xfff0) == 0x0100 || (op & 0xfff0) == 0x0110) {
         TCGv_i32 addr = tcg_temp_new_i32(), target = tcg_temp_new_i32();
         tcg_gen_addi_i32(addr, read_gpr(d, op & 15), next);
-        load(d, target, addr, MO_LEUW | MO_ALIGN);
+        load(d, target, addr, (op & 0x0010) ? MO_LEUW | MO_ALIGN : MO_UB);
         tcg_gen_shli_i32(target, target, 1);
         tcg_gen_addi_i32(target, target, next);
         count(d); dynamic_jump(d, target);
