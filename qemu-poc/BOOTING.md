@@ -1883,7 +1883,7 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_preindexed_unsigned_halfword_immediate.py
 ```
 
-### compact unsigned halfword load tails in parallel bundles and latest checkpoint
+### compact unsigned halfword load tails in parallel bundles checkpoint
 
 The shared parallel destination classifier admits compact unsigned
 halfword loads matching `(op & 0xe088) == 0x6008`, with destination mask
@@ -1955,7 +1955,7 @@ ms. All 55,296 captured sample words are zero. Completed HOME, synthesis,
 sustained 30 seconds, physical-input acceptance and native execution remain
 unverified.
 
-Latest stop: 0111 (TBH) at `0x02009bbc`, 117,606,322
+At this milestone: 0111 (TBH) at `0x02009bbc`, 117,606,322
 instructions and 940,850,584 ns. After the F040/0165 + 624A compact unsigned halfword tail is admitted,
 unchanged firmware advances 4,949 instructions to the compact 0111 TBH
 instruction at `0x02009bbc` during HOME drawing. Exact compact table-branch
@@ -1969,6 +1969,54 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_compact_unsigned_halfword.py
+```
+
+### compact table halfword branch and latest checkpoint
+
+The scalar TBH family uses exact mask `(op & 0xfff0) == 0x0110`.
+Low four bits select any of 16 ordinary GPRs as an unscaled byte index.
+An unsigned LE16 entry is read at wrapping PC+2+incoming index; the target
+is wrapping PC+2+(entry << 1). GPRs, PSR and RETS are preserved.
+
+Pinned primary evidence supports these fields and effects. Prior 0111/r1=8
+selects entry 0056 at `0x02009bc6` and target `0x02009c6a`. Seven scalar lines
+read before retirement, then use existing count/dynamic-jump handling.
+Helpers, prefix/scanner, parallel classifier, predicate, IRQ, devices,
+schemas and all old validators remain unchanged.
+
+Saved research has 69 calls: 55 canonical matches plus four taken-exit,
+two TBB and two PC-policy completions give 63 original expected matches.
+Five fatal read categories expose no CPU fault state. C111 originally
+retired 53 versus predicted 38; one separate full-state characterization
+reuses that record, giving 64 full completions. The retained mismatch and
+extra 15 NOPs fit a sequential walk, without path or hardware proof.
+
+Independent source/validator review and all seven parent gates pass.
+The focused gate passes 55 supported cases, one generic replay and 14 faults:
+five reads, two PC stages, four inherited exit/following-IF limits, two TBB
+neighbors and one C111 deferral. Taken-exit references complete; model IF
+faults follow TBH retirement under unchanged predicate policy. Alignment is
+sampled MO_ALIGN model policy; true top-PC wrap execution is unverified.
+Every fixture uses MAX 100; positive QEMU/reference processes each allow
+60 seconds, faults/generic and copied research 15 seconds per process.
+The validator has no internal aggregate deadline. Full detail is in evidence.
+
+Unchanged boot under MAX 200,000,000 advances 804,786 instructions to
+E9DC/7034 at `0x0200a104`, 118,411,108 instructions and 947,288,872 ns.
+Debug stage 4/home 1/frame 1 and visible idle LCD do not prove completed HOME.
+Renamed generic captured state except profile and exact PPM/latest ALNK
+agree; whole SRAM is excluded. All 55,808 captured sample words are zero.
+Completed HOME, 30 guest seconds, physical input, synthesis and native
+execution still require separate acceptance. No hardware proof is claimed.
+
+Latest stop: E9DC/7034 at `0x0200a104`, 118,411,108
+instructions and 947,288,872 ns. The unchanged bounded run advances 804,786 instructions beyond 0111 TBH to E9DC/7034, an unsigned SP-relative byte load reached during unfinished HOME bring-up. Debug stage 4/home 1/frame 1, 947 guest milliseconds and 475 scans do not establish completed HOME. The LCD is visible and idle; all 55,808 captured audio sample words are zero. Renamed generic replay agrees on captured state except profile and exact PPM/latest ALNK bytes; whole SRAM is excluded.
+Caches use `after-table-halfword-branch` and its `-generic` label; main repo
+`.deps/qemu-table-halfword-branch-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 104/104; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_table_halfword_branch.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

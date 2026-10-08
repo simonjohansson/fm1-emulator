@@ -503,6 +503,20 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   timing assertion are retained without a guest rerun. Evidence:
   `.deps/qemu-parallel-compact-unsigned-halfword-2026-10-08/`.
 
+- 2026-10-08: Stage 3 compact table halfword branch complete and
+  independently reviewed. Exact scalar 0110/fff0 selects all 16 ordinary
+  GPR indices, unsigned LE16 entries and wrapping PC+2-relative table
+  addresses/targets; only seven scalar lines are added. All seven gates pass,
+  including 55 supported cases, one generic replay and 14 modeled faults.
+  The 69 saved research calls retain 63 original matches, one separate C111
+  characterization and five fatal categories; no parallel/hardware proof.
+  Unchanged MAX 200,000,000 boot advances 804,786 instructions to E9DC/7034
+  at `0x0200a104`, 118,411,108 instructions and 947,288,872 ns. Renamed
+  generic captured state except profile and exact PPM/latest ALNK agree;
+  whole SRAM is excluded. LCD is visible and idle, while completed HOME and
+  synthesis remain unverified. Next is narrow E9DC primary/reference research.
+  Evidence: `.deps/qemu-table-halfword-branch-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -629,7 +643,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is 0111 compact table branch (TBH), recorded below.
+  latest firmware blocker is E9DC unsigned SP-relative byte load, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -639,34 +653,62 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: 0111 compact table branch (TBH)
+## Current firmware blocker: E9DC unsigned SP-relative byte load
 
-Latest unchanged boot: `.cache/felucca-validation/after-parallel-compact-unsigned-halfword/`.
-After the F040/0165 + 624A compact unsigned halfword tail is admitted,
-unchanged firmware advances 4,949 instructions to the compact 0111 TBH
-instruction at `0x02009bbc` during HOME drawing. Exact compact table-branch
-semantics remain the next read-only research scope. Captured debug stage is
-4 with home=1 and ui_frames=1, but the LCD is busy; this is an unfinished
-HOME draw, not a completed frame. Guest ms=940, scan frames=470, bootguard
-failed=0/pending=1 and all captured audio sample words remain zero.
+Latest unchanged boot: `.cache/felucca-validation/after-table-halfword-branch/`.
+The unchanged bounded run advances 804,786 instructions beyond 0111 TBH to E9DC/7034, an unsigned SP-relative byte load reached during unfinished HOME bring-up. Debug stage 4/home 1/frame 1, 947 guest milliseconds and 475 scans do not establish completed HOME. The LCD is visible and idle; all 55,808 captured audio sample words are zero. Renamed generic replay agrees on captured state except profile and exact PPM/latest ALNK bytes; whole SRAM is excluded.
 
-- PC `0x02009bbc`, words `0111 (TBH)`.
-- Instructions 117,606,322; virtual time 940,850,584 ns.
-- IRQ11 entries/returns 103/103;
-  IRQ63 entries/returns 5175/5175.
-- ALNK completions 108, acknowledgments 103,
+- PC `0x0200a104`, words `E9DC/7034`.
+- Instructions 118,411,108; virtual time 947,288,872 ns.
+- IRQ11 entries/returns 104/104;
+  IRQ63 entries/returns 5232/5232.
+- ALNK completions 109, acknowledgments 104,
   coalesced 5, pending `0x0`;
-  55,296 captured sample words, 0 nonzero.
-- LCD visible=True, busy=True; guard debug message
+  55,808 captured sample words, 0 nonzero.
+- LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
-  Audio and timer service return successfully. HOME is still an unfinished
-draw: debug stage4/home1/frame1, LCD busy=true and bootguard pending=1 at
-940 guest ms. The captured 55,296 sample words are all zero; synthesis,
-completed HOME, sustained 30 seconds and physical-input acceptance remain
-unverified.
-- QEMU SHA-256: `8c4da2d66feed486d53607c7034a381f59a376b9e5eaf01c999cdbb46811fb24`.
-- Generic replay: `after-parallel-compact-unsigned-halfword-generic`.
-- Durable evidence: main repo `.deps/qemu-parallel-compact-unsigned-halfword-2026-10-08/`.
+  Audio and timer entries/returns are 104/104 and 5,232/5,232; bootguard failed=0, pending=1. Completed HOME and synthesis remain unverified despite the visible idle LCD.
+- QEMU SHA-256: `7b2b514e5d9a76e9952cb81cbdf70a002825dba94d44c295603a914a151a20fe`.
+- Generic replay: `after-table-halfword-branch-generic`.
+- Durable evidence: main repo `.deps/qemu-table-halfword-branch-2026-10-08/`.
+
+### Resolved compact table halfword branch
+
+The scalar TBH family uses exact mask `(op & 0xfff0) == 0x0110`.
+Low four bits select any of 16 ordinary GPRs as an unscaled byte index.
+An unsigned LE16 entry is read at wrapping PC+2+incoming index; the target
+is wrapping PC+2+(entry << 1). GPRs, PSR and RETS are preserved.
+
+Pinned primary evidence supports these fields and effects. Prior 0111/r1=8
+selects entry 0056 at `0x02009bc6` and target `0x02009c6a`. Seven scalar lines
+read before retirement, then use existing count/dynamic-jump handling.
+Helpers, prefix/scanner, parallel classifier, predicate, IRQ, devices,
+schemas and all old validators remain unchanged.
+
+Saved research has 69 calls: 55 canonical matches plus four taken-exit,
+two TBB and two PC-policy completions give 63 original expected matches.
+Five fatal read categories expose no CPU fault state. C111 originally
+retired 53 versus predicted 38; one separate full-state characterization
+reuses that record, giving 64 full completions. The retained mismatch and
+extra 15 NOPs fit a sequential walk, without path or hardware proof.
+
+Independent source/validator review and all seven parent gates pass.
+The focused gate passes 55 supported cases, one generic replay and 14 faults:
+five reads, two PC stages, four inherited exit/following-IF limits, two TBB
+neighbors and one C111 deferral. Taken-exit references complete; model IF
+faults follow TBH retirement under unchanged predicate policy. Alignment is
+sampled MO_ALIGN model policy; true top-PC wrap execution is unverified.
+Every fixture uses MAX 100; positive QEMU/reference processes each allow
+60 seconds, faults/generic and copied research 15 seconds per process.
+The validator has no internal aggregate deadline. Full detail is in evidence.
+
+Unchanged boot under MAX 200,000,000 advances 804,786 instructions to
+E9DC/7034 at `0x0200a104`, 118,411,108 instructions and 947,288,872 ns.
+Debug stage 4/home 1/frame 1 and visible idle LCD do not prove completed HOME.
+Renamed generic captured state except profile and exact PPM/latest ALNK
+agree; whole SRAM is excluded. All 55,808 captured sample words are zero.
+Completed HOME, 30 guest seconds, physical input, synthesis and native
+execution still require separate acceptance. No hardware proof is claimed.
 
 ### Resolved compact unsigned halfword load tails in parallel bundles
 
@@ -1608,15 +1650,14 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign read-only research of reached 0111 TBH at `0x02009bbc` to the
-   CPU worker. Establish the exact compact table-branch constructor, operand
-   fields, incoming table address/index, entry width/scaling, target base,
-   alignment, flags/count and fault phases from pinned primary evidence and
-   saved separate-reference probes. Inspect the current scalar/control-flow
-   pattern before proposing the narrow reached-family change. Keep adjacent
-   encodings and unresolved table/target faults explicit; preserve existing
-   prefix/scanner/predicate/IRQ and public boundaries. Review raw evidence,
-   design, source and focused gate before any accepted implementation.
+2. Assign read-only research of reached E9DC/7034 at `0x0200a104` to the
+   CPU worker. Establish the exact unsigned SP-relative byte-load constructor,
+   operand fields, SP identity, offset scaling, access width, extension,
+   writeback/flags/count and fault phases from pinned primary evidence and
+   saved separate-reference probes. Compare the existing E9DE pattern before
+   proposing the narrow reached-family change. Preserve adjacent encodings,
+   helpers, prefix/scanner/predicate/IRQ and public boundaries. Review raw
+   evidence, design, source and focused gate before implementation.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.

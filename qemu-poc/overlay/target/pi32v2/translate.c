@@ -894,6 +894,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (kind == 0x31 || kind >= 0x3a) { immediate = sext(immediate, 10); }
         count(d); compare_branch(d, next + sext(x & 511, 9) * 2, next, cond,
                                  read_gpr(d, op & 15), tcg_constant_i32(immediate));
+    } else if ((op & 0xfff0) == 0x0110) {
+        TCGv_i32 addr = tcg_temp_new_i32(), target = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, read_gpr(d, op & 15), next);
+        load(d, target, addr, MO_LEUW | MO_ALIGN);
+        tcg_gen_shli_i32(target, target, 1);
+        tcg_gen_addi_i32(target, target, next);
+        count(d); dynamic_jump(d, target);
     } else if ((op & 0xfff0) == 0x00c0) {
         set_call_return(d, next);
         count(d); dynamic_jump(d, read_gpr(d, op & 15));
