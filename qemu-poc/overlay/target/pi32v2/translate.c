@@ -696,6 +696,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (x & 1) { store(d, read_gpr(d, x >> 12), addr, MO_LEUW | MO_ALIGN); }
         else { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
         next = here + 4;
+    } else if (op == 0xe9dc) {
+        uint16_t x = fetch(d, here + 2);
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, spr[SP], x & 4095);
+        load(d, gpr[x >> 12], addr, MO_UB);
+        next = here + 4;
     } else if (op == 0xe9de) {
         uint16_t x = fetch(d, here + 2);
         TCGv_i32 addr = tcg_temp_new_i32();

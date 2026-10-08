@@ -1971,7 +1971,7 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_compact_unsigned_halfword.py
 ```
 
-### compact table halfword branch and latest checkpoint
+### compact table halfword branch checkpoint
 
 The scalar TBH family uses exact mask `(op & 0xfff0) == 0x0110`.
 Low four bits select any of 16 ordinary GPRs as an unscaled byte index.
@@ -2009,7 +2009,7 @@ agree; whole SRAM is excluded. All 55,808 captured sample words are zero.
 Completed HOME, 30 guest seconds, physical input, synthesis and native
 execution still require separate acceptance. No hardware proof is claimed.
 
-Latest stop: E9DC/7034 at `0x0200a104`, 118,411,108
+At this milestone: E9DC/7034 at `0x0200a104`, 118,411,108
 instructions and 947,288,872 ns. The unchanged bounded run advances 804,786 instructions beyond 0111 TBH to E9DC/7034, an unsigned SP-relative byte load reached during unfinished HOME bring-up. Debug stage 4/home 1/frame 1, 947 guest milliseconds and 475 scans do not establish completed HOME. The LCD is visible and idle; all 55,808 captured audio sample words are zero. Renamed generic replay agrees on captured state except profile and exact PPM/latest ALNK bytes; whole SRAM is excluded.
 Caches use `after-table-halfword-branch` and its `-generic` label; main repo
 `.deps/qemu-table-halfword-branch-2026-10-08/` retains primary/reference evidence and acceptance.
@@ -2017,6 +2017,54 @@ Audio IRQ11 entries/returns 104/104; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_table_halfword_branch.py
+```
+
+### unsigned SP-relative byte load and latest checkpoint
+
+Exact scalar E9DC loads an unsigned byte relative to special SP.
+Extension high four bits select any of 16 ordinary GPR destinations; low
+12 bits are an unsigned, unscaled offset from 0 through 4,095. The address
+wraps incoming special SP plus offset; the byte is zero extended.
+Special SP, PSR, RETS and memory have no primary writes.
+
+Pinned primary evidence directly supplies the constructor and fields.
+Prior E9DC/7034 selects r7, offset 52, special SP `0x01c79cec` and byte 67
+at `0x01c79d20`. Six scalar lines implement the exact load. All other CPU
+paths, helpers, scanner, classifier, predicate, IRQ and schemas stay fixed.
+
+Saved research has 70 calls: 61 canonical plus three policy/deferred full
+matches and six categorized fatal read-one results, with no mismatch.
+Coverage includes all destinations, low-12 bits, byte positions, unsigned
+data, SP/PSR boundaries, read permissions, XIP and conditional paths.
+Fatal reference results expose no CPU fault state or hardware ordering.
+Six modeled reads fault before effects; one full-fetch-four PC span rejects
+before data/count. Signed E9DD and genuine C000/E9DC tails stay deferred
+before effects despite full reference completions.
+
+Only obsolete E9DC rejection/wording/count metadata in the byte-store gate
+retires. Its 78 positives and one generic replay stay; faults fall ten to
+nine, deferred neighbors two to one, policy completions three to two.
+Preservation review fixes E9DD, other fixtures and unrelated functions.
+Independent exact three-file review, build and all seven parent gates pass.
+The new focused gate passes 61 supported, one generic replay and nine faults.
+Each fixture MAX 100; positive QEMU/reference processes each allow 60 seconds,
+fault/generic/research processes 15 seconds. No internal suite deadline.
+
+Unchanged MAX 200,000,000 boot advances 1,906,331 instructions to EE94/5500
+at `0x0200bbfc`, 120,317,439 instructions and 962,539,520 ns. Debug stage 5,
+home 1/frame 1 and visible idle LCD do not prove completed HOME. Renamed
+generic captured state except profile and exact PPM/latest ALNK bytes agree;
+whole SRAM is excluded. All 57,344 captured sample words are zero. HOME,
+30 guest seconds, physical input, synthesis and native running need acceptance.
+
+Latest stop: EE94/5500 at `0x0200bbfc`, 120,317,439
+instructions and 962,539,520 ns. The unchanged MAX 200,000,000 capture advances 1,906,331 instructions beyond E9DC to EE94/5500, a signed register <= IF reached during unfinished HOME bring-up. Debug stage 5/home 1/frame 1, 962 guest milliseconds and 487 scans do not establish completed HOME. The LCD is visible and idle; all 57,344 captured sample words are zero. Renamed generic state except profile and exact PPM/latest ALNK agree; whole SRAM is excluded.
+Caches use `after-sp-relative-byte-load` and its `-generic` label; main repo
+`.deps/qemu-sp-relative-byte-load-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 107/107; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_sp_relative_byte_load.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

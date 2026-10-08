@@ -5,7 +5,7 @@
 Pinned Apache stack:421-424 and vendor E9DE/814A establish low8 of GPR8
 stored at special SP+330. All low12 operand bits form an unsigned byte
 offset; high4 select one ordinary GPR. Bit0 is offset data, not direction,
-and loads E9DC/E9DD are separate deferred opcodes.
+and signed load E9DD is a separate deferred opcode.
 The store changes neither SP nor GPR/PSR/RETS and accepts odd byte addresses.
 Focused tests check every source field, offset boundaries, byte truncation,
 neighbors, last SRAM byte, unmapped incoming SP with legal computed address,
@@ -339,7 +339,7 @@ def main():
                reason="CPU write intersects an enabled guest guard window")
     fault_case("PC-guard", guard="pc", reason="guest PC lies outside both configured guard windows",
                reference_kind="pc-policy")
-    for opcode in (0xE9DC, 0xE9DD):
+    for opcode in (0xE9DD,):
         fault_case(f"deferred-{opcode:04x}", opcode=opcode, reference_kind="neighbor")
     fault_case("unverified-e9df", opcode=0xE9DF, reference_kind="unsupported")
     summary = {"passed": True, "instruction": "exact E9DE unsigned SP-relative byte store",
@@ -347,18 +347,18 @@ def main():
                "reached_encoding_cases": 1, "boundary_cases": 3,
                "balanced_conditional_cases": 8, "skipped_access_cases": 2,
                "generic_replays": 1, "data_access_faults": 6, "pc_guard_faults": 1,
-               "deferred_neighbor_faults": 2, "unverified_neighbor_faults": 1,
-               "total_model_faults": 10, "reference_valid_model_fault_completions": 3,
+               "deferred_neighbor_faults": 1, "unverified_neighbor_faults": 1,
+               "total_model_faults": 9, "reference_valid_model_fault_completions": 2,
                "primary_stack_blob": "6efa433503fa134bac981a20ebd33cdc09cfe82e",
                "all_low12_operand_bits_unsigned_byte_offset": True,
-               "SP_GPR_PSR_RETS_unchanged": True, "E9DC_DD_deferred": True,
+               "SP_GPR_PSR_RETS_unchanged": True, "E9DD_deferred": True,
                "pc_guard_reference_completes_model_policy_difference": True,
                "successful_address_wrap_not_observed": True,
                "qemu_sha256": hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
                "hardware_validation": False, "hardware_fault_state_validation": False,
                "reference_fault_state_available": False}
     (CACHE / "validation.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print(f"PASS SP-relative byte store: {len(cases) + 14} oracle positives, generic and 10 model faults")
+    print(f"PASS SP-relative byte store: {len(cases) + 14} oracle positives, generic and 9 model faults")
 
 
 if __name__ == "__main__":
