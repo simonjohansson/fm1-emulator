@@ -532,6 +532,21 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   unverified. Next is narrow signed register <= IF primary/reference research.
   Evidence: `.deps/qemu-sp-relative-byte-load-2026-10-08/`.
 
+- 2026-10-08: Stage 3 exact signed register <= IF complete and independently
+  reviewed. EE90/FFF0 canonical low-byte-zero admission and dedicated E9 signed
+  comparison preserve ED10, common helpers and all old gates. Saved 137-call
+  research retains 129 original matches, four separate inherited completions
+  and four fatal write markers; reference CPU fault state is unavailable.
+  All seven gates pass, including 117 supported + one generic + 20 model
+  faults. Unchanged MAX 200,000,000 advances 5,993 instructions to
+  F070/4600 + 6247 at `0x0200a2d0`, 120,323,432 instructions and 962,587,464 ns.
+  Renamed captured JSON except profile and exact PPM/latest ALNK agree;
+  whole SRAM is excluded. HOME and synthesis remain unverified. Next work
+  inventories all known source firmware opcode families/counts offline and
+  plans grouped generic implementation batches. Host artifact copy/path
+  corrections are preserved separately from successful build/guest acceptance.
+  Evidence: `.deps/qemu-signed-register-le-if-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -658,7 +673,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is EE94 signed register <= IF, recorded below.
+  latest firmware blocker is F070 byte-reversal parallel head, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -668,13 +683,13 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: EE94 signed register <= IF
+## Current firmware blocker: F070 byte-reversal parallel head
 
-Latest unchanged boot: `.cache/felucca-validation/after-sp-relative-byte-load/`.
-The unchanged MAX 200,000,000 capture advances 1,906,331 instructions beyond E9DC to EE94/5500, a signed register <= IF reached during unfinished HOME bring-up. Debug stage 5/home 1/frame 1, 962 guest milliseconds and 487 scans do not establish completed HOME. The LCD is visible and idle; all 57,344 captured sample words are zero. Renamed generic state except profile and exact PPM/latest ALNK agree; whole SRAM is excluded.
+Latest unchanged boot: `.cache/felucca-validation/after-signed-register-le-if/`.
+The unchanged MAX 200,000,000 capture advances 5,993 instructions beyond EE94 to F070/4600 + 6247 at the current unsupported bundle stop. Vendor disassembly describes r4=rev8(r6) in the extended head with r7=[r4+8] in a compact word-load tail; exact primary/role classification belongs to the ongoing offline inventory. Stage 5/home 1/frame 1 and visible idle LCD do not prove completed HOME. Renamed captured JSON state except profile and exact PPM/latest ALNK data agree; whole SRAM is excluded and all 57,344 captured sample words are zero.
 
-- PC `0x0200bbfc`, words `EE94/5500`.
-- Instructions 120,317,439; virtual time 962,539,520 ns.
+- PC `0x0200a2d0`, words `F070/4600 + 6247`.
+- Instructions 120,323,432; virtual time 962,587,464 ns.
 - IRQ11 entries/returns 107/107;
   IRQ63 entries/returns 5362/5362.
 - ALNK completions 112, acknowledgments 107,
@@ -682,10 +697,49 @@ The unchanged MAX 200,000,000 capture advances 1,906,331 instructions beyond E9D
   57,344 captured sample words, 0 nonzero.
 - LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
-  Audio and timer entries/returns are 107/107 and 5,362/5,362; bootguard failed=0, pending=1. Completed HOME and synthesis remain unverified despite the visible idle LCD.
-- QEMU SHA-256: `3bc0a0594c9ea2bece8e712bb5814a1e37455fbd4ca20aad3ab62a9250d4de46`.
-- Generic replay: `after-sp-relative-byte-load-generic`.
-- Durable evidence: main repo `.deps/qemu-sp-relative-byte-load-2026-10-08/`.
+  Audio/timer entries and returns are 107/107 and 5,362/5,362; bootguard failed=0, pending=1. Completed HOME and synthesis remain unverified despite the visible idle LCD.
+- QEMU SHA-256: `2a05c3ae0571a81b59745dc8d15adefa60a1b88c83750deda60785e6026fc817`.
+- Generic replay: `after-signed-register-le-if-generic`.
+- Durable evidence: main repo `.deps/qemu-signed-register-le-if-2026-10-08/`.
+
+### Resolved signed register <= IF
+
+Exact EE90/FFF0 compares ordinary GPRs with signed <=. Head low four bits
+select left; extension bits 8..11 select right, with primary low byte zero.
+Extension bits 14..15 plus one give THEN 1..4; bits 12..13 give ELSE 0..3.
+The IF has no primary PSR writes; selected body instructions may set flags.
+
+Pinned primary evidence supports the fields. Prior EE94/5500 compares
+r4=0 with r5=1500 and selects NEG/SMAX over an ELSE move. NEG flags and
+SMAX preservation are body behavior. A dedicated E9 path admits canonical
+EE90; ED10 sibling, helpers, scanner, classifier and predicate/IRQ stay fixed.
+
+Saved 137-call research retains 129 original expected matches: 117 canonical,
+ten ignored-low-byte and two PC-policy completions. Four inherited full
+completions are separately characterized without fresh calls; four fatal
+write-four categories expose no CPU snapshot or hardware fault ordering.
+Primary-backed zero-byte admission differs from ten reference completions.
+Nested/final CALL/final FF0C/taken-exit limits remain explicit. Common NOR/
+unmapped diagnostics use controlled EA labels, without distinct-text claims.
+
+Independent exact source/validator review, build and all seven gates pass.
+The focused gate passes 117 supported, one generic replay and 20 model faults:
+ten low-byte, four inherited, two PC-guard and four selected-write faults.
+All old validators and shared boundaries remain unchanged. Each fixture
+uses MAX 100; positive processes each allow 60 seconds and fault/generic/
+copied-research processes 15 seconds. Parent runner deadlines are separate.
+
+Unchanged MAX 200,000,000 boot advances 5,993 instructions to F070/4600+6247
+at `0x0200a2d0`, 120,323,432 instructions and captured 962,587,464 ns.
+Vendor disassembly describes a byte-reversal head plus compact word-load tail.
+Stage 5/home 1/frame 1 and visible idle LCD do not prove completed HOME.
+Renamed captured JSON except profile and exact PPM/latest ALNK data agree;
+whole SRAM is excluded. All 57,344 captured sample words are zero. Completed
+HOME, 30 guest seconds, physical input, synthesis and native running stay open.
+
+Next work inventories all known source firmware encodings/counts offline and
+groups generic implementation candidates into independently reviewed batches.
+Full model-policy and host artifact-recording qualifications remain in evidence.
 
 ### Resolved unsigned SP-relative byte load
 
@@ -1703,17 +1757,18 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign read-only research of reached EE94/5500 at `0x0200bbfc` to the
-   CPU worker. Establish the exact signed register comparison constructor,
-   operand fields, conditional lengths/roles, flags/count and fault phases
-   from pinned primary evidence and saved separate-reference probes. Inspect
-   the existing signed register IF pattern before proposing the narrow reached
-   family change. Preserve adjacent encodings, helpers, prefix/scanner,
-   predicate/IRQ and public boundaries. Review raw evidence, design, source
-   and focused gate before implementation.
-3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
-   repeat unchanged bounded boot under a new label and renamed generic replay.
-   Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
+2. Build a read-only instruction inventory across all known source firmware
+   artifacts, with encoding/family counts, supported/unsupported/uncertain
+   classifications and scalar/parallel roles. Reconcile current F070/4600 +
+   6247 with exact primary constructors and the generic CPU coverage inventory.
+   Use the counts and role evidence to plan grouped generic implementation
+   batches. Review each batch's primary/reference evidence, scope, source and
+   focused/regression/unchanged-firmware acceptance before implementation,
+   preserving helpers, scanner, predicate/IRQ and stable public boundaries.
+3. Obtain independent review for each proposed generic batch; build and run
+   focused/regression ISA/profile/IRQ gates, then repeat unchanged bounded
+   firmware acceptance and renamed generic replay. Commit only validated
+   batch changes and update the inventory with verified coverage/results.
 4. Continue controller lifecycle extraction when reached behavior needs it,
    preserving canonical shared words, register-driven configurations and
    unaffected controllers. Whole-machine reset requires all components.

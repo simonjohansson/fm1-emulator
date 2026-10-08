@@ -2019,7 +2019,7 @@ Audio IRQ11 entries/returns 104/104; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_table_halfword_branch.py
 ```
 
-### unsigned SP-relative byte load and latest checkpoint
+### unsigned SP-relative byte load checkpoint
 
 Exact scalar E9DC loads an unsigned byte relative to special SP.
 Extension high four bits select any of 16 ordinary GPR destinations; low
@@ -2057,7 +2057,7 @@ generic captured state except profile and exact PPM/latest ALNK bytes agree;
 whole SRAM is excluded. All 57,344 captured sample words are zero. HOME,
 30 guest seconds, physical input, synthesis and native running need acceptance.
 
-Latest stop: EE94/5500 at `0x0200bbfc`, 120,317,439
+At this milestone: EE94/5500 at `0x0200bbfc`, 120,317,439
 instructions and 962,539,520 ns. The unchanged MAX 200,000,000 capture advances 1,906,331 instructions beyond E9DC to EE94/5500, a signed register <= IF reached during unfinished HOME bring-up. Debug stage 5/home 1/frame 1, 962 guest milliseconds and 487 scans do not establish completed HOME. The LCD is visible and idle; all 57,344 captured sample words are zero. Renamed generic state except profile and exact PPM/latest ALNK agree; whole SRAM is excluded.
 Caches use `after-sp-relative-byte-load` and its `-generic` label; main repo
 `.deps/qemu-sp-relative-byte-load-2026-10-08/` retains primary/reference evidence and acceptance.
@@ -2065,6 +2065,55 @@ Audio IRQ11 entries/returns 107/107; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_sp_relative_byte_load.py
+```
+
+### signed register <= IF and latest checkpoint
+
+Exact EE90/FFF0 compares ordinary GPRs with signed <=. Head low four bits
+select left; extension bits 8..11 select right, with primary low byte zero.
+Extension bits 14..15 plus one give THEN 1..4; bits 12..13 give ELSE 0..3.
+The IF has no primary PSR writes; selected body instructions may set flags.
+
+Pinned primary evidence supports the fields. Prior EE94/5500 compares
+r4=0 with r5=1500 and selects NEG/SMAX over an ELSE move. NEG flags and
+SMAX preservation are body behavior. A dedicated E9 path admits canonical
+EE90; ED10 sibling, helpers, scanner, classifier and predicate/IRQ stay fixed.
+
+Saved 137-call research retains 129 original expected matches: 117 canonical,
+ten ignored-low-byte and two PC-policy completions. Four inherited full
+completions are separately characterized without fresh calls; four fatal
+write-four categories expose no CPU snapshot or hardware fault ordering.
+Primary-backed zero-byte admission differs from ten reference completions.
+Nested/final CALL/final FF0C/taken-exit limits remain explicit. Common NOR/
+unmapped diagnostics use controlled EA labels, without distinct-text claims.
+
+Independent exact source/validator review, build and all seven gates pass.
+The focused gate passes 117 supported, one generic replay and 20 model faults:
+ten low-byte, four inherited, two PC-guard and four selected-write faults.
+All old validators and shared boundaries remain unchanged. Each fixture
+uses MAX 100; positive processes each allow 60 seconds and fault/generic/
+copied-research processes 15 seconds. Parent runner deadlines are separate.
+
+Unchanged MAX 200,000,000 boot advances 5,993 instructions to F070/4600+6247
+at `0x0200a2d0`, 120,323,432 instructions and captured 962,587,464 ns.
+Vendor disassembly describes a byte-reversal head plus compact word-load tail.
+Stage 5/home 1/frame 1 and visible idle LCD do not prove completed HOME.
+Renamed captured JSON except profile and exact PPM/latest ALNK data agree;
+whole SRAM is excluded. All 57,344 captured sample words are zero. Completed
+HOME, 30 guest seconds, physical input, synthesis and native running stay open.
+
+Next work inventories all known source firmware encodings/counts offline and
+groups generic implementation candidates into independently reviewed batches.
+Full model-policy and host artifact-recording qualifications remain in evidence.
+
+Latest stop: F070/4600 + 6247 at `0x0200a2d0`, 120,323,432
+instructions and 962,587,464 ns. The unchanged MAX 200,000,000 capture advances 5,993 instructions beyond EE94 to F070/4600 + 6247 at the current unsupported bundle stop. Vendor disassembly describes r4=rev8(r6) in the extended head with r7=[r4+8] in a compact word-load tail; exact primary/role classification belongs to the ongoing offline inventory. Stage 5/home 1/frame 1 and visible idle LCD do not prove completed HOME. Renamed captured JSON state except profile and exact PPM/latest ALNK data agree; whole SRAM is excluded and all 57,344 captured sample words are zero.
+Caches use `after-signed-register-le-if` and its `-generic` label; main repo
+`.deps/qemu-signed-register-le-if-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 107/107; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_le_if.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

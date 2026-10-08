@@ -370,7 +370,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                (op & 0xfff0) == 0xec10 ||
                (op & 0xfff0) == 0xecb0 ||
                (op & 0xfff0) == 0xed30 || (op & 0xfff0) == 0xeeb0 ||
-               (op & 0xfff0) == 0xed10) {
+               (op & 0xfff0) == 0xed10 || (op & 0xfff0) == 0xee90) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = (op >> 4) & 255;
         TCGv_i32 left = read_gpr(d, op & 15), right, result = tcg_temp_new_i32();
@@ -394,6 +394,9 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             /* Admit the constructor's canonical zero low byte. */
             if (x & 255) { goto illegal; }
             right = read_gpr(d, (x >> 8) & 15); cond = TCG_COND_GE;
+        } else if (kind == 0xe9) {
+            if (x & 255) { goto illegal; }
+            right = read_gpr(d, (x >> 8) & 15); cond = TCG_COND_LE;
         } else if (kind == 0xcb) {
             /* Vendor-backed unsigned literals disagree with SLEIGH's packed
              * label (ECB0 0208 means 520). Keep all twelve literal bits. */
