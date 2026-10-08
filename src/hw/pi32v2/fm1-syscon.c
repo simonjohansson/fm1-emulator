@@ -5,7 +5,7 @@
 #include "fm1-syscon.h"
 
 static const uint64_t masks[FM1_SYSCON_WORD_COUNT] = {
-    [FM1_SYSCON_CLK_CON1] = 3,
+    [FM1_SYSCON_CLK_CON1] = 0xc03,        /* USB [1:0]; UART clock [11:10] (Felucca: 1, PLL48M, for UART1) */
     [FM1_SYSCON_CLK_CON2] = 0xf00,
     [FM1_SYSCON_IOMAP_CON5] = 0xc0,
 };

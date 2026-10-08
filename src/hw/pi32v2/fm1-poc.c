@@ -231,11 +231,23 @@ static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
 static uint64_t iomap_read(void *opaque, hwaddr offset, unsigned size)
 {
     FM1PocState *m = opaque;
-    return !offset ? m->iomap_con0 : m->iomap_con1;
+    switch (offset) {
+    case 0: return m->iomap_con0;
+    case 4: return m->iomap_con1;
+    case 8: return m->iomap_con2;
+    default: return m->iomap_con3;
+    }
 }
 static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     FM1PocState *m = opaque;
+    if (offset == 8 || offset == 12) {
+        /* IOMAP_CON2 / CON3 route an input channel to UART1 RX (Felucca's
+         * TRS MIDI IN: channel 1 = PH8, UT1 RX = channel 1). Stored only:
+         * no receiver input is modeled behind UART1. */
+        if (offset == 8) { m->iomap_con2 = value; } else { m->iomap_con3 = value; }
+        return;
+    }
     if (!offset) {
         if (value & ~0x20ull) { pi32v2_fail(&m->cpu->env, "unsupported IOMAP_CON0 routing"); }
         m->iomap_con0 = value;
@@ -289,6 +301,34 @@ static const MemoryRegionOps timer_ops = {
 };
 static const MemoryRegionOps gpio_ops = {
     .read = gpio_read, .write = gpio_write, .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {.min_access_size = 4, .max_access_size = 4},
+    .impl = {.min_access_size = 4, .max_access_size = 4},
+};
+/* UART1 as Felucca 1.0 on configures it for TRS MIDI IN (hal/fm1_uart.h): RX
+ * DMA into a ring, polled through RDC / HRXCNT, no interrupts. No serial input
+ * is modeled, so the received count stays 0; the configuration is stored and
+ * any CON0 bit Felucca does not use fails explicitly. */
+#define UT1_CON0_KNOWN 0x34c1u           /* UTEN, RXDMA, RDC, CLR_RPND, CLR_OTPND, CLR_PND */
+static uint64_t uart1_read(void *opaque, hwaddr offset, unsigned size)
+{
+    FM1PocState *m = opaque;
+    if (offset == 0x28) { return 0; }    /* HRXCNT: nothing received */
+    return m->uart1[offset / 4];
+}
+static void uart1_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    FM1PocState *m = opaque;
+    if (offset == 0 && (value & ~(uint64_t)UT1_CON0_KNOWN)) {
+        pi32v2_fail(&m->cpu->env, "unsupported UART1 CON0 bits");
+    }
+    if (offset == 4 && value) { pi32v2_fail(&m->cpu->env, "unsupported UART1 CON1 configuration"); }
+    if (offset == 0x0c || offset == 0x14 || offset == 0x18 || offset == 0x28) {
+        pi32v2_fail(&m->cpu->env, "unsupported UART1 register write");
+    }
+    m->uart1[offset / 4] = value;
+}
+static const MemoryRegionOps uart1_ops = {
+    .read = uart1_read, .write = uart1_write, .endianness = DEVICE_LITTLE_ENDIAN,
     .valid = {.min_access_size = 4, .max_access_size = 4},
     .impl = {.min_access_size = 4, .max_access_size = 4},
 };
@@ -376,8 +416,10 @@ static void machine_init(MachineState *ms)
     sysbus_mmio_map(SYS_BUS_DEVICE(&m->adc), 0, 0x13100);
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
     fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
-    memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 8);
+    memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 16);
     memory_region_add_subregion(get_system_memory(), 0x5101c, &m->iomap_mmio);
+    memory_region_init_io(&m->uart1_mmio, OBJECT(m), &uart1_ops, m, "fm1.uart1", 0x2c);
+    memory_region_add_subregion(get_system_memory(), 0x12100, &m->uart1_mmio);
     fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
     object_initialize_child(OBJECT(m), "board-input", &m->input, TYPE_FM1_INPUT);
     fm1_input_bind(&m->input, m->cpu);

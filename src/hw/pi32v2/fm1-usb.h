@@ -13,14 +13,14 @@ typedef struct FM1PocUSB {
     Pi32v2CPU *cpu;
     MemoryRegion mmio, pads_mmio;
     uint32_t control, bridge, pads;
-    uint32_t endpoint_count[4], tx_address[4], rx_address[5];
+    uint32_t endpoint_count[5], tx_address[5], rx_address[5];   /* [4]: EP4, its own registers */
     uint32_t recent_requests[6];
     uint64_t recent_polls[6];
     uint64_t requests, bridge_poll_reads, controller_off_writes, bridge_clears;
     uint64_t abandoned_requests, current_poll_reads, dma_packets;
     bool request_pending, host_connected, sie_clock_available;
     uint8_t sie[16], endpoint[5][8];
-    bool tx_pending[4], tx_data_end[4];
+    bool tx_pending[5], tx_data_end[5];
     bool control_status_out;
     uint16_t frame;
     QEMUTimer *frame_timer;

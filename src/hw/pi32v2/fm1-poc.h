@@ -33,11 +33,12 @@ typedef struct FM1TimerState {
 struct FM1PocState {
     MachineState parent_obj;
     Pi32v2CPU *cpu;
-    MemoryRegion irq_mmio, gpio_mmio, iomap_mmio;
+    MemoryRegion irq_mmio, gpio_mmio, iomap_mmio, uart1_mmio;
     FM1TimerState timers[2];
     qemu_irq irq, alnk_irq;
     uint32_t irq_configs[32];
-    uint32_t gpio[8][8], iomap_con0, iomap_con1;
+    uint32_t gpio[8][8], iomap_con0, iomap_con1, iomap_con2, iomap_con3;
+    uint32_t uart1[11];                   /* UT1 CON0 .. HRXCNT (fm1-poc.c uart1_*) */
     FM1PocLCD lcd;
     FM1PocSystem system;
     FM1PocNOR nor;

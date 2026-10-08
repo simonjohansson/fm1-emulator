@@ -101,10 +101,10 @@ bool fm1_usb_host_packet(FM1PocUSB *usb, unsigned ep,
 
 static void transmit_packet(FM1PocUSB *usb, unsigned ep)
 {
-    uint8_t bytes[64];
+    uint8_t bytes[1023];                 /* EP4 isochronous: up to 1023 bytes; the others 64 */
     unsigned length = usb->endpoint_count[ep];
     uint32_t address = ep ? usb->tx_address[ep] : usb->rx_address[0];
-    if (!address || length > sizeof(bytes)) {
+    if (!address || length > (ep == 4 ? sizeof(bytes) : 64u)) {
         usb_fail(usb, "invalid USB transmit DMA buffer or length");
     }
     if (length && address_space_read(&address_space_memory, address,
@@ -251,6 +251,8 @@ static uint64_t usb_read(void *opaque, hwaddr offset, unsigned size)
         return usb->bridge;
     case 0x18: return usb->rx_address[0];
     case 0x3c: return usb->rx_address[4];
+    case 0x34: return usb->endpoint_count[4];
+    case 0x38: return usb->tx_address[4];
     }
     if (offset >= 8 && offset <= 0x14) {
         return usb->endpoint_count[(offset - 8) / 4];
@@ -300,6 +302,22 @@ static void usb_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     case 0x3c:
         check_buffer(usb, value);
         usb->rx_address[4] = value;
+        return;
+    case 0x34:
+        /* EP4, the isochronous IN endpoint (Felucca 1.0's USB audio input),
+         * has its own count and transmit address (SDK usb_write_ep_cnt /
+         * usb_set_dma_taddr, ep 4). A full-speed iso packet is <= 1023 bytes. */
+        if (value && !usb->sie_clock_available) {
+            usb_fail(usb, "USB endpoint packet DMA is unimplemented");
+        }
+        if (value > 1023) { usb_fail(usb, "unsupported USB endpoint DMA length"); }
+        usb->endpoint_count[4] = value;
+        return;
+    case 0x38:
+        if ((value & 3) || value < SRAM_BASE || (uint64_t)value + 1023 > SRAM_END) {
+            usb_fail(usb, "USB endpoint buffer must be aligned and entirely in SRAM");
+        }
+        usb->tx_address[4] = value;
         return;
     }
     if (offset >= 8 && offset <= 0x14) {

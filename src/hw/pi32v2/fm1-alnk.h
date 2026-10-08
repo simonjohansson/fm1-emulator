@@ -8,8 +8,8 @@
 #include "fm1-syscon.h"
 #include "fm1-audio.h"
 
-#define FM1_ALNK_HALF_WORDS 512u
-#define FM1_ALNK_HALF_BYTES (FM1_ALNK_HALF_WORDS * 4u)
+#define FM1_ALNK_MAX_HALF_WORDS 512u            /* the larger of the two reached half lengths */
+#define FM1_ALNK_MAX_HALF_BYTES (FM1_ALNK_MAX_HALF_WORDS * 4u)
 #define FM1_ALNK_FRAME_RATE 44100u
 
 #define TYPE_FM1_ALNK "fm1-alnk"
@@ -36,7 +36,7 @@ struct FM1PocALNK {
     uint64_t coalesced_completions, skipped_captures;
     uint64_t sample_words, sample_frames, nonzero_words;
     uint32_t sample_digest, latest_half_bytes;
-    uint8_t latest_half[FM1_ALNK_HALF_BYTES];
+    uint8_t latest_half[FM1_ALNK_MAX_HALF_BYTES];
 };
 
 /* Bind the composition-owned interfaces before sysbus_realize(). Address
