@@ -149,10 +149,13 @@ static void pop(PiDisasContext *d, TCGv_i32 value)
     tcg_gen_addi_i32(spr[SP], spr[SP], 4);
     check_stack(d);
 }
+/* Unchained transfers find their successor without returning to the CPU
+ * loop. Completing an IF arm or REP block exits the loop from the advance
+ * helper when an IRQ deferred by that block is pending. */
 static void jump(uint32_t dest)
 {
     gen_helper_pi32v2_advance(pc, tcg_env, tcg_constant_i32(dest));
-    tcg_gen_exit_tb(NULL, 0);
+    tcg_gen_lookup_and_goto_ptr();
 }
 /* Each static successor owns one QEMU chain slot. Active predicates keep
  * dispatcher exits so completion can redirect PC and admit pending IRQs. */
@@ -175,7 +178,7 @@ static void dynamic_jump(PiDisasContext *d, TCGv_i32 value)
 {
     record_branch(d);
     gen_helper_pi32v2_advance(pc, tcg_env, value);
-    tcg_gen_exit_tb(NULL, 0);
+    tcg_gen_lookup_and_goto_ptr();
     d->base.is_jmp = DISAS_NORETURN;
 }
 static void branch(PiDisasContext *d, uint32_t dest, uint32_t next,
@@ -558,7 +561,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         TCGv_i32 dest = tcg_temp_new_i32();
         gen_helper_pi32v2_if(dest, tcg_env, result, tcg_constant_i32(then_end), tcg_constant_i32(else_end));
         count(d);
-        tcg_gen_mov_i32(pc, dest); tcg_gen_exit_tb(NULL, 0);
+        tcg_gen_mov_i32(pc, dest); tcg_gen_lookup_and_goto_ptr();
         db->is_jmp = DISAS_NORETURN;
         next = here + 4;
     } else if ((op & 0xfff0) == 0xeb20) {
@@ -1094,7 +1097,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                                  tcg_constant_i32(next), tcg_constant_i32(end));
         count(d);
         tcg_gen_mov_i32(pc, dest);
-        tcg_gen_exit_tb(NULL, 0);
+        tcg_gen_lookup_and_goto_ptr();
         db->is_jmp = DISAS_NORETURN;
     } else if (op == 0x0410) {
         push(d, spr[RETS]);

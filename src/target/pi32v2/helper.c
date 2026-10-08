@@ -118,16 +118,24 @@ uint32_t HELPER(pi32v2_if)(CPUPi32v2State *env, uint32_t result,
 
 uint32_t HELPER(pi32v2_advance)(CPUPi32v2State *env, uint32_t next)
 {
+    bool completed = false;
     if (env->repeat_end && next == env->repeat_end) {
         env->gpr[env->repeat_register] = --env->repeat_remaining;
         if (env->repeat_remaining) {
             return env->repeat_start;
         }
         env->repeat_start = env->repeat_end = env->repeat_register = 0;
+        completed = true;
     }
     if (env->predicate_end && next == env->predicate_end) {
         if (env->predicate_from) { next = env->predicate_to; }
         env->predicate_from = env->predicate_to = env->predicate_end = 0;
+        completed = true;
+    }
+    /* IRQ entry is deferred while a block is active. Admit a pending IRQ
+     * at the block's end, before the next instruction. */
+    if (completed && cpu_test_interrupt(env_cpu(env), CPU_INTERRUPT_HARD)) {
+        cpu_exit(env_cpu(env));
     }
     return next;
 }
