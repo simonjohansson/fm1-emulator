@@ -49,7 +49,7 @@ interval. Writes last for the current session; the firmware file stays unchanged
 
 Felucca boot, input, guest audio generation, UI progress, and descriptor-driven
 USB CDC enumeration/DTR/endpoint DMA are tested. CoreAudio consumes guest
-samples; it does not synthesize substitute audio. Emulation is below real time.
+samples; it does not synthesize substitute audio.
 NOR persistence across runs, ROM boot, whole-machine reset, complete IRQ
 nesting/arbitration, USB MIDI, external UART transfers, and wider firmware
 compatibility remain incomplete or unverified.

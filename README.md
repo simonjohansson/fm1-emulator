@@ -46,7 +46,8 @@ Python is needed only to build and test.
 ## Status
 
 Unchanged Felucca passes boot, note/release, page navigation, audio-generation,
-and console checks. Emulation still runs below real time; audio may have gaps.
+and console checks. Headless, it runs about 1.5 times faster than real time on
+an Apple silicon Mac.
 Package decoding is tested; stock FM-1 startup currently stops at an
 unimplemented CPU repeat instruction.
 Other firmware compatibility is limited. Linux and Windows are deferred.
