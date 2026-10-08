@@ -1,7 +1,0 @@
-FM-1 DIAG 1: probe info uboot
-KEY 0 down
-KEY 0 up
-KEY 14 down
-KEY 14 up
-KEY 2 down
-KEY 2 up

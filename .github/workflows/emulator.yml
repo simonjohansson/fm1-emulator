@@ -2,169 +2,30 @@ name: Emulator
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  build:
-    name: Test and build ${{ matrix.platform }}
-    runs-on: ${{ matrix.runner }}
+  macos:
+    runs-on: macos-26
     timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux-amd64
-            runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - platform: linux-arm64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - platform: macos-arm64
-            runner: macos-15
-            target: aarch64-apple-darwin
-          - platform: windows-amd64
-            runner: windows-2025
-            target: x86_64-pc-windows-msvc
-    defaults:
-      run:
-        shell: bash
-    env:
-      EMULATOR_TARGET: ${{ matrix.target }}
-      EMULATOR_PLATFORM: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          install_args: rust
-          cache: false # Rust is installed through rustup; avoid caching its proxies.
-      - name: Install the Rust formatter
-        run: mise exec -- rustup component add rustfmt
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libx11-dev libxi-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev
-      - name: Check the native compiler and formatting
-        run: |
-          compiler=$(mise exec -- rustc -vV)
-          [[ "$compiler" == *"host: $EMULATOR_TARGET"* ]]
-          mise exec -- cargo fmt --manifest-path rust-emulator/Cargo.toml --check
-      - name: Test the CPU, peripherals, loader and graphical controls
-        run: mise exec -- cargo test --manifest-path rust-emulator/Cargo.toml --locked --release --features gui --target "$EMULATOR_TARGET"
-      - name: Download the pinned Felucca firmware for boot testing
-        run: |
-          mkdir -p .deps/ci
-          curl --fail --location --retry 3 --output .deps/ci/felucca.fwsc https://github.com/hugelton/Felucca/releases/download/v0.9-beta/felucca-0.9-beta.fwsc
-          printf '%s\n' '320ef650a5c123becb46e749514f2b71c9ffa821a3fff8a515673cd9d21194a5  .deps/ci/felucca.fwsc' > .deps/ci/SHA256SUMS
-          if [ "$RUNNER_OS" = macOS ]; then
-            shasum -a 256 -c .deps/ci/SHA256SUMS
-          else
-            sha256sum -c .deps/ci/SHA256SUMS
-          fi
-      - name: Boot Felucca and render a note
-        run: |
-          export FELUCCA_FWSC="$GITHUB_WORKSPACE/.deps/ci/felucca.fwsc"
-          mise exec -- cargo test --manifest-path rust-emulator/Cargo.toml --locked --release --features gui --target "$EMULATOR_TARGET" --test felucca published_felucca_package_boots_and_renders_a_note -- --ignored --nocapture
-      - name: Build the graphical emulator
-        run: mise exec -- cargo build --manifest-path rust-emulator/Cargo.toml --locked --release --features gui --target "$EMULATOR_TARGET" --bin fm1-ui
-      - name: Package the native executable
-        run: |
-          mkdir -p dist package
-          cp README.md LICENSE package/
-          mkdir -p package/docs
-          cp docs/felucca.jpg package/docs/
-          binary="rust-emulator/target/$EMULATOR_TARGET/release/fm1-ui"
-          asset="emulator-$EMULATOR_PLATFORM"
-          case "$RUNNER_OS" in
-            macOS)
-              app="package/FM-1 Emulator.app/Contents"
-              mkdir -p "$app/MacOS"
-              cp rust-emulator/macos/Info.plist "$app/Info.plist"
-              cp "$binary" "$app/MacOS/fm1-ui"
-              codesign --force --sign - "package/FM-1 Emulator.app"
-              cat > package/emulator <<'SH'
-          #!/bin/sh
-          set -eu
-          if [ "$#" -ne 1 ]; then
-              echo 'usage: ./emulator <firmware.fwsc|application.elf|application.bin>' >&2
-              exit 2
-          fi
-          case "$1" in
-              /*) firmware=$1 ;;
-              *) firmware=$PWD/$1 ;;
-          esac
-          directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-          exec "$directory/FM-1 Emulator.app/Contents/MacOS/fm1-ui" "$firmware"
-          SH
-              chmod +x package/emulator
-              tar -czf "dist/$asset.tar.gz" -C package .
-              ;;
-            Windows)
-              cp "$binary.exe" package/emulator.exe
-              powershell -NoProfile -Command "Compress-Archive -Path 'package/*' -DestinationPath 'dist/$asset.zip'"
-              ;;
-            Linux)
-              cp "$binary" package/emulator
-              tar -czf "dist/$asset.tar.gz" -C package .
-              ;;
-          esac
+          install_args: python
+      - name: Install build dependencies
+        run: brew install glib pkgconf
+      - name: Build
+        run: make
+      - name: Test
+        run: make test
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: emulator-${{ matrix.platform }}
-          path: dist/*
+          name: fm1-emulator-macos-arm64
+          path: .cache/fm1-emulator-macos-arm64.tar.gz
           if-no-files-found: error
-          retention-days: 7
-
-  release:
-    name: Publish commit release
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    needs: build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    concurrency:
-      group: emulator-release-${{ github.sha }}
-      cancel-in-progress: false
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          pattern: emulator-*
-          path: dist
-          merge-multiple: true
-      - name: Publish the four tested builds
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          set -euo pipefail
-          tag="commit-$GITHUB_SHA"
-          if gh release view "$tag" --repo "$GH_REPO" > /dev/null 2>&1; then
-            echo "Release $tag already exists."
-            exit 0
-          fi
-          for asset in emulator-linux-amd64.tar.gz emulator-linux-arm64.tar.gz emulator-macos-arm64.tar.gz emulator-windows-amd64.zip; do
-            test -s "dist/$asset"
-          done
-          (cd dist && sha256sum emulator-* > SHA256SUMS)
-          # The backticks below are literal Markdown in the release notes.
-          # shellcheck disable=SC2016
-          printf 'Native emulator builds for commit `%s`.\n\nAll four platforms passed the core/GUI tests and the pinned Felucca 0.9-beta boot and note-rendering test. Firmware is not included.\n\nExtract the archive for your platform and pass a `.fwsc`, `.elf` or `.bin` firmware path to `emulator` (`emulator.exe` on Windows). See the repository README for usage and current limitations.\n' "$GITHUB_SHA" > "$RUNNER_TEMP/release-notes.md"
-          latest=false
-          default_head=$(gh api "repos/$GH_REPO/commits/$DEFAULT_BRANCH" --jq .sha)
-          if [ "$GITHUB_SHA" = "$default_head" ]; then
-            latest=true
-          fi
-          gh release create "$tag" dist/* --repo "$GH_REPO" --target "$GITHUB_SHA" --title "Commit ${GITHUB_SHA:0:12}" --notes-file "$RUNNER_TEMP/release-notes.md" --latest="$latest"

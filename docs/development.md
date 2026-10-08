@@ -1,0 +1,65 @@
+# Development
+
+Build and run from the repository root:
+
+```sh
+mise install
+make
+./emulator path/to/firmware.bin
+make test
+```
+
+`make test` runs compact synthetic CPU, USB, and native CLI checks without
+external firmware. Build first. Firmware behavior checks are optional and use
+saved, unchanged `felucca.bin`, `felucca.elf`, and `felucca.dis` artifacts:
+
+```sh
+mise exec python@3.13.15 -- python tests/behavior.py \
+  --firmware-dir /path/to/artifacts --label behavior-check
+mise exec python@3.13.15 -- python tests/console.py \
+  --firmware-dir /path/to/artifacts --label console-check --long
+```
+
+These check bootguard, UI progress, note/release audio, parameters/pages, IRQ
+returns, and USB console responses. They verify artifact identities and refuse
+existing capture labels. Captures live in `.cache/tests/`. Do not rebuild or
+patch firmware to make an emulator check pass.
+
+## Source layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/target/pi32v2/` | CPU and TCG translation |
+| `src/hw/pi32v2/` | SoC devices, FM-1 board, host input/audio/USB adapters |
+| `src/system/`, `src/ui/` | Native launcher and small upstream integration hooks |
+| `tools/` | Pinned QEMU download, integration, build, packaging |
+| `tests/` | Synthetic regressions and optional firmware behavior checks |
+
+Edit `src/`, never generated sources under `.cache/`. Its directory structure
+matches QEMU so `tools/integrate.py` can apply it to the pinned release. Device
+and test-hook names retaining `poc` are internal compatibility names.
+`./emulator --qemu ...` retains the underlying QEMU command line for development.
+Serialize builds and guest runs that share captures or caches.
+
+## Build inputs
+
+QEMU is pinned to **11.1.2**, release commit
+`4fc49f46dc95d4a27de2509e7fceb2931e91faeb`; its archive SHA-256 and Python
+build-tool versions are checked in `tools/build.py`. Downloaded sources,
+private Python environment, build products, and logs stay in `.cache/`.
+Use `make` after changing sources; it integrates changed files before Ninja.
+Use `mise exec python@3.13.15 -- python tools/build.py --standalone --reconfigure`
+when changing configuration.
+
+The macOS build uses Cocoa, CoreAudio, LTO, and static third-party archives.
+It rejects non-system dynamic dependencies, ad-hoc signs the executable,
+and packages it with notices. The build needs Xcode Command Line Tools,
+Homebrew GLib/pkgconf, and mise Python. It does not bundle firmware or Python.
+The deployment target follows the SDK and dependency archives: the locally
+validated Apple Silicon artifact requires macOS 27. Older macOS compatibility
+has not been established. CI targets Apple Silicon macOS 26; Linux/Windows
+build and packaging work is deferred.
+
+For release distribution, retain notices and provide the corresponding QEMU
+and overlay sources/build inputs and LGPL relinking materials. See
+[LICENSES.md](../LICENSES.md).

@@ -1,72 +1,51 @@
-![FM-1 emulator running the Felucca firmware](docs/felucca.jpg)
+# FM-1 Emulator
 
-# FM-1 emulator
+Run FM-1 application firmware on your Mac, with a display, keyboard controls,
+audio, and a USB console. Built on QEMU with a pi32v2 CPU and FM-1 board model.
 
-A Rust emulator for the M-VAVE FM-1. Load firmware and interact with its own
-screen and buttons. The firmware's USB serial console uses your terminal; type
-commands such as Felucca's `help` and press Enter.
-
-## Download and run
-
-Download and extract the [release](https://github.com/simonjohansson/fm1-emulator/releases)
-for your OS and architecture, then run it with a firmware path:
+## Run
 
 ```sh
-./emulator /path/to/firmware.fwsc
+./emulator path/to/firmware.bin
 ```
 
-Use `emulator.exe` on Windows. Firmware is supplied separately; `.fwsc`, `.elf`
-and `.bin` are supported.
+Close the window or press **Ctrl-C** in the terminal to quit. The executable
+needs no Python or third-party library installations to run.
+Firmware is not included: use a raw application `.bin`, not an ELF or `.fwsc`
+update package.
 
-## Build from source
+| Key | Action |
+| --- | --- |
+| Z / C | Play notes |
+| X / V | Octave down / up |
+| P / O | Navigate pages |
+| H | Return HOME |
 
-Install [mise](https://mise.jdx.dev/installing-mise.html) and a native C/C++
-toolchain: Xcode Command Line Tools on macOS, Visual Studio Build Tools with
-**Desktop development with C++** on Windows, or the following on Ubuntu:
+The firmware console appears in your terminal and accepts typed commands.
+For Felucca, try `help` or `status`. Use `--no-audio` for silence or
+`--headless` for a console-only session. See `./emulator --help` for options.
+
+## Build
+
+On Apple Silicon macOS, install Xcode Command Line Tools, [Homebrew](https://brew.sh),
+and the build dependencies:
 
 ```sh
-sudo apt-get install build-essential pkg-config libx11-dev libxi-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev
+brew install mise glib pkgconf
+mise install
+make
 ```
 
-From this checkout:
+The first build downloads pinned QEMU sources and Python build tools.
+It produces `./emulator` and a distribution archive in `.cache/`.
+Python is needed only to build and test.
 
-```sh
-mise trust
-mise install rust
-mise exec -- cargo build --manifest-path rust-emulator/Cargo.toml --locked --release --features gui --bin fm1-ui
-mise exec -- cargo test --manifest-path rust-emulator/Cargo.toml --locked --release --features gui
-```
+## Status
 
-On Linux/macOS, run `./emulator /path/to/firmware.fwsc`; the launcher builds and
-opens the emulator. On Windows, run
-`.\rust-emulator\target\release\fm1-ui.exe C:\path\to\firmware.fwsc`.
-Building the emulator does not require the vendor firmware compiler or Docker.
+Unchanged Felucca passes boot, note/release, page navigation, audio-generation,
+and console checks. Emulation still runs below real time; audio may have gaps.
+Other firmware compatibility is limited. Linux and Windows are deferred.
 
-## Firmware compatibility
-
-Updated on 2026-10-05. **Partial** means boot and some controls work, but
-other firmware paths can stop emulation.
-
-| Firmware | Status | Verified behavior / blocker |
-| --- | --- | --- |
-| Felucca 0.9-beta (`FM-1_909`, `.fwsc`) | Partial | LCD, USB console (`help`), watchdog, note audio/DMA and FX pass; full UI coverage remains incomplete |
-| Felucca source build (`1e838e1`, `.elf`) | Partial | Boot, note press/release, FX, HOME and ENV pass; other UI paths need broader coverage |
-| Official `FM-1_015` (`FM-1.fwsc`) | Partial | LCD boot, PIANO 1, FX/HOME and note audio/DMA pass |
-| Baud Girl `FM-1_093` (`FM-1_093.fwsc`) | Partial | LCD boot and FX/HOME pass; its factory preset payload fails integrity validation |
-
-FX now opens and renders in both Felucca builds; see the
-[Felucca investigation](rust-emulator/FELUCCA.md).
-See the [stock firmware trials](rust-emulator/STOCK-FIRMWARE.md) for the official
-and Baud Girl results.
-
-## Still to implement
-
-- [ ] Execute native blocks in batches, then broaden JIT coverage; see the [performance plan](rust-emulator/PERFORMANCE.md).
-- [ ] Remaining CPU instructions, peripherals and firmware UI paths.
-- [ ] Host audio playback, rotary controls and USB MIDI.
-- [ ] Flash persistence, plus fuller encryption, interrupt and timing behavior.
-
-GPL-3.0-only; see [LICENSE](LICENSE). Based on research and components from
-[Felucca](https://github.com/hugelton/Felucca), the
-[JieLi AC79 SDK](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK), and
-[Quarkslab's pi32v2 reference](https://github.com/quarkslab/ghidra-jieli).
+See [development](docs/development.md) for tests and
+[architecture](docs/architecture.md) for the model. Licensing and source
+provenance are described in [LICENSES.md](LICENSES.md).
