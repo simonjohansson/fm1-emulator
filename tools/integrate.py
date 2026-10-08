@@ -142,6 +142,29 @@ def main():
             raise SystemExit("pinned TCG lockless load hook anchor differs")
         content = content.replace(load, lockless)
     write_changed(cputlb, content)
+    # Every icount deadline notifies each AioContext of the virtual clock,
+    # waking the main loop (and contending for the BQL) ten thousand times
+    # a guest second although no context holds virtual timers: icount runs
+    # them on the vCPU. Skip contexts with no timer of that clock.
+    asyncc = SOURCE / "util/async.c"
+    content = asyncc.read_text()
+    notify = ("static void aio_timerlist_notify(void *opaque, QEMUClockType type)\n"
+              "{\n"
+              "    aio_notify(opaque);\n"
+              "}\n")
+    quiet = ("static void aio_timerlist_notify(void *opaque, QEMUClockType type)\n"
+             "{\n"
+             "    AioContext *ctx = opaque;\n"
+             "    if (type == QEMU_CLOCK_VIRTUAL && !timerlist_has_timers(ctx->tlg.tl[type])) {\n"
+             "        return;\n"
+             "    }\n"
+             "    aio_notify(opaque);\n"
+             "}\n")
+    if quiet not in content:
+        if content.count(notify) != 1:
+            raise SystemExit("pinned AioContext timer notify hook anchor differs")
+        content = content.replace(notify, quiet)
+    write_changed(asyncc, content)
     write_changed(SOURCE / "configs/targets/pi32v2-softmmu.mak",
                   "TARGET_ARCH=pi32v2\nTARGET_LONG_BITS=32\n")
     devices = SOURCE / "configs/devices/pi32v2-softmmu"
