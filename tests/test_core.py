@@ -57,6 +57,27 @@ class EmulatorTests(unittest.TestCase):
         self.assertIn("FIRMWARE", result.stdout)
         self.assertIn("--headless", result.stdout)
 
+    def test_qualified_packed_or_reads_incoming_load_destination(self):
+        guest = Guest()
+        guest.write(INSPECTION, 0x8000beef)
+        guest.literal(4, INSPECTION)
+        guest.literal(6, 8)
+        guest.emit(0xf140, 0x60f0, 0x604e)  # r0=r6|0xf0 # r6=h[r4].
+        state = guest_state(self.directory, guest)
+        self.assertEqual(state["registers"][0], 0xf8)
+        self.assertEqual(state["registers"][6], 0xbeef)
+        self.assertEqual(state["instructions"], guest.instructions)
+
+    def test_qualified_packed_or_rejects_destination_conflict(self):
+        guest = Guest()
+        guest.literal(4, INSPECTION)
+        guest.literal(6, 8)
+        guest.emit(0xf146, 0x60f0, 0x604e)
+        result = run_guest(self.directory, guest)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsupported instruction 0xf146", result.stderr)
+        self.assertIn("after 2 instructions", result.stderr)
+
     def test_cli_version(self):
         result = self.cli("--version")
         self.assertEqual(result.returncode, 0, result.stderr)

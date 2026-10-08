@@ -285,8 +285,17 @@ bool fm1_image_decode_handoff(const uint8_t *data, size_t length, bool packaged,
         enc(entry, 80, 0xffff);
         uint32_t offset = dword(entry + 8), size = dword(entry + 12);
         uint32_t allocated = dword(entry + 16);
+        /* The final payload may end at EOF without its allocation's trailing
+         * alignment padding. Require all payload bytes and allow only the
+         * omitted remainder of one 32-byte allocation block. */
+        size_t total = length - skew;
+        bool payload_present = span(offset, size, total);
+        bool tail_padding = payload_present && size == total - offset &&
+                            allocated >= size && allocated - size < 32 &&
+                            !(allocated & 31);
         if (offset < (skew ? 940 : 64 + table_size) || allocated < size ||
-            !span(offset, allocated, length - skew) || (offset & 31)) {
+            !payload_present ||
+            (!span(offset, allocated, total) && !tail_padding) || (offset & 31)) {
             return fail(error, error_length, "invalid UFW payload bounds or alignment");
         }
         for (size_t previous = 0; previous < n; previous++) {

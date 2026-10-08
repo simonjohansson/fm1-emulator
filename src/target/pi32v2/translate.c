@@ -406,7 +406,8 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                (op & 0xfff0) == 0xec10 ||
                (op & 0xfff0) == 0xecb0 ||
                (op & 0xfff0) == 0xed30 || (op & 0xfff0) == 0xeeb0 ||
-               (op & 0xfff0) == 0xed10 || (op & 0xfff0) == 0xee90 ||
+               (op & 0xfff0) == 0xed10 || (op & 0xfff0) == 0xee10 ||
+               (op & 0xfff0) == 0xee90 ||
                (op & 0xfff0) == 0xe920 || (op & 0xfff0) == 0xe990 ||
                (op & 0xfff0) == 0xec30 ||
                (op & 0xfff0) == 0xec90 || (op & 0xfff0) == 0xeca0 ||
@@ -452,10 +453,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             cond = kind == 0x81 ? TCG_COND_EQ : kind == 0x89 ? TCG_COND_NE :
                    kind == 0x91 ? TCG_COND_GEU : kind == 0xc1 ? TCG_COND_GTU :
                    kind == 0x99 ? TCG_COND_LTU : TCG_COND_LEU;
-        } else if (kind == 0xd1) {
+        } else if (kind == 0xd1 || kind == 0xe1) {
             /* Admit the constructor's canonical zero low byte. */
             if (x & 255) { goto illegal; }
-            right = read_gpr(d, (x >> 8) & 15); cond = TCG_COND_GE;
+            right = read_gpr(d, (x >> 8) & 15);
+            /* Vendor EE17/0F00 establishes signed r7 > r15. */
+            cond = kind == 0xe1 ? TCG_COND_GT : TCG_COND_GE;
         } else if (kind == 0xe9) {
             if (x & 255) { goto illegal; }
             right = read_gpr(d, (x >> 8) & 15); cond = TCG_COND_LE;
@@ -615,9 +618,9 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xff88) == 0x0780) {
         store(d, read_gpr(d, a), read_gpr(d, b), MO_UB);
         tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 1);
-    } else if ((op & 0xff88) == 0x0680) {
+    } else if ((op & 0xff80) == 0x0680) {
         store(d, read_gpr(d, a), read_gpr(d, b), MO_LEUW | MO_ALIGN);
-        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 2);
+        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), op & 8 ? -2 : 2);
     } else if ((op & 0xfff0) == 0xee50) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = op & 15;
@@ -730,22 +733,31 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             else { load(d, gpr[reg + 1], addr, MO_LEUL | MO_ALIGN); }
         }
         next = here + 4;
+    } else if ((op & 0xfff8) == 0xecd8 &&
+               (fetch(d, here + 2) & 3) < 2) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, reg = x >> 12;
+        int32_t stride = sext(op & 7, 3) * 256 +
+                         (x & 12) + ((x >> 8) & 15) * 16;
+        /* Vendor ECD8 B005 stores at the incoming base, then adds four;
+         * ECDA 0014 loads before adding 516. The opcode carries the signed
+         * high displacement bits. Store aliases use the incoming base. */
+        if (x & 1) { store(d, read_gpr(d, reg), read_gpr(d, base), MO_LEUL | MO_ALIGN); }
+        else {
+            if (base == reg) { goto illegal; }
+            load(d, gpr[reg], read_gpr(d, base), MO_LEUL | MO_ALIGN);
+        }
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), stride);
+        next = here + 4;
     } else if (op == 0xecd8) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 15;
-        if ((x & 3) == 0) {
-            unsigned base = (x >> 4) & 15, dest = x >> 12;
-            if (base == dest) { goto illegal; }
-            load(d, gpr[dest], read_gpr(d, base), MO_LEUL | MO_ALIGN);
-            tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 12) | ((x >> 8) & 15) * 16);
-        } else {
-            if (kind != 2 && kind != 3 && kind != 10 && kind != 11) { goto illegal; }
-            TCGv_i32 addr = tcg_temp_new_i32();
-            tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), kind & 8 ? 2 : 0);
-            tcg_gen_add_i32(addr, addr, read_gpr(d, (x >> 4) & 15));
-            if (!(kind & 1)) { load(d, gpr[x >> 12], addr, MO_LEUL | MO_ALIGN); }
-            else { store(d, read_gpr(d, x >> 12), addr, MO_LEUL | MO_ALIGN); }
-        }
+        if (kind != 2 && kind != 3 && kind != 10 && kind != 11) { goto illegal; }
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), kind & 8 ? 2 : 0);
+        tcg_gen_add_i32(addr, addr, read_gpr(d, (x >> 4) & 15));
+        if (!(kind & 1)) { load(d, gpr[x >> 12], addr, MO_LEUL | MO_ALIGN); }
+        else { store(d, read_gpr(d, x >> 12), addr, MO_LEUL | MO_ALIGN); }
         next = here + 4;
     } else if (op == 0xecdc) {
         uint16_t x = fetch(d, here + 2);
@@ -766,15 +778,20 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         next = here + 4;
     } else if (op == 0xeddc) {
         uint16_t x = fetch(d, here + 2);
-        if ((x & 15) != 2) { goto illegal; }
-        unsigned base = (x >> 4) & 15;
+        unsigned kind = x & 15, base = (x >> 4) & 15, dest = x >> 12;
+        if ((kind != 1 && kind != 2) || (kind == 1 && base == dest)) {
+            goto illegal;
+        }
         TCGv_i32 addr = tcg_temp_new_i32();
         /* Vendor EDDC 3312 and separate executable probes establish the
-         * unscaled incoming sum, including destination/base/index aliases. */
+         * unscaled incoming sum for loads. Vendor EDDC 0B31 stores the low
+         * halfword at the same pre-indexed address. Keep the unresolved
+         * source/base store alias rejected, as for ECDC word stores. */
         tcg_gen_add_i32(addr, read_gpr(d, base), read_gpr(d, (x >> 8) & 15));
         /* Preserve the modeled pre-index writeback-before-access order. */
         tcg_gen_mov_i32(gpr[base], addr);
-        load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN);
+        if (kind == 1) { store(d, read_gpr(d, dest), addr, MO_LEUW | MO_ALIGN); }
+        else { load(d, gpr[dest], addr, MO_LESW | MO_ALIGN); }
         next = here + 4;
     } else if (op == 0xedd4) {
         uint16_t x = fetch(d, here + 2);
@@ -862,14 +879,14 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (x & 1) { store(d, read_gpr(d, x >> 12), addr, MO_LEUW | MO_ALIGN); }
         else { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
         next = here + 4;
-    } else if ((op & 0xfffe) == 0xed54) {
+    } else if ((op & 0xfffc) == 0xed54) {
         uint16_t x = fetch(d, here + 2);
         if (x & 1) { goto illegal; }
-        unsigned offset = (op & 1) * 256 + ((x >> 8) & 15) * 16 + (x & 14);
+        int32_t offset = sext(op & 3, 2) * 256 + ((x >> 8) & 15) * 16 + (x & 14);
         TCGv_i32 addr = tcg_temp_new_i32();
-        /* Vendor ED54/63BC and ED55/52FC load signed halfwords at byte
-         * offsets 60 and 300, with no base writeback. Odd operands and
-         * ED56/57 remain unverified and explicitly unsupported. */
+        /* Vendor ED54/63BC and ED55/52FC use offsets 60 and 300;
+         * ED57/7FBC uses -4. The signed high two bits extend the displacement
+         * without base writeback. Odd operands remain unsupported. */
         tcg_gen_addi_i32(addr, read_gpr(d, (x >> 4) & 15), offset);
         load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN);
         next = here + 4;
@@ -963,6 +980,9 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         count(d); dynamic_jump(d, dest);
     } else if (op == 0x0410) {
         push(d, spr[RETS]);
+    } else if (op == 0x0488) {
+        /* A RETS-only restore advances SP and falls through to the tail call. */
+        pop(d, spr[RETS]);
     } else if ((op & 0xfff0) == 0x0460 || (op & 0xfff0) == 0x0440) {
         unsigned boundary = op & 15;
         unsigned lo = boundary < 4 ? boundary : 4;
@@ -1066,7 +1086,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         count(d); compare_branch(d, next + (int16_t)displacement * 2, next, cond,
                                  read_gpr(d, x >> 12), tcg_constant_i32(packed_mask(x)));
     } else if (op == 0xff0b || op == 0xff0d || op == 0xff40 ||
-               op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff4a) {
+               op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff49 || op == 0xff4a) {
         uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
         TCGCond cond;
         TCGv_i32 right;
@@ -1082,12 +1102,16 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             case 0xff42: cond = TCG_COND_GEU; break;
             case 0xff43: cond = TCG_COND_LTU; break;
             case 0xff48: cond = TCG_COND_GTU; break;
+            case 0xff49: cond = TCG_COND_LEU; break;
             default: cond = TCG_COND_GE; break; /* Exact FF4A. */
             }
             /* Vendor FF4A uses C bits8:11; the primary B field is contradicted. */
             right = read_gpr(d, (x >> 8) & 15);
         }
         next = here + 6;
+        if (op == 0xff49) {
+            gen_helper_pi32v2_unsigned_le_end(tcg_env, tcg_constant_i32(next));
+        }
         count(d); compare_branch(d, next + (int16_t)displacement * 2, next, cond,
                                  read_gpr(d, x >> 12), right);
     } else if (op == 0xff41) {
@@ -1175,6 +1199,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         gen_helper_pi32v2_flush(tcg_env, read_gpr(d, op & 15));
         db->is_jmp = DISAS_EXIT;
     } else if (op == 0x0080) {
+        gen_helper_pi32v2_return_end(tcg_env, tcg_constant_i32(next));
         count(d); dynamic_jump(d, spr[RETS]);
     } else if (op == 0x0081) {
         count(d); record_branch(d); gen_helper_pi32v2_rti(tcg_env); tcg_gen_exit_tb(NULL, 0);
@@ -1230,6 +1255,7 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
         return 1u << (op & 7);
     }
     if ((op & 0xff00) == 0x1600 || (op & 0xfff0) == 0xe040 ||
+        (op & 0xfff0) == 0xe140 ||
         (op & 0xfff0) == 0xe160 || (op & 0xfff0) == 0xe170 || (op & 0xffc0) == 0xe100 ||
         (op & 0xfff0) == 0xe1a0 || (op & 0xfff0) == 0xe1b0 ||
         (op & 0xfff0) == 0xe0a0 || (op & 0xfff0) == 0xe0e0 ||
@@ -1279,7 +1305,7 @@ static unsigned operation_size(uint16_t op)
         op == 0xff0b || op == 0xff0d ||
         op == 0xff20 || op == 0xff21 || op == 0xff23 || op == 0xff28 || op == 0xff29 ||
         op == 0xff2a || op == 0xff2b || op == 0xff2d ||
-        op == 0xff40 || op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff4a ||
+        op == 0xff40 || op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff49 || op == 0xff4a ||
         op == 0xff41 || op == 0xff60 || op == 0xff61) { return 6; }
     return op >> 13 == 7 ? 4 : 2;
 }

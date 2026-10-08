@@ -120,6 +120,28 @@ uint32_t HELPER(pi32v2_call_return)(CPUPi32v2State *env, uint32_t next)
     return HELPER(pi32v2_advance)(env, next);
 }
 
+void HELPER(pi32v2_return_end)(CPUPi32v2State *env, uint32_t next)
+{
+    /* A final selected RTS retires the arm at its sequential boundary before
+     * transferring to RETS. Match CALL's bounded policy; THEN with ELSE stays
+     * explicit until that control-transfer contract is established. */
+    if (next == env->predicate_end && env->predicate_from) {
+        pi32v2_fail(env, "final THEN return with ELSE is unsupported");
+    }
+    HELPER(pi32v2_advance)(env, next);
+}
+
+void HELPER(pi32v2_unsigned_le_end)(CPUPi32v2State *env, uint32_t next)
+{
+    /* Retire a final selected FF49 at its sequential arm boundary, before
+     * either destination starts another IF. Keep CALL/RTS's bounded policy
+     * for the unresolved final THEN with ELSE control transfer. */
+    if (next == env->predicate_end && env->predicate_from) {
+        pi32v2_fail(env, "final THEN FF49 branch with ELSE is unsupported");
+    }
+    HELPER(pi32v2_advance)(env, next);
+}
+
 /* This new branch is established outside conditional blocks. The reference
  * disagrees for a final selected THEN with ELSE, and hardware evidence for
  * that combination is absent. Reject it before any retirement/branch effect. */

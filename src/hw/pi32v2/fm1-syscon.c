@@ -5,7 +5,8 @@
 #include "fm1-syscon.h"
 
 static const uint64_t masks[FM1_SYSCON_WORD_COUNT] = {
-    [FM1_SYSCON_CLK_CON1] = 3,
+    /* USB uses bits 0..1; UART independently selects bits 10..11. */
+    [FM1_SYSCON_CLK_CON1] = 0xc03,
     [FM1_SYSCON_CLK_CON2] = 0xf00,
     [FM1_SYSCON_IOMAP_CON5] = 0xc0,
 };

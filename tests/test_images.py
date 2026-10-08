@@ -66,7 +66,7 @@ def flash_image(key=0x2468, compressed=False):
 
 
 def package(fwsc=True, resource=True, key=0x2468, compressed=False,
-            destination=0xEA000, resource_type=0x32):
+            destination=0xEA000, resource_type=0x32, trim_tail=False):
     flash, app = flash_image(key, compressed)
     entries = []
     data = bytearray([255] * 0x6000)
@@ -85,6 +85,8 @@ def package(fwsc=True, resource=True, key=0x2468, compressed=False,
         metadata = struct.pack("<IIII", 0, 160, destination, 0x1000) + bytes(28)
         entry(resource_type, offset, preset, 160, "USR", metadata)
         data[offset:offset + len(preset)] = sfc(preset, offset, key)
+        if trim_tail:
+            del data[offset + len(preset):]
     table = b"".join(entries)
     body = struct.pack("<HIHHI48s", crc(table), len(data), len(entries),
                        4, 512, b"test".ljust(48, b"\0"))
@@ -208,6 +210,36 @@ class ImageTests(unittest.TestCase):
                                      bytes([255]) * (0x1000 - len(preset)))
                     # The packaged ROM/SPL portion remains byte exact.
                     self.assertEqual(nor[:0x4000], flash_image(key)[0][:0x4000])
+
+    def test_final_payload_without_allocation_padding(self):
+        for fwsc in (False, True):
+            with self.subTest(fwsc=fwsc):
+                padded, _, _ = package(fwsc=fwsc)
+                unpadded, app, preset = package(fwsc=fwsc, trim_tail=True)
+                success, nor, error = self.decode(unpadded)
+                self.assertTrue(success, error)
+                self.assertEqual(nor, self.decode(padded)[1])
+                self.assertEqual(nor[0x4120:0x4120 + len(app)], app)
+                self.assertEqual(nor[0xEA000:0xEA000 + len(preset)], preset)
+
+    def test_missing_payload_and_excessive_tail_allocation_are_rejected(self):
+        original, _, _ = package(fwsc=False, trim_tail=True)
+        for missing_payload in (False, True):
+            with self.subTest(missing_payload=missing_payload):
+                data = bytearray(original)
+                if missing_payload:
+                    del data[-1:]
+                else:
+                    # More than one allocation block beyond EOF is not the
+                    # optional trailing alignment padding observed in files.
+                    entry = bytearray(enc(data[144:224]))
+                    struct.pack_into("<I", entry, 16, 192)
+                    data[144:224] = enc(entry)
+                header = bytearray(enc(data[:64]))
+                struct.pack_into("<HI", header, 2, crc(data[64:224]), len(data))
+                struct.pack_into("<H", header, 0, crc(header[2:]))
+                data[:64] = enc(header)
+                self.reject(data, "payload bounds or alignment")
 
     def test_missing_presets_are_erased(self):
         data, _, _ = package(resource=False)

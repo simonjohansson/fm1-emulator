@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Fresh implementation from reached register/width and guest protocol facts.
- * The sole supported configuration transmits 256 stereo frames per half.
+ * Supported configurations transmit 128 or 256 stereo frames per half.
  * 44100 Hz is a documented functional clock matching the selected firmware's
  * generated FS constant, not a calibrated model of the boot PLL or codec.
  * DMA samples are observed at completion boundaries; late callbacks cannot
@@ -22,8 +22,6 @@
 #define DMA_ENABLE 0x0800u
 #define ACTIVE_HALF 0x8000u
 #define HALF_PENDING 0x80u
-#define HALF_FRAMES (FM1_ALNK_HALF_WORDS / 2u)
-#define PERIOD_NUMERATOR (HALF_FRAMES * 1000000000ull)
 
 static G_NORETURN void alnk_fail(FM1PocALNK *a, const char *reason)
 {
@@ -41,8 +39,9 @@ static int64_t next_deadline(FM1PocALNK *a)
     /* Split the rational period to avoid the short overflow horizon of
      * half_count * 256 * 1e9. Rounding occurs on the cumulative remainder. */
     uint64_t n = a->scheduled_halves + 1;
-    uint64_t whole = PERIOD_NUMERATOR / FM1_ALNK_FRAME_RATE;
-    uint64_t remainder = PERIOD_NUMERATOR % FM1_ALNK_FRAME_RATE;
+    uint64_t numerator = (a->half_words / 2u) * 1000000000ull;
+    uint64_t whole = numerator / FM1_ALNK_FRAME_RATE;
+    uint64_t remainder = numerator % FM1_ALNK_FRAME_RATE;
     if (n > (INT64_MAX - (uint64_t)a->epoch) / (whole + 1)) {
         alnk_fail(a, "ALNK0 virtual completion deadline overflow");
     }
@@ -52,27 +51,28 @@ static int64_t next_deadline(FM1PocALNK *a)
 
 static void capture_half(FM1PocALNK *a, unsigned half)
 {
-    uint32_t start = a->dma_address + half * FM1_ALNK_HALF_BYTES;
-    for (unsigned offset = 0; offset < FM1_ALNK_HALF_BYTES; offset += 256) {
+    unsigned bytes = a->half_words * 4u;
+    uint32_t start = a->dma_address + half * bytes;
+    for (unsigned offset = 0; offset < bytes; offset += 256) {
         if (address_space_read(&address_space_memory, start + offset,
                                MEMTXATTRS_UNSPECIFIED, a->latest_half + offset,
                                256) != MEMTX_OK) {
             alnk_fail(a, "ALNK0 DMA could not read guest SRAM");
         }
     }
-    for (unsigned offset = 0; offset < FM1_ALNK_HALF_BYTES; offset++) {
+    for (unsigned offset = 0; offset < bytes; offset++) {
         a->sample_digest = (a->sample_digest ^ a->latest_half[offset]) *
                            16777619u;
     }
-    for (unsigned offset = 0; offset < FM1_ALNK_HALF_BYTES; offset += 4) {
+    for (unsigned offset = 0; offset < bytes; offset += 4) {
         if (ldl_le_p(a->latest_half + offset)) {
             a->nonzero_words++;
         }
     }
-    a->sample_words += FM1_ALNK_HALF_WORDS;
-    a->sample_frames += HALF_FRAMES;
+    a->sample_words += a->half_words;
+    a->sample_frames += a->half_words / 2u;
     a->last_half = half;
-    a->latest_half_bytes = FM1_ALNK_HALF_BYTES;
+    a->latest_half_bytes = bytes;
 }
 
 static void completed(void *opaque)
@@ -86,7 +86,7 @@ static void completed(void *opaque)
     uint64_t frames = (elapsed / 1000000000ull) * FM1_ALNK_FRAME_RATE +
                       (elapsed % 1000000000ull) * FM1_ALNK_FRAME_RATE /
                       1000000000ull;
-    uint64_t reached = frames / HALF_FRAMES;
+    uint64_t reached = frames / (a->half_words / 2u);
     uint64_t due = reached - a->scheduled_halves;
     if (!due) { alnk_fail(a, "ALNK0 deadline did not complete a half"); }
     /* Keep the real level latch, rather than queueing one ISR per deadline.
@@ -110,13 +110,13 @@ static void check_configuration(FM1PocALNK *a)
 {
     if (a->control0 != (0x0180u | DMA_ENABLE) ||
         a->control1 != 0x5000u || a->control3 != 0x83u ||
-        a->half_words != FM1_ALNK_HALF_WORDS ||
+        (a->half_words != 256u && a->half_words != FM1_ALNK_HALF_WORDS) ||
         fm1_syscon_get(a->syscon, FM1_SYSCON_CLK_CON2) ||
         fm1_syscon_get(a->syscon, FM1_SYSCON_IOMAP_CON5)) {
         alnk_fail(a, "unsupported ALNK0 enabled configuration");
     }
     if ((a->dma_address & 3) || a->dma_address < SRAM_BASE ||
-        (uint64_t)a->dma_address + 2u * FM1_ALNK_HALF_BYTES > SRAM_END) {
+        (uint64_t)a->dma_address + 2u * a->half_words * 4u > SRAM_END) {
         alnk_fail(a, "ALNK0 double buffer must be aligned and entirely in SRAM");
     }
 }
@@ -217,7 +217,7 @@ static void alnk_write(void *opaque, hwaddr offset, uint64_t value,
         return;
     case 0x20:
         if (a->enabled) { alnk_fail(a, "ALNK0 DMA length changed while enabled"); }
-        if (value != FM1_ALNK_HALF_WORDS) {
+        if (value != 256u && value != FM1_ALNK_HALF_WORDS) {
             alnk_fail(a, "unsupported ALNK0 DMA half length");
         }
         a->half_words = value;

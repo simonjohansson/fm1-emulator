@@ -14,6 +14,7 @@
 #include "fm1-adc.h"
 #include "fm1-analog.h"
 #include "fm1-input.h"
+#include "fm1-uart.h"
 
 #define TYPE_FM1_POC_MACHINE MACHINE_TYPE_NAME("fm1-poc")
 #define FM1_POC_MAX_ALNK_RESETS 16
@@ -38,6 +39,7 @@ struct FM1PocState {
     qemu_irq irq, alnk_irq;
     uint32_t irq_configs[32];
     uint32_t gpio[8][8], iomap_con0, iomap_con1;
+    uint32_t iomap_con2, iomap_con3;
     FM1PocLCD lcd;
     FM1PocSystem system;
     FM1PocNOR nor;
@@ -47,6 +49,7 @@ struct FM1PocState {
     FM1PocADC adc;
     FM1PocAnalog analog;
     FM1PocInput input;
+    FM1PocUART uart;
     unsigned frames;
     const char *frame_dir;
     QEMUTimer *display_key_timer;

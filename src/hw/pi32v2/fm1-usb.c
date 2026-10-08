@@ -250,6 +250,8 @@ static uint64_t usb_read(void *opaque, hwaddr offset, unsigned size)
         }
         return usb->bridge;
     case 0x18: return usb->rx_address[0];
+    case 0x34: return usb->endpoint_count[4];
+    case 0x38: return usb->tx_address[4];
     case 0x3c: return usb->rx_address[4];
     }
     if (offset >= 8 && offset <= 0x14) {
@@ -301,15 +303,19 @@ static void usb_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         check_buffer(usb, value);
         usb->rx_address[4] = value;
         return;
+    case 0x38:
+        check_buffer(usb, value);
+        usb->tx_address[4] = value;
+        return;
     }
-    if (offset >= 8 && offset <= 0x14) {
+    if ((offset >= 8 && offset <= 0x14) || offset == 0x34) {
         if (value && !usb->sie_clock_available) {
             usb_fail(usb, "USB endpoint packet DMA is unimplemented");
         }
         if (value > 64) {
             usb_fail(usb, "unsupported USB endpoint DMA length");
         }
-        usb->endpoint_count[(offset - 8) / 4] = value;
+        usb->endpoint_count[offset == 0x34 ? 4 : (offset - 8) / 4] = value;
         return;
     }
     if (offset >= 0x1c && offset <= 0x30) {

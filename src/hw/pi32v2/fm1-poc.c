@@ -231,7 +231,13 @@ static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
 static uint64_t iomap_read(void *opaque, hwaddr offset, unsigned size)
 {
     FM1PocState *m = opaque;
-    return !offset ? m->iomap_con0 : m->iomap_con1;
+    switch (offset) {
+    case 0: return m->iomap_con0;
+    case 4: return m->iomap_con1;
+    case 8: return m->iomap_con2;
+    case 12: return m->iomap_con3;
+    default: pi32v2_fail(&m->cpu->env, "unsupported IOMAP register");
+    }
 }
 static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
@@ -240,6 +246,17 @@ static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
         if (value & ~0x20ull) { pi32v2_fail(&m->cpu->env, "unsupported IOMAP_CON0 routing"); }
         m->iomap_con0 = value;
         fm1_nor_set_pins(&m->nor, m->gpio[3][0], m->iomap_con0);
+        return;
+    }
+    /* Reached UART pin selections are independent of NOR/LCD routing.
+     * The UART receiver has no external input; no GPIO edge becomes a byte. */
+    if (offset == 8 || offset == 12) {
+        uint64_t mask = offset == 8 ? 0x3f00 : 0xf0;
+        if (value & ~mask) {
+            pi32v2_fail(&m->cpu->env, "unsupported UART IOMAP routing");
+        }
+        if (offset == 8) { m->iomap_con2 = value; }
+        else { m->iomap_con3 = value; }
         return;
     }
     if (value & ~0x10ull) { pi32v2_fail(&m->cpu->env, "unsupported IOMAP_CON1 routing"); }
@@ -375,8 +392,10 @@ static void machine_init(MachineState *ms)
     sysbus_realize(SYS_BUS_DEVICE(&m->adc), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(&m->adc), 0, 0x13100);
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
+    fm1_uart_init(&m->uart, OBJECT(m), m->cpu);
+    memory_region_add_subregion(get_system_memory(), 0x12100, &m->uart.mmio);
     fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
-    memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 8);
+    memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 16);
     memory_region_add_subregion(get_system_memory(), 0x5101c, &m->iomap_mmio);
     fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
     object_initialize_child(OBJECT(m), "board-input", &m->input, TYPE_FM1_INPUT);

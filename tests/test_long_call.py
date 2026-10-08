@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from support import QEMU, ROOT, Guest, guest_state
+from support import INSPECTION, QEMU, ROOT, Guest, guest_state
 
 
 def long_call(guest, target):
@@ -73,6 +73,21 @@ class LongCallTests(unittest.TestCase):
         state = self.assert_finished(guest, 5)
         self.assertEqual(state["registers"][2], 0xabcdef01)
         self.assertEqual(state["specials"][3], 0x02000300)
+
+    def test_rets_only_pop_restores_and_falls_through(self):
+        guest = Guest()
+        guest.literal(14, INSPECTION + 8, special=True)
+        guest.literal(1, 0x02000300)
+        guest.emit(0xe064, 0x1380)
+        guest.emit(0x0410)
+        guest.literal(1, 0x02000400)
+        guest.emit(0xe064, 0x1380)
+        guest.emit(0x0488)
+        guest.literal(2, 0xabcdef01)
+        state = self.assert_finished(guest, guest.instructions)
+        self.assertEqual(state["specials"][3], 0x02000300)
+        self.assertEqual(state["specials"][14], INSPECTION + 8)
+        self.assertEqual(state["registers"][2], 0xabcdef01)
 
 
 if __name__ == "__main__":

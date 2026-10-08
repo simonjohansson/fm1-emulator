@@ -40,16 +40,17 @@ contacts, while keyboard and mouse holds are combined.
 ## Hardware and limits
 
 The model includes 512 KiB SRAM, NOR/SFC/SPI0, SPI1/LCD, GPIO/IOMAP, TIMER4/5,
-protection/P33/watchdog, ALNK0 audio, SAR/WLA, and USB. Controllers own their
-registers, transfers, and IRQ outputs; the board owns composition and wiring.
+protection/P33/watchdog, ALNK0 audio, SAR/WLA, USB, and idle UART1 receiver
+initialization. Controllers own their registers, transfers, and IRQ outputs;
+the board owns composition and wiring.
 Unimplemented accesses or configurations fault explicitly.
 
 Felucca boot, input, guest audio generation, UI progress, and descriptor-driven
 USB CDC enumeration/DTR/endpoint DMA are tested. CoreAudio consumes guest
 samples; it does not synthesize substitute audio. Emulation is below real time.
 NOR program/erase persistence, ROM boot, whole-machine reset, complete IRQ
-nesting/arbitration, USB MIDI, UART, and wider firmware compatibility remain
-incomplete or unverified.
+nesting/arbitration, USB MIDI, external UART transfers, and wider firmware
+compatibility remain incomplete or unverified.
 
 Maintain the independent QEMU implementation and its
 [licensing boundary](../LICENSES.md). Saved disassembly and observed behavior
