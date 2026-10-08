@@ -1180,7 +1180,7 @@ Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
 two instructions to ED81; renamed generic state except profile and sample/LCD
 bytes match. Whole SRAM is not compared across initialization modes.
 
-Latest stop: ED81/0019 at `0x020039b0`, 43,289,453
+At this milestone: ED81/0019 at `0x020039b0`, 43,289,453
 instructions and 346,315,632 ns. Vendor `ifs (r0 < r1) goto 0x020039e6` uses signed9 word displacement
 from PC+4. Extend only exact ED80/FFF0 with signed LT, preserving the common
 pipeline and conservative unused-bit admission. Both current branch gates
@@ -1193,7 +1193,7 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_le_branch.py
 ```
 
-### ED80 signed register less-than branch and latest checkpoint
+### ED80 signed register less-than branch checkpoint
 
 Exact ED80/FFF0 compares signed32 second-word bits12..15 against opcode
 bits0..3 using LT and signed9 word displacement from PC+4. Apache progflow
@@ -1229,6 +1229,44 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_lt_branch.py
+```
+
+### EDDC signed pre-indexed halfword load and latest checkpoint
+
+Exact scalar EDDC kind2 uses an unscaled incoming base+index sum modulo32,
+writes the effective address to base, then loads a signed aligned halfword.
+Destination bits12..15, index bits8..11 and base bits4..7 follow direct vendor
+EDDC/3312 and independent probes. No exact constructor exists in the pinned
+Apache SLEIGH; analogous word/byte rules are not direct opcode authority.
+An address temporary preserves every alias: when destination=base, the loaded
+value wins. Helpers, classifiers, neighboring forms and old validators stay fixed.
+
+The focused gate passes 117 reference cases, one generic replay and 22 model
+faults. All register fields and aliases, sign/scale discrimination, wrapped and
+negative indices, odd operands with aligned sum, XIP/protected reads, PSR/RETS,
+count, arms and the actual EDDC→ED54 pair are checked. Six data faults retain
+modeled partial base writeback without a loaded result or retirement; a PC guard
+and 15 deferred kinds preserve incoming registers. Reference faults establish
+only PC/address/width/read and expose no CPU state. Hardware fault ordering
+remains unverified. Deferred kind0 is reference-valid unsigned and its full
+completion is retained; rejection is current model scope, not hardware invalidity.
+
+Separate research retains 327 canonical reference probes. The unchanged word
+pre-index gate passes 14 reference cases, one generic replay and 15 faults.
+Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
+2,712 instructions to E86C; renamed captured state except profile and sample/LCD
+bytes match. Whole SRAM is not compared across initialization modes.
+
+Latest stop: E86C/3704 at `0x02003aac`, 43,292,172
+instructions and 346,337,384 ns. Vendor `[r3+4] <<= 7` is reached while scaling interleaved audio samples.
+Establish exact memory word-shift fields, supported modes, flags and read/write
+fault phases independently. Preserve existing RMW families and I/O fencing.
+Caches use `after-signed-preindexed-halfword-load` and its `-generic` label; main repo
+`.deps/qemu-signed-preindexed-halfword-load-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 1/0; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_preindexed_halfword_load.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

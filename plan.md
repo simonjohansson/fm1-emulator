@@ -346,6 +346,15 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   completion discrepancies remain explicit. Evidence:
   `.deps/qemu-signed-register-lt-branch-2026-10-08/`. Audio service remains open.
 
+- 2026-10-08: Stage 3 exact EDDC signed pre-indexed halfword load complete and
+  independently reviewed. Focused gate passes 117 reference cases, one generic
+  replay and 22 faults; adjacent word-preindex and full ISA/profile/IRQ/boot pass.
+  Unchanged firmware advances 2,712 instructions to E86C at `0x02003aac`;
+  renamed state/sample/LCD match. Load-wins aliases, partial modeled fault
+  writeback, deferred unsigned kind0 and absent exact primary are explicit.
+  Evidence: `.deps/qemu-signed-preindexed-halfword-load-2026-10-08/`.
+  Audio service remains open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -472,7 +481,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is EDDC, recorded below.
+  latest firmware blocker is E86C, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -482,16 +491,15 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: signed pre-indexed halfword load EDDC
+## Current firmware blocker: word memory left-shift E86C
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-register-lt-branch/`.
-Vendor `r3 = h[++r1=r3] (s)` is reached in the table lookup.
-Establish exact halfword indexing, sign extension and writeback from pinned
-load/store facts plus independent probes. Preserve existing word/indexed forms,
-explicit alias limitations and fault ordering until evidence supports changes.
+Latest unchanged boot: `.cache/felucca-validation/after-signed-preindexed-halfword-load/`.
+Vendor `[r3+4] <<= 7` is reached while scaling interleaved audio samples.
+Establish exact memory word-shift fields, supported modes, flags and read/write
+fault phases independently. Preserve existing RMW families and I/O fencing.
 
-- PC `0x020039fc`, words `EDDC/3312`.
-- Instructions 43,289,460; virtual time 346,315,688 ns.
+- PC `0x02003aac`, words `E86C/3704`.
+- Instructions 43,292,172; virtual time 346,337,384 ns.
 - IRQ11 entries/returns 1/0;
   IRQ63 entries/returns 0/0.
 - ALNK completions 6, acknowledgments 0,
@@ -500,9 +508,35 @@ explicit alias limitations and fault ordering until evidence supports changes.
 - LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
   Audio service, synthesis and the home screen remain incomplete.
-- QEMU SHA-256: `062be3646e6d7abd9b8f0df46c8f75ce7c3a9ecdcb3344697e88afa8d741d4de`.
-- Generic replay: `after-signed-register-lt-branch-generic`.
-- Durable evidence: main repo `.deps/qemu-signed-register-lt-branch-2026-10-08/`.
+- QEMU SHA-256: `e8ffbd0f321106a1765ce47e5a7da86fcc6825a283a31174eb3900f315dc180f`.
+- Generic replay: `after-signed-preindexed-halfword-load-generic`.
+- Durable evidence: main repo `.deps/qemu-signed-preindexed-halfword-load-2026-10-08/`.
+
+### Resolved EDDC signed pre-indexed halfword load
+
+Exact scalar EDDC kind2 uses an unscaled incoming base+index sum modulo32,
+writes the effective address to base, then loads a signed aligned halfword.
+Destination bits12..15, index bits8..11 and base bits4..7 follow direct vendor
+EDDC/3312 and independent probes. No exact constructor exists in the pinned
+Apache SLEIGH; analogous word/byte rules are not direct opcode authority.
+An address temporary preserves every alias: when destination=base, the loaded
+value wins. Helpers, classifiers, neighboring forms and old validators stay fixed.
+
+The focused gate passes 117 reference cases, one generic replay and 22 model
+faults. All register fields and aliases, sign/scale discrimination, wrapped and
+negative indices, odd operands with aligned sum, XIP/protected reads, PSR/RETS,
+count, arms and the actual EDDC→ED54 pair are checked. Six data faults retain
+modeled partial base writeback without a loaded result or retirement; a PC guard
+and 15 deferred kinds preserve incoming registers. Reference faults establish
+only PC/address/width/read and expose no CPU state. Hardware fault ordering
+remains unverified. Deferred kind0 is reference-valid unsigned and its full
+completion is retained; rejection is current model scope, not hardware invalidity.
+
+Separate research retains 327 canonical reference probes. The unchanged word
+pre-index gate passes 14 reference cases, one generic replay and 15 faults.
+Full ISA, 98 profiles, ten IRQ cases and boot pass. Unchanged firmware advances
+2,712 instructions to E86C; renamed captured state except profile and sample/LCD
+bytes match. Whole SRAM is not compared across initialization modes.
 
 ### Resolved ED80 signed register less-than branch
 
@@ -901,13 +935,13 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached EDDC/3312 signed pre-indexed halfword load to the CPU worker.
-   Establish exact fields, signedness, index scale, incoming operands and
-   writeback/alias behavior independently. Preserve neighboring forms/helpers.
-   Check boundaries, fields/aliases, widths, PSR/count, conditionals, generic
-   replay, protection/access faults and model fault ordering. Audit existing
-   validators for obsolete EDDC negatives; retire only necessary cases after
-   admission, retaining all other regressions.
+2. Assign reached E86C/3704 word memory left-shift to the CPU worker. Establish
+   exact register/offset/shift fields, mode constraints, PSR behavior and access
+   phases from available primary facts, vendor and independent probes. Preserve
+   existing RMW forms/helpers and I/O fencing; avoid repeated MMIO read effects.
+   Check data/shift boundaries, fields/offsets, neighboring memory, PSR/count,
+   conditionals, generic replay and precise read/write/PC faults. Record direct
+   primary absence or disagreements explicitly if encountered.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.

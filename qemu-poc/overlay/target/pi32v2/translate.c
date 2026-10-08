@@ -588,6 +588,18 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (kind == 3) { store(d, read_gpr(d, dest), addr, MO_LEUL | MO_ALIGN); }
         else { load(d, gpr[dest], addr, MO_LEUL | MO_ALIGN); }
         next = here + 4;
+    } else if (op == 0xeddc) {
+        uint16_t x = fetch(d, here + 2);
+        if ((x & 15) != 2) { goto illegal; }
+        unsigned base = (x >> 4) & 15;
+        TCGv_i32 addr = tcg_temp_new_i32();
+        /* Vendor EDDC 3312 and separate executable probes establish the
+         * unscaled incoming sum, including destination/base/index aliases. */
+        tcg_gen_add_i32(addr, read_gpr(d, base), read_gpr(d, (x >> 8) & 15));
+        /* Preserve the modeled pre-index writeback-before-access order. */
+        tcg_gen_mov_i32(gpr[base], addr);
+        load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN);
+        next = here + 4;
     } else if (op == 0xedd0) {
         uint16_t x = fetch(d, here + 2);
         unsigned base = (x >> 4) & 15, dest = x >> 12;
