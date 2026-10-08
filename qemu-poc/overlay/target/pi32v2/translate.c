@@ -663,6 +663,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         gen_helper_pi32v2_alu(gpr[op & 15], tcg_env, read_gpr(d, x >> 12),
                               tcg_constant_i32(imm), tcg_constant_i32(0));
         next = here + 4;
+    } else if (op == 0xe9d8) {
+        uint16_t x = fetch(d, here + 2);
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, spr[SP], x & 4094);
+        if (x & 1) { store(d, read_gpr(d, x >> 12), addr, MO_LEUW | MO_ALIGN); }
+        else { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
+        next = here + 4;
     } else if (op == 0xe9de) {
         uint16_t x = fetch(d, here + 2);
         TCGv_i32 addr = tcg_temp_new_i32();

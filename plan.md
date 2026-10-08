@@ -411,6 +411,18 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   Read-only native launch design is saved for later sustained/input acceptance.
   Evidence: `.deps/qemu-sp-relative-byte-store-2026-10-08/`.
 
+- 2026-10-08: Stage 3 exact E9D8 unsigned SP-relative halfword load/store
+  complete, independently reviewed. Dedicated seven-line scalar path and
+  necessary prior-byte E9D8 negative retirement preserve all other paths.
+  Focused 113 reference positives, one generic and 17 modeled faults pass,
+  with full/adjacent gates. Original 115 exploratory expected completions and
+  initial E9D9 raw are retained separately from 116 final sampled-state checks.
+  Unchanged boot advances 1,015,870 instructions into ui_draw to EA13
+  at `0x0200a842`; renamed captures match. HOME frame1/stage3 drawing
+  has progressed but remains incomplete. Read-only sustained checkpoint
+  strategy is retained for the later HOME/30-second acceptance.
+  Evidence: `.deps/qemu-sp-relative-halfword-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -537,7 +549,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is E9D8 SP-relative halfword memory, recorded below.
+  latest firmware blocker is EA13 register-bitwise-AND IF, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -547,27 +559,71 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: E9D8 SP-relative halfword memory
+## Current firmware blocker: EA13 register-bitwise-AND IF
 
-Latest unchanged boot: `.cache/felucca-validation/after-sp-relative-byte-store/`.
-Vendor `h[sp+328] = r8` is reached immediately after the accepted byte
-store in `fm1_cstart`. Establish exact E9D8 load/store constructors, unsigned
-offset masking, halfword semantics and model fault phases before implementing.
-HOME flag/frame1/stage2 still precedes a completed drawing.
+Latest unchanged boot: `.cache/felucca-validation/after-sp-relative-halfword/`.
+Vendor `if ((r3 & r1) != 0) { r9 = 2; }` is reached inside `ui_draw`.
+Establish the exact register-bitwise-AND conditional constructor, selector
+fields and THEN/ELSE sizing before implementing through existing predicate
+machinery. HOME flag/frame1/stage3 and increased LCD transfers show drawing
+in progress, without a completed frame.
 
-- PC `0x0200db98`, words `E9D8/8149`.
-- Instructions 116,555,192; virtual time 932,441,544 ns.
-- IRQ11 entries/returns 101/101;
-  IRQ63 entries/returns 5105/5105.
-- ALNK completions 106, acknowledgments 101,
+- PC `0x0200a842`, words `EA13/0180`.
+- Instructions 117,571,062; virtual time 940,568,504 ns.
+- IRQ11 entries/returns 103/103;
+  IRQ63 entries/returns 5172/5172.
+- ALNK completions 108, acknowledgments 103,
   coalesced 5, pending `0x0`;
-  54,272 captured sample words, 0 nonzero.
+  55,296 captured sample words, 0 nonzero.
 - LCD visible=True, busy=True; guard debug message
   `0x0`, watchdog expirations 0.
-  Audio and timer service return successfully; HOME flag/frame1/stage2 is set, but drawing and synthesis remain incomplete.
-- QEMU SHA-256: `d8c6061027d1769604ecd3abbe30aebefb59a9df77ac0db3898a9843183f9c62`.
-- Generic replay: `after-sp-relative-byte-store-generic`.
-- Durable evidence: main repo `.deps/qemu-sp-relative-byte-store-2026-10-08/`.
+  Audio and timer service return successfully; HOME flag/frame1/stage3 and increasing LCD transfers establish drawing in progress, without completed HOME or synthesis.
+- QEMU SHA-256: `1c45d0efc9cd04360b77a34c6927f0aeaa637273d8deecd718adf4ac23ac518f`.
+- Generic replay: `after-sp-relative-halfword-generic`.
+- Durable evidence: main repo `.deps/qemu-sp-relative-halfword-2026-10-08/`.
+
+### Resolved E9D8 SP-relative halfword memory
+
+The exact E9D8 scalar family uses operand bit 0 to select store or unsigned
+load. Operand bits 12..15 select an ordinary GPR; the unsigned byte offset
+is the low twelve bits with bit 0 cleared. A temporary wrapping SP+offset
+address passes a two-byte aligned access through existing helpers. Stores
+write only the low sixteen bits; loads zero-extend. SP/PSR/RETS are preserved,
+with only the load destination GPR updated. Sizing is four bytes and
+retirement is once. Existing E9D0/E9D4/E9DE paths, parallel classification,
+helpers and common predicate machinery remain unchanged.
+
+Pinned Apache stack store and unsigned-load constructors agree with vendor
+E9D8/8149. Other neighboring scalar opcodes remain outside this scope.
+The earlier byte-store gate retires only its E9D8 deferred negative and
+related counts/claims/dead expected-value branch; its 78 successful cases
+and other fault checks are preserved. Original frozen byte-store validator
+and its 11-fault milestone remain retained as historical acceptance evidence.
+
+Initial research recorded 130 probes and 115 verified expected completions,
+with no mismatches; the sampled E9D9 completion was initially unverified. A reference-valid E9D9 example is retained but its
+semantics lack pinned primary support; no signed-halfword claim is made.
+Two PC-guard fixtures complete in the reference, so their QEMU rejection
+remains qualified model policy. Fatal access records establish address,
+two-byte width and read/write category without fault-state snapshots.
+Successful wrapping into mapped memory and hardware fault state are unknown.
+
+The focused validator contains 113 reference positives, one default-loader
+replay and 17 modeled faults. Three separate complete reference states
+document two PC-guard differences and one primary-unverified E9D9 sample.
+Fourteen reference fatal calls provide access/rejection categories only.
+All 130 final private calls are checked (116 sampled complete states plus
+14 fatal categories), distinct from the preserved initial 115 expected
+research completions and initially unverified E9D9 snapshot. Checking that
+single sample does not establish general E9D9 semantics or signedness.
+
+Focused acceptance and full ISA/profile/IRQ/boot plus adjusted adjacent
+byte-store gates pass. Unchanged boot advances 1,015,870 instructions into
+ui_draw and stops at EA13. Audio IRQ entries/returns are 103/103 and timer
+5172/5172; LCD pixels/transfers have progressed, but HOME frame1/stage3 is
+incomplete. Renamed default-loader replay matches every captured state field
+except profile and all LCD/latest-half sample bytes; whole SRAM is not
+compared across different initialization modes. Samples remain zero.
 
 ### Resolved E9DE SP-relative byte store
 
@@ -1206,13 +1262,13 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached E9D8/8149 SP-relative halfword memory to the CPU worker.
-   Establish pinned primary/vendor facts and independent load/store, source
-   and destination fields, offset bits, zero-extension/truncation, alignment
-   and neighboring-memory expectations. Include special SP versus GPR14,
-   boundaries, precise two-byte guards/access faults, conditional sizing and
-   retirement. Preserve E9D0/E9D4/E9DE, helpers, parallel and common paths.
-   Review the exact proposed scope and validator before implementation.
+2. Assign reached EA13/0180 register-bitwise-AND IF to the CPU worker.
+   Establish pinned primary/vendor condition and operand fields, zero/nonzero
+   selection, canonical bits and arm counts. Probe varied-width selected/skipped
+   THEN/ELSE arms, following independent IF, full state/count/memory and
+   modeled nested/unsupported combinations. Prefer exact narrow selector
+   decoding through existing helpers; preserve common predicate state and
+   inherited IRQ/conditional limitations. Review design and validator first.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
@@ -1270,6 +1326,12 @@ visible idle LCD. Bind observers to unchanged input hash and pinned bytes.
 Never synthesize guest counters or write guest RAM to satisfy a checkpoint.
 
 ### Validate 30 guest seconds and physical input
+
+Read-only capture strategy is retained in main
+`.deps/qemu-sustained-home-2026-10-08/checkpoint-plan.md`. Measure the
+one-time late pre-clear instruction count, then replay at count+1 to capture
+the guest clearing its own bootguard. Use existing capture formats and the
+private extended host timeout; no guest counter writes or new runtime interface.
 
 Require repeated complete home frames, progressing milliseconds/foreground,
 per-source entry/return/ack balance, sound stacks/guards, no crash/watchdog

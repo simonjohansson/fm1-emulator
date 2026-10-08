@@ -1514,7 +1514,7 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_indexed_bit_and.py
 ```
 
-### E9DE SP-relative byte store and latest checkpoint
+### E9DE SP-relative byte store checkpoint
 
 The sole production change is a separate exact E9DE scalar path: take the
 source GPR from operand bits 12..15 and the unsigned byte offset from all
@@ -1549,7 +1549,7 @@ except profile and all LCD/latest-half sample bytes. Whole SRAM is not compared
 across different initialization modes. HOME flag/frame1/stage2 remains
 incomplete drawing; audio/timer service returns successfully but samples are zero.
 
-Latest stop: E9D8/8149 at `0x0200db98`, 116,555,192
+At this milestone: E9D8/8149 at `0x0200db98`, 116,555,192
 instructions and 932,441,544 ns. Vendor `h[sp+328] = r8` is reached immediately after the accepted byte
 store in `fm1_cstart`. Establish exact E9D8 load/store constructors, unsigned
 offset masking, halfword semantics and model fault phases before implementing.
@@ -1560,6 +1560,63 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_sp_relative_byte_store.py
+```
+
+### E9D8 SP-relative halfword memory and latest checkpoint
+
+The exact E9D8 scalar family uses operand bit 0 to select store or unsigned
+load. Operand bits 12..15 select an ordinary GPR; the unsigned byte offset
+is the low twelve bits with bit 0 cleared. A temporary wrapping SP+offset
+address passes a two-byte aligned access through existing helpers. Stores
+write only the low sixteen bits; loads zero-extend. SP/PSR/RETS are preserved,
+with only the load destination GPR updated. Sizing is four bytes and
+retirement is once. Existing E9D0/E9D4/E9DE paths, parallel classification,
+helpers and common predicate machinery remain unchanged.
+
+Pinned Apache stack store and unsigned-load constructors agree with vendor
+E9D8/8149. Other neighboring scalar opcodes remain outside this scope.
+The earlier byte-store gate retires only its E9D8 deferred negative and
+related counts/claims/dead expected-value branch; its 78 successful cases
+and other fault checks are preserved. Original frozen byte-store validator
+and its 11-fault milestone remain retained as historical acceptance evidence.
+
+Initial research recorded 130 probes and 115 verified expected completions,
+with no mismatches; the sampled E9D9 completion was initially unverified. A reference-valid E9D9 example is retained but its
+semantics lack pinned primary support; no signed-halfword claim is made.
+Two PC-guard fixtures complete in the reference, so their QEMU rejection
+remains qualified model policy. Fatal access records establish address,
+two-byte width and read/write category without fault-state snapshots.
+Successful wrapping into mapped memory and hardware fault state are unknown.
+
+The focused validator contains 113 reference positives, one default-loader
+replay and 17 modeled faults. Three separate complete reference states
+document two PC-guard differences and one primary-unverified E9D9 sample.
+Fourteen reference fatal calls provide access/rejection categories only.
+All 130 final private calls are checked (116 sampled complete states plus
+14 fatal categories), distinct from the preserved initial 115 expected
+research completions and initially unverified E9D9 snapshot. Checking that
+single sample does not establish general E9D9 semantics or signedness.
+
+Focused acceptance and full ISA/profile/IRQ/boot plus adjusted adjacent
+byte-store gates pass. Unchanged boot advances 1,015,870 instructions into
+ui_draw and stops at EA13. Audio IRQ entries/returns are 103/103 and timer
+5172/5172; LCD pixels/transfers have progressed, but HOME frame1/stage3 is
+incomplete. Renamed default-loader replay matches every captured state field
+except profile and all LCD/latest-half sample bytes; whole SRAM is not
+compared across different initialization modes. Samples remain zero.
+
+Latest stop: EA13/0180 at `0x0200a842`, 117,571,062
+instructions and 940,568,504 ns. Vendor `if ((r3 & r1) != 0) { r9 = 2; }` is reached inside `ui_draw`.
+Establish the exact register-bitwise-AND conditional constructor, selector
+fields and THEN/ELSE sizing before implementing through existing predicate
+machinery. HOME flag/frame1/stage3 and increased LCD transfers show drawing
+in progress, without a completed frame.
+Caches use `after-sp-relative-halfword` and its `-generic` label; main repo
+`.deps/qemu-sp-relative-halfword-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 103/103; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_sp_relative_halfword.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
