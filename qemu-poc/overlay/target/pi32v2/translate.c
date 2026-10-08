@@ -839,7 +839,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xfff0) == 0xe800 || (op & 0xfff0) == 0xe880 ||
                (op & 0xfff0) == 0xe900 || (op & 0xfff0) == 0xe980 ||
                (op & 0xfff0) == 0xec00 || (op & 0xfff0) == 0xec80 ||
-               (op & 0xfff0) == 0xed80 ||
+               (op & 0xfff0) == 0xed00 || (op & 0xfff0) == 0xed80 ||
                (op & 0xfff0) == 0xee00 || (op & 0xfff0) == 0xee80) {
         uint16_t x = fetch(d, here + 2);
         if (x & 0x0e00) { goto illegal; }
@@ -850,6 +850,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         case 0x90: cond = TCG_COND_GEU; break;
         case 0x98: cond = TCG_COND_LTU; break;
         case 0xc0: cond = TCG_COND_GTU; break;
+        case 0xd0: cond = TCG_COND_GE; break;
         case 0xd8: cond = TCG_COND_LT; break;
         case 0xe0: cond = TCG_COND_GT; break;
         case 0xe8: cond = TCG_COND_LE; break;

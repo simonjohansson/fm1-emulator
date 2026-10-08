@@ -338,8 +338,6 @@ def main():
     generic_replay(*replay)
     for unused in range(1, 8):
         policy_fault(f"canonical-admission-unused-{unused}", unused=unused)
-    for opcode in (0xED0E,):
-        policy_fault(f"deferred-family-{opcode:04x}", opcode=opcode)
     for stage in ("branch", "target"):
         guard_fault(stage)
     for side in ("then", "else"):
@@ -348,8 +346,8 @@ def main():
     summary = {"passed": True, "instruction": "canonical EE80/FFF0 signed register less-or-equal",
                "ordinary_reference_cases": len(cases), "conditional_reference_cases": 16,
                "generic_replays": 1, "canonical_admission_policy_faults": 7,
-               "deferred_family_faults": 1, "pc_guard_faults": 2,
-               "inherited_followup_if_faults": 4, "total_model_faults": 14,
+               "deferred_family_faults": 0, "pc_guard_faults": 2,
+               "inherited_followup_if_faults": 4, "total_model_faults": 13,
                "primary_blob": "622d767fceb3ad46972ae821394226ff1e6117b2",
                "unused_bits_policy": "bits11:9 unconstrained by primary; canonical decoder requires zero",
                "reference_unused_pattern4": "one accepted pattern value4/xbit11; six other sampled patterns rejected",

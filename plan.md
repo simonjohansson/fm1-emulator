@@ -447,6 +447,18 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   capture checker is reviewed and rejects the saved incomplete checkpoints.
   Evidence: `.deps/qemu-preindexed-word-immediate-2026-10-08/`.
 
+- 2026-10-08: Stage 3 ED00 signed register greater-or-equal branch complete,
+  independently reviewed. Two-line decoder delta preserves all common paths.
+  New70+generic1+13 and adjusted oldGT/LE/LT70+1+13 gates pass; only exact
+  obsoleteED0E negatives/counts retired, all positive fixtures unchanged.
+  FullISA/profile/IRQ/boot and adjacentword-load gates also pass.
+  Unchanged boot takes the correct fallthrough, advances one instruction
+  to F435/2621 +2603 at `0x0200998a`; generic state/PPM/latestALNK match.
+  Audio103/103 and timer5173/5173 remain balanced; HOMEframe1/stage3
+  is still incomplete. Private macOS native-launcher preparation runs
+  independently, with execution withheld until HOME/input acceptance.
+  Evidence: `.deps/qemu-signed-register-ge-branch-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -573,7 +585,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is ED00 signed register greater-or-equal branch, recorded below.
+  latest firmware blocker is F435 parallel signed minimum, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -583,17 +595,18 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: ED00 signed register greater-or-equal branch
+## Current firmware blocker: F435 parallel signed minimum
 
-Latest unchanged boot: `.cache/felucca-validation/after-preindexed-word-immediate/`.
-Vendor `ifs (r1 >= r0) goto 54` targets `0x020099c0` from
-`0x02009986` in cv_rect. Establish the exact signed comparison, operand
-fields and displacement relative to the four-byte instruction end.
-The successful new load advances seven instructions; HOME frame1/stage3
-still represents unfinished drawing.
+Latest unchanged boot: `.cache/felucca-validation/after-signed-register-ge-branch/`.
+Vendor bundle `r2 = smin(r2, r6)` with tail `r3 = [sp+24]` is reached
+at `0x0200998a`, the untaken ED00 fallthrough in cv_rect. The scalar E435
+mode1 signed minimum is already implemented; establish exact shared
+parallel destination admission, incoming operands, tail roles and fault
+order before adding a narrow classifier entry. HOME frame1/stage3
+remains an unfinished draw snapshot.
 
-- PC `0x02009986`, words `ED00/101B`.
-- Instructions 117,588,670; virtual time 940,709,368 ns.
+- PC `0x0200998a`, words `F435/2621 + 2603`.
+- Instructions 117,588,671; virtual time 940,709,376 ns.
 - IRQ11 entries/returns 103/103;
   IRQ63 entries/returns 5173/5173.
 - ALNK completions 108, acknowledgments 103,
@@ -601,10 +614,39 @@ still represents unfinished drawing.
   55,296 captured sample words, 0 nonzero.
 - LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
-  Audio and timer service return successfully. HOME flag/frame1/stage3 and idle LCD still show an unfinished drawing snapshot, without completed HOME or synthesis.
-- QEMU SHA-256: `e3935181f8f37e989b2b7e7f87234655a8064c46951c0050ac967c07db2ba44c`.
-- Generic replay: `after-preindexed-word-immediate-generic`.
-- Durable evidence: main repo `.deps/qemu-preindexed-word-immediate-2026-10-08/`.
+  Audio and timer service return successfully. The correct ED00 fallthrough reaches a parallel minimum bundle, with HOME flag/frame1/stage3 still unfinished and no synthesis proof.
+- QEMU SHA-256: `80f85e23f2a2b82bcdc94630a9d34453f160de6bfef21b0665efdafa6fa4f6b4`.
+- Generic replay: `after-signed-register-ge-branch-generic`.
+- Durable evidence: main repo `.deps/qemu-signed-register-ge-branch-2026-10-08/`.
+
+### Resolved ED00 signed register greater-or-equal branch
+
+The source adds only exact ED00/FFF0 admission and D0 signed GE selection
+through the existing four-byte compare-branch path. It compares signed32
+GPR[x>>12] >= GPR[op&15], with signed9 word displacement from PC+4
+(-512 through +510 bytes). PSR, RETS and special stack-pointer behavior
+are unchanged; GPR14 is checked against separately seeded special SP.
+
+Pinned primary and vendor ED00/101B agree on the constructor. Captured
+r1=5, r0=13 falls through
+from 0x02009986 to 0x0200998a; the encoded taken target is 0x020099c0.
+The current x&0E00 canonical restriction remains model policy because
+primary does not constrain those unused bits. Private 83 reference calls
+have 70 canonical successes (54 ordinary and 16 balanced conditional),
+77 total full-state completions and six rejected unused-bit outcomes
+without CPU fault snapshots. The extra completed cases are unused pattern4,
+two reference-valid PC guards and four taken-exit/following-IF outcomes.
+These remain separately qualified model/reference disagreements.
+
+The three earlier signed GT/LE/LT gates retire only their exact ED0E
+deferred negative and update deferred1->0/total14->13 counts. Each retains
+all 70 successful fixture bytes and expected states, positive generators
+and other helper functions. Original validators are retained as historical
+evidence. Common helpers, predicate/IRQ rules, scanner, classifier and
+other opcode paths remain fixed. True32-bit PC wrap and hardware fault
+state remain unverified; mapped displacement boundaries are exercised.
+Taken exits may retain model predicates and fault the following IF after
+branch retirement; IRQ blocking is source-inspected, without IRQ proof.
 
 ### Resolved ECD0..7 signed immediate pre-indexed word load
 
@@ -1369,14 +1411,15 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached ED00/101B signed register greater-or-equal branch to
-   the CPU worker. Inspect the existing signed register LT/LE/GT gates and
-   decoder pattern first. Establish pinned primary/vendor fields, reserved
-   policy and signed displacement. Probe signed extremes, equality, every
-   operand field, forward/backward taken/untaken paths, full state/count/
-   memory and qualified inherited conditional/fault behavior. Prefer narrow
-   admission through existing branch machinery, without helper/scanner/IRQ
-   changes. Review source and validator before parent acceptance.
+2. Assign reached F435/2621 + 2603 parallel signed minimum to the CPU
+   worker. Inspect existing scalar E435 and prior parallel classification
+   gates. Establish pinned mode1/destination and incoming operand semantics,
+   both head/tail roles, destination conflicts and precise tail/access/count
+   phases. Probe signed edges, fields/aliases, mixed widths, selected/skipped
+   contexts, old-source stores and explicit deferred modes. Retire only the
+   newly obsolete scalar F435 negative; preserve all140 positives and common
+   helpers/classifier behavior apart from one verified mapping. Review
+   design/source/validator before parent acceptance.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.

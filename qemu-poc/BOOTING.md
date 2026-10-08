@@ -1676,7 +1676,7 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_register_and_if.py
 ```
 
-### ECD0..7 signed immediate pre-indexed word load and latest checkpoint
+### ECD0..7 signed immediate pre-indexed word load checkpoint
 
 The dedicated scalar branch admits the single pinned addldw constructor:
 ECD0..7 with operand low two bits equal 2, signed eleven-bit aligned byte
@@ -1716,7 +1716,7 @@ access categories and one unsupported EC50 outcome. Review strengthened
 only the six fatal category assertions; all saved outcomes agree,
 with fixtures/counts/source unchanged and original validator retained.
 
-Latest stop: ED00/101B at `0x02009986`, 117,588,670
+At this milestone: ED00/101B at `0x02009986`, 117,588,670
 instructions and 940,709,368 ns. Vendor `ifs (r1 >= r0) goto 54` targets `0x020099c0` from
 `0x02009986` in cv_rect. Establish the exact signed comparison, operand
 fields and displacement relative to the four-byte instruction end.
@@ -1728,6 +1728,50 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_preindexed_word_immediate.py
+```
+
+### ED00 signed register greater-or-equal branch and latest checkpoint
+
+The source adds only exact ED00/FFF0 admission and D0 signed GE selection
+through the existing four-byte compare-branch path. It compares signed32
+GPR[x>>12] >= GPR[op&15], with signed9 word displacement from PC+4
+(-512 through +510 bytes). PSR, RETS and special stack-pointer behavior
+are unchanged; GPR14 is checked against separately seeded special SP.
+
+Pinned primary and vendor ED00/101B agree on the constructor. Captured
+r1=5, r0=13 falls through
+from 0x02009986 to 0x0200998a; the encoded taken target is 0x020099c0.
+The current x&0E00 canonical restriction remains model policy because
+primary does not constrain those unused bits. Private 83 reference calls
+have 70 canonical successes (54 ordinary and 16 balanced conditional),
+77 total full-state completions and six rejected unused-bit outcomes
+without CPU fault snapshots. The extra completed cases are unused pattern4,
+two reference-valid PC guards and four taken-exit/following-IF outcomes.
+These remain separately qualified model/reference disagreements.
+
+The three earlier signed GT/LE/LT gates retire only their exact ED0E
+deferred negative and update deferred1->0/total14->13 counts. Each retains
+all 70 successful fixture bytes and expected states, positive generators
+and other helper functions. Original validators are retained as historical
+evidence. Common helpers, predicate/IRQ rules, scanner, classifier and
+other opcode paths remain fixed. True32-bit PC wrap and hardware fault
+state remain unverified; mapped displacement boundaries are exercised.
+Taken exits may retain model predicates and fault the following IF after
+branch retirement; IRQ blocking is source-inspected, without IRQ proof.
+
+Latest stop: F435/2621 + 2603 at `0x0200998a`, 117,588,671
+instructions and 940,709,376 ns. Vendor bundle `r2 = smin(r2, r6)` with tail `r3 = [sp+24]` is reached
+at `0x0200998a`, the untaken ED00 fallthrough in cv_rect. The scalar E435
+mode1 signed minimum is already implemented; establish exact shared
+parallel destination admission, incoming operands, tail roles and fault
+order before adding a narrow classifier entry. HOME frame1/stage3
+remains an unfinished draw snapshot.
+Caches use `after-signed-register-ge-branch` and its `-generic` label; main repo
+`.deps/qemu-signed-register-ge-branch-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 103/103; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_ge_branch.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Validate canonical EE00/FFF0 signed greater-than register branches.
+"""Validate canonical ED00/FFF0 signed greater-or-equal register branches.
 
-Pinned Apache progflow:276-279/slaspec:364 and vendor EE01/0019 establish
-signed32 x[15:12] > op[3:0], with signed9 word displacement from PC+4.
+Pinned Apache progflow:296-300/slaspec:364 and vendor ED00/101B establish
+signed32 x[15:12] >= op[3:0], with signed9 word displacement from PC+4.
 Second-word bits11:9 are unconstrained by primary evidence; rejecting them
 preserves the existing conservative four-byte decoder admission policy, not
 an ISA-invalid or hardware claim. Reference raw disagreements are retained.
+Reference accepts sampled unused pattern4/xbit11; six other patterns fault.
 Canonical conditional arm completion agrees for selected/skipped final and
 nonfinal branches with displacement0. Taken exits beyond an arm retain the
 existing model predicate state: the following IF faults after branch retirement,
@@ -28,12 +29,13 @@ import validate_isa as isa
 from validate_peripherals import Guest
 
 HERE = Path(__file__).resolve().parent
-CACHE = HERE / ".cache/signed-register-branch-validation"
+CACHE = HERE / ".cache/signed-register-ge-branch-validation"
 ENTRY = 0x02000120
 BRANCH = ENTRY + 0x500
 INSPECTION = 0x01C08000
 PSR = 0x89ABCDE5
 RETS = 0x12345678
+STACK = INSPECTION - 16
 GPRS = [0x10203040 + i * 0x01010101 for i in range(16)]
 GPRS[0] = 0x01C7FE08
 MARKERS = [0x12345678, 0x89ABCDEF, 0x76543210]
@@ -57,6 +59,7 @@ def setup(registers, psr=PSR, guard_high=None):
     guest.emit(0xE064, 0x4580)
     guest.literal(4, RETS)
     guest.emit(0xE064, 0x4380)
+    guest.literal(14, STACK, special=True)
     expected = list(GPRS)
     for register, initial in registers.items():
         expected[register] = initial & 0xFFFFFFFF
@@ -69,6 +72,7 @@ def specials(psr):
     expected = [0] * 16
     expected[3] = RETS
     expected[5] = psr
+    expected[14] = STACK
     return expected
 
 
@@ -84,8 +88,8 @@ def save_image(name, guest):
     return image
 
 
-def branch_fixture(leftreg=0, rightreg=1, left=0xFFFFFFFF, right=32766,
-                   displacement=25, psr=PSR, unused=0, opcode=None, guard=None):
+def branch_fixture(leftreg=1, rightreg=0, left=5, right=13,
+                   displacement=27, psr=PSR, unused=0, opcode=None, guard=None):
     assert 0 <= leftreg < 16 and 0 <= rightreg < 16 and -256 <= displacement <= 255
     guard_high = BRANCH - 1 if guard == "branch" else BRANCH + 3 if guard == "target" else None
     guest, expected = setup({leftreg: left, rightreg: right}, psr, guard_high)
@@ -95,9 +99,9 @@ def branch_fixture(leftreg=0, rightreg=1, left=0xFFFFFFFF, right=32766,
     guest.emit(0xEAC0 | ((delta >> 16) & 63), delta & 0xFFFF)
     guest.words.extend([0] * ((BRANCH - ENTRY) // 2 - len(guest.words)))
     before = guest.instructions
-    op = 0xEE00 | rightreg if opcode is None else opcode
+    op = 0xED00 | rightreg if opcode is None else opcode
     guest.emit(op, (leftreg << 12) | (unused << 9) | (displacement & 511))
-    taken = signed(expected[leftreg]) > signed(expected[rightreg])
+    taken = signed(expected[leftreg]) >= signed(expected[rightreg])
     stop = (BRANCH + 4 + (displacement * 2 if taken else 0)) & 0xFFFFFFFF
     guest.words.extend([0] * max(0, (stop - ENTRY) // 2 + 4 - len(guest.words)))
     return guest, expected, stop, before, op
@@ -135,7 +139,7 @@ def conditional_fixture(side, position, condition, taken, outside=False):
                 guest.literal(item[1], item[2])
             else:
                 branch_index, branch_pc = len(guest.words), guest.pc
-                guest.emit(0xEE05, 0x4000)
+                guest.emit(0xED05, 0x4000)
     guest.literal(8, 0x8888)
     next_if = guest.pc
     guest.emit(0xEA20, 1)
@@ -192,9 +196,10 @@ def fault_snapshot(name, image, stop, pc, count, registers, reason, size, psr=PS
                    f"{name}: instruction fetch address/span differs")
     validate.check(state["registers"] == registers and state["specials"] == specials(psr),
                    f"{name}: fault-stage GPR, PSR, RETS or continuation differs")
+    # QEMU alnk-probe/default-loader keeps unowned SRAM cold-zero; reference uses inspection().
     memory = (directory / "state.sram").read_bytes()
     validate.check(len(memory) == 0x80000 and
-                   memory[0x8000:0x800C] == struct.pack("<III", *MARKERS),
+                   struct.unpack_from("<12I", memory, 0x8000) == tuple(MARKERS + [0] * 9),
                    f"{name}: model fault altered memory")
     if "guard window" in reason:
         validate.check(state["guards"]["debug_message"] == 1 << 12,
@@ -221,7 +226,7 @@ def reference_record(image, env):
 
 def policy_fault(name, unused=0, opcode=None):
     guest, expected, stop, before, op = branch_fixture(leftreg=15, rightreg=14,
-        left=1, right=0, unused=unused, opcode=opcode)
+        left=0, right=1, unused=unused, opcode=opcode)
     image = save_image(name, guest)
     directory, env, record = fault_snapshot(name, image, stop, BRANCH, before, expected,
                                            f"unsupported instruction 0x{op:04x}", 4)
@@ -231,6 +236,17 @@ def policy_fault(name, unused=0, opcode=None):
         # without treating its acceptance/rejection as a hardware contract.
         record.update(reference_record(image, env))
         record["unused_second_word_bits_11_9"] = unused
+        if unused == 4:
+            validate.check(record["reference_returncode"] == 0,
+                           f"{name}: sampled pattern4 reference completion changed")
+            check_success(name + "/reference", record["reference_state"], expected,
+                          stop, guest.instructions)
+            record["reference_full_sampled_completion_checked"] = True
+        else:
+            validate.check(record["reference_returncode"] != 0 and
+                           f"Unsupported {{ pc: {BRANCH}, word: {op} }}" in record["reference_stderr"],
+                           f"{name}: sampled unused-pattern rejection changed")
+            record["reference_rejected_without_hardware_validity_claim"] = True
     (directory / "run.json").write_text(json.dumps(record, indent=2) + "\n")
     print(f"PASS {name}: conservative admission fault before branch retirement")
 
@@ -291,9 +307,10 @@ def generic_replay(image, expected):
     state = json.loads((directory / "state.json").read_text())
     for field in ("pc", "instructions", "registers", "specials"):
         validate.check(state[field] == expected[field], f"generic-replay: {field} differs")
+    # QEMU alnk-probe/default-loader keeps unowned SRAM cold-zero; reference uses inspection().
     memory = (directory / "state.sram").read_bytes()
     validate.check(len(memory) == 0x80000 and
-                   memory[0x8000:0x800C] == struct.pack("<III", *MARKERS),
+                   struct.unpack_from("<12I", memory, 0x8000) == tuple(MARKERS + [0] * 9),
                    "generic-replay: branch altered neighboring memory")
     (directory / "run.json").write_text(json.dumps({"command": command,
         "environment": settings, "returncode": result.returncode,
@@ -323,11 +340,11 @@ def main():
                           left=1, right=0, displacement=displacement))
     for psr in (0, 0xFFFFFFFF):
         cases.append(dict(name=f"psr-{psr:08x}", psr=psr))
-    cases.append(dict(name="reached-fields-negative"))
+    cases.append(dict(name="reached-fields-signed-101b-captured-untaken"))
     replay = None
     for case in cases:
         result = success_case(**case)
-        if case["name"] == "reached-fields-negative":
+        if case["name"] == "reached-fields-signed-101b-captured-untaken":
             replay = result
     for side in ("then", "else"):
         for position in ("final", "nonfinal"):
@@ -342,18 +359,19 @@ def main():
     for side in ("then", "else"):
         for position in ("final", "nonfinal"):
             exit_followup_fault(side, position)
-    summary = {"passed": True, "instruction": "canonical EE00/FFF0 signed register greater-than",
+    summary = {"passed": True, "instruction": "canonical ED00/FFF0 signed register greater-or-equal",
                "ordinary_reference_cases": len(cases), "conditional_reference_cases": 16,
                "generic_replays": 1, "canonical_admission_policy_faults": 7,
                "deferred_family_faults": 0, "pc_guard_faults": 2,
                "inherited_followup_if_faults": 4, "total_model_faults": 13,
                "primary_blob": "622d767fceb3ad46972ae821394226ff1e6117b2",
                "unused_bits_policy": "bits11:9 unconstrained by primary; canonical decoder requires zero",
+               "reference_unused_pattern4": "one accepted pattern value4/xbit11; six other sampled patterns rejected",
                "conditional_limit": "taken exits followed by IF retain model predicate; oracle differs",
                "irq_limit": "retained predicate blocks IRQ entry by source inspection; not validated here",
                "pc32_wrap_validation": False, "hardware_fault_state_validation": False}
     (CACHE / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print("PASS signed register branch: canonical semantics and inherited model limits recorded")
+    print("PASS signed GE register branch: canonical semantics and inherited model limits recorded")
 
 
 if __name__ == "__main__":
