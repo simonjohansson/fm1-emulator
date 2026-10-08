@@ -1416,7 +1416,7 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_signed_divide.py
 ```
 
-### FF41 long register-inequality branch and latest checkpoint
+### FF41 long register-inequality branch checkpoint
 
 Exact canonical FF41 now compares the full 32-bit GPRs in operand bits12:15
 and 8:11, preserves all registers/PSR/RETS and branches by twice the signed 16-bit displacement
@@ -1449,7 +1449,7 @@ completed. Audio/timer entries and returns remain 101/101 and 5,105/5,105, with
 zero nonzero samples. Renamed generic captured state and all sample/LCD bytes
 match, without whole-SRAM comparison across initialization modes.
 
-Latest stop: F194/1152 +6004 at `0x020086c4`, 116,554,950
+At this milestone: F194/1152 +6004 at `0x020086c4`, 116,554,950
 instructions and 932,439,608 ns. Vendor `r1 = r5 & (1 << r1)` is paired with `r4 = [incoming r0]`
 in `btn_hold`, reached through HOME input processing. Scalar E194 exists;
 research exact mode2 parallel admission, index and incoming/tail semantics
@@ -1460,6 +1460,58 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_long_register_ne_branch.py
+```
+
+### F194 parallel indexed-bit AND and latest checkpoint
+
+The sole production change is exact E194 indexed-bit AND mode 2 admission in
+parallel classification. Scalar bit operations, the index<32 guard, helpers,
+incoming GPR snapshots, tail-first order, predicates, sizing and all other
+classifiers remain unchanged. Both six-byte heads and eight-byte extended
+indexed-bit tails use the shared machinery.
+
+Pinned logicops constructor and vendor operands agree. Separate research has
+546 probes, 525 verified completions and no remaining expectation failures.
+Thirty-six out-of-range reference completions wrap indices modulo 32, while
+the inherited model explicitly rejects unsigned indices at least 32. That is
+qualified unsupported behavior, not a hardware-invalid claim or new scalar
+semantics. An initial extended-tail research fixture encoded the wrong source
+and index. Its original binary/snapshot and correction are retained; the valid
+fixture proves that the head uses its old source after the tail replaces it.
+
+Mode/conflict prechecks run before the tail; tail access faults precede the
+head index check. A bad head index preserves completed tail store/GPR/PSR
+effects before a normalized E194 fault, without result or bundle retirement.
+A bad extended-tail index prevents the head and retirement. Modes 0/1/3 and
+overlapping destinations remain reference-valid but parallel-deferred or
+conservatively rejected. Modes 4..15 failed the reference without fault-state
+snapshots. Hardware fault behavior and inherited predicate/IRQ limits remain
+unverified. Default-loader replay uses configured observers; existing capture
+schemas are preserved.
+
+The focused validator contains 187 reference-positive comparisons, one
+default-loader replay and 38 modeled faults. Sixteen model-policy fault cases
+also retain separate successful reference states. All 203 independent private
+reference expectations were checked before parent QEMU acceptance.
+
+Focused acceptance and full ISA/profile/IRQ/boot plus adjacent signed-division
+gates pass. Unchanged boot advances 241 instructions through ui_input to the
+SP-relative byte memory failure. The renamed default-loader replay matches
+every captured state field except profile and all LCD/latest-half sample bytes;
+whole SRAM is not compared across differently initialized loader modes.
+HOME flag/frame1/stage2 does not establish a completed HOME draw.
+
+Latest stop: E9DE/814A at `0x0200db94`, 116,555,191
+instructions and 932,441,536 ns. Vendor `b[sp+330] = r8` is reached in `fm1_cstart` after HOME input
+processing. Establish exact SP-relative byte fields and canonical policies
+from pinned primary and independent reference before implementing it.
+The HOME flag and first frame count are set, but stage2 precedes completed drawing.
+Caches use `after-parallel-indexed-bit-and` and its `-generic` label; main repo
+`.deps/qemu-parallel-indexed-bit-and-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 101/101; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_parallel_indexed_bit_and.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

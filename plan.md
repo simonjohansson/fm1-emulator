@@ -391,6 +391,16 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   Reference scanner/conditional and canonical-policy differences are retained.
   Evidence: `.deps/qemu-long-register-ne-branch-2026-10-08/`.
 
+- 2026-10-08: Stage 3 exact E194 mode 2 parallel indexed-bit AND admission
+  complete, independently reviewed. Scalar index<32 policy, helpers and
+  common bundle behavior are unchanged. Focused 187 reference positives,
+  one generic and 38 modeled faults pass, with full/adjacent CPU gates.
+  Unchanged boot advances 241 instructions through HOME input to E9DE
+  at `0x0200db94`; renamed captures match. HOME frame1/stage2 remains
+  incomplete drawing. Reference modulo32 disagreement, deferred modes,
+  conservative conflicts and original fixture correction are retained.
+  Evidence: `.deps/qemu-parallel-indexed-bit-and-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -517,7 +527,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is F194 parallel indexed-bit AND, recorded below.
+  latest firmware blocker is E9DE SP-relative byte memory, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -527,16 +537,16 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: F194 parallel indexed-bit AND
+## Current firmware blocker: E9DE SP-relative byte memory
 
-Latest unchanged boot: `.cache/felucca-validation/after-long-register-ne-branch/`.
-Vendor `r1 = r5 & (1 << r1)` is paired with `r4 = [incoming r0]`
-in `btn_hold`, reached through HOME input processing. Scalar E194 exists;
-research exact mode2 parallel admission, index and incoming/tail semantics
-before changing the classifier.
+Latest unchanged boot: `.cache/felucca-validation/after-parallel-indexed-bit-and/`.
+Vendor `b[sp+330] = r8` is reached in `fm1_cstart` after HOME input
+processing. Establish exact SP-relative byte fields and canonical policies
+from pinned primary and independent reference before implementing it.
+The HOME flag and first frame count are set, but stage2 precedes completed drawing.
 
-- PC `0x020086c4`, words `F194/1152 +6004`.
-- Instructions 116,554,950; virtual time 932,439,608 ns.
+- PC `0x0200db94`, words `E9DE/814A`.
+- Instructions 116,555,191; virtual time 932,441,536 ns.
 - IRQ11 entries/returns 101/101;
   IRQ63 entries/returns 5105/5105.
 - ALNK completions 106, acknowledgments 101,
@@ -544,10 +554,49 @@ before changing the classifier.
   54,272 captured sample words, 0 nonzero.
 - LCD visible=True, busy=True; guard debug message
   `0x0`, watchdog expirations 0.
-  Audio and timer service return successfully; synthesis and home remain incomplete.
-- QEMU SHA-256: `4bad6b1402e418c4756f5ef15263336af894d1fe9ed4144318897fe44ab24a07`.
-- Generic replay: `after-long-register-ne-branch-generic`.
-- Durable evidence: main repo `.deps/qemu-long-register-ne-branch-2026-10-08/`.
+  Audio and timer service return successfully; HOME flag/frame1/stage2 is set, but drawing and synthesis remain incomplete.
+- QEMU SHA-256: `f423a51d0e915ce68680c90a24006c4712bc194d31620845a0f652e7a38fa8fa`.
+- Generic replay: `after-parallel-indexed-bit-and-generic`.
+- Durable evidence: main repo `.deps/qemu-parallel-indexed-bit-and-2026-10-08/`.
+
+### Resolved F194 parallel indexed-bit AND
+
+The sole production change is exact E194 indexed-bit AND mode 2 admission in
+parallel classification. Scalar bit operations, the index<32 guard, helpers,
+incoming GPR snapshots, tail-first order, predicates, sizing and all other
+classifiers remain unchanged. Both six-byte heads and eight-byte extended
+indexed-bit tails use the shared machinery.
+
+Pinned logicops constructor and vendor operands agree. Separate research has
+546 probes, 525 verified completions and no remaining expectation failures.
+Thirty-six out-of-range reference completions wrap indices modulo 32, while
+the inherited model explicitly rejects unsigned indices at least 32. That is
+qualified unsupported behavior, not a hardware-invalid claim or new scalar
+semantics. An initial extended-tail research fixture encoded the wrong source
+and index. Its original binary/snapshot and correction are retained; the valid
+fixture proves that the head uses its old source after the tail replaces it.
+
+Mode/conflict prechecks run before the tail; tail access faults precede the
+head index check. A bad head index preserves completed tail store/GPR/PSR
+effects before a normalized E194 fault, without result or bundle retirement.
+A bad extended-tail index prevents the head and retirement. Modes 0/1/3 and
+overlapping destinations remain reference-valid but parallel-deferred or
+conservatively rejected. Modes 4..15 failed the reference without fault-state
+snapshots. Hardware fault behavior and inherited predicate/IRQ limits remain
+unverified. Default-loader replay uses configured observers; existing capture
+schemas are preserved.
+
+The focused validator contains 187 reference-positive comparisons, one
+default-loader replay and 38 modeled faults. Sixteen model-policy fault cases
+also retain separate successful reference states. All 203 independent private
+reference expectations were checked before parent QEMU acceptance.
+
+Focused acceptance and full ISA/profile/IRQ/boot plus adjacent signed-division
+gates pass. Unchanged boot advances 241 instructions through ui_input to the
+SP-relative byte memory failure. The renamed default-loader replay matches
+every captured state field except profile and all LCD/latest-half sample bytes;
+whole SRAM is not compared across differently initialized loader modes.
+HOME flag/frame1/stage2 does not establish a completed HOME draw.
 
 ### Resolved FF41 long register-inequality branch
 
@@ -1112,13 +1161,13 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached F194/1152 +6004 parallel indexed-bit AND to the CPU worker.
-   Establish pinned primary/scalar facts and independent index/field/alias probes,
-   including 32-plus indices, incoming values when a tail overwrites sources,
-   head and extended-tail roles, flags, conditional sizing and precheck/access
-   faults. Keep exact reached mode2 as the initial scope; qualify deferred modes
-   and destination conflicts. Preserve scalar bit semantics, helpers and common
-   bundle machinery. Review before implementation.
+2. Assign reached E9DE/814A SP-relative byte memory to the CPU worker.
+   Establish pinned primary/vendor facts and independent field, offset,
+   load/store, truncation and neighboring-memory expectations. Include
+   SP wrapping, supported/canonical fields, guards/access faults, conditional
+   sizing and retirement. Keep exact E9DE initial scope and preserve existing
+   SP-relative word/dword paths, scalar helpers and parallel classifier.
+   Review the proposed delta and validator before implementation.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
