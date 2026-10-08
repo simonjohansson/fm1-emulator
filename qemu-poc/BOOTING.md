@@ -1462,7 +1462,7 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_long_register_ne_branch.py
 ```
 
-### F194 parallel indexed-bit AND and latest checkpoint
+### F194 parallel indexed-bit AND checkpoint
 
 The sole production change is exact E194 indexed-bit AND mode 2 admission in
 parallel classification. Scalar bit operations, the index<32 guard, helpers,
@@ -1501,7 +1501,7 @@ every captured state field except profile and all LCD/latest-half sample bytes;
 whole SRAM is not compared across differently initialized loader modes.
 HOME flag/frame1/stage2 does not establish a completed HOME draw.
 
-Latest stop: E9DE/814A at `0x0200db94`, 116,555,191
+At this milestone: E9DE/814A at `0x0200db94`, 116,555,191
 instructions and 932,441,536 ns. Vendor `b[sp+330] = r8` is reached in `fm1_cstart` after HOME input
 processing. Establish exact SP-relative byte fields and canonical policies
 from pinned primary and independent reference before implementing it.
@@ -1512,6 +1512,54 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_indexed_bit_and.py
+```
+
+### E9DE SP-relative byte store and latest checkpoint
+
+The sole production change is a separate exact E9DE scalar path: take the
+source GPR from operand bits 12..15 and the unsigned byte offset from all
+twelve low bits, add it to the special SP with wrapping 32-bit arithmetic,
+and store the low byte. Offset bit 0 is data, not a load/store selector.
+There is no GPR/SP/PSR writeback; sizing is four bytes and retirement is once.
+Existing E9D0/E9D4 word/dword paths, helpers, parallel classification and
+common conditional machinery are unchanged.
+
+Pinned Apache stack constructor lines 421–424 and vendor E9DE/814A agree.
+Neighbor E9DC/E9DD byte loads and E9D8 halfword memory remain outside this
+exact scope. Fault-state expectations describe the existing model; the
+reference provides no fault-state snapshots and hardware behavior is unknown.
+
+Standalone research has 89 probes, 82 verified completions and no expectation
+mismatches. A precise byte-guard discriminator permits an adjacent byte
+while the intersecting byte fails. Reference access failures establish computed
+address, one-byte width and write category only. Its PC-guard fixture completes;
+the QEMU fetch-policy gate remains qualified independently. Successful wrapping
+into mapped memory is unavailable in this address map.
+
+The focused validator has 78 reference positives, one generic replay and
+11 modeled faults. Four separate full reference completions document the
+three deferred valid neighbors and the PC-guard policy disagreement. Seven
+reference fatal calls supply access/rejection categories without fault state.
+All 89 private fixture expectations were checked before parent acceptance.
+
+Focused acceptance and full ISA/profile/IRQ/boot plus adjacent indexed-bit
+gates pass. Unchanged firmware executes the store and advances one instruction
+to E9D8. The renamed default-loader replay matches every captured state field
+except profile and all LCD/latest-half sample bytes. Whole SRAM is not compared
+across different initialization modes. HOME flag/frame1/stage2 remains
+incomplete drawing; audio/timer service returns successfully but samples are zero.
+
+Latest stop: E9D8/8149 at `0x0200db98`, 116,555,192
+instructions and 932,441,544 ns. Vendor `h[sp+328] = r8` is reached immediately after the accepted byte
+store in `fm1_cstart`. Establish exact E9D8 load/store constructors, unsigned
+offset masking, halfword semantics and model fault phases before implementing.
+HOME flag/frame1/stage2 still precedes a completed drawing.
+Caches use `after-sp-relative-byte-store` and its `-generic` label; main repo
+`.deps/qemu-sp-relative-byte-store-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 101/101; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_sp_relative_byte_store.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

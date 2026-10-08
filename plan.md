@@ -401,6 +401,16 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   conservative conflicts and original fixture correction are retained.
   Evidence: `.deps/qemu-parallel-indexed-bit-and-2026-10-08/`.
 
+- 2026-10-08: Stage 3 exact E9DE SP-relative byte store complete,
+  independently reviewed. Dedicated seven-line scalar path preserves existing
+  SP-relative operations and common machinery. Focused 78 reference positives,
+  one generic and 11 modeled faults plus full/adjacent CPU gates pass.
+  Unchanged boot executes the byte store and stops one instruction later
+  at E9D8 `0x0200db98`; renamed captures match. HOME drawing remains
+  incomplete. Byte-precise guard and deferred/reference-policy evidence retained.
+  Read-only native launch design is saved for later sustained/input acceptance.
+  Evidence: `.deps/qemu-sp-relative-byte-store-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -527,7 +537,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is E9DE SP-relative byte memory, recorded below.
+  latest firmware blocker is E9D8 SP-relative halfword memory, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -537,16 +547,16 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: E9DE SP-relative byte memory
+## Current firmware blocker: E9D8 SP-relative halfword memory
 
-Latest unchanged boot: `.cache/felucca-validation/after-parallel-indexed-bit-and/`.
-Vendor `b[sp+330] = r8` is reached in `fm1_cstart` after HOME input
-processing. Establish exact SP-relative byte fields and canonical policies
-from pinned primary and independent reference before implementing it.
-The HOME flag and first frame count are set, but stage2 precedes completed drawing.
+Latest unchanged boot: `.cache/felucca-validation/after-sp-relative-byte-store/`.
+Vendor `h[sp+328] = r8` is reached immediately after the accepted byte
+store in `fm1_cstart`. Establish exact E9D8 load/store constructors, unsigned
+offset masking, halfword semantics and model fault phases before implementing.
+HOME flag/frame1/stage2 still precedes a completed drawing.
 
-- PC `0x0200db94`, words `E9DE/814A`.
-- Instructions 116,555,191; virtual time 932,441,536 ns.
+- PC `0x0200db98`, words `E9D8/8149`.
+- Instructions 116,555,192; virtual time 932,441,544 ns.
 - IRQ11 entries/returns 101/101;
   IRQ63 entries/returns 5105/5105.
 - ALNK completions 106, acknowledgments 101,
@@ -555,9 +565,44 @@ The HOME flag and first frame count are set, but stage2 precedes completed drawi
 - LCD visible=True, busy=True; guard debug message
   `0x0`, watchdog expirations 0.
   Audio and timer service return successfully; HOME flag/frame1/stage2 is set, but drawing and synthesis remain incomplete.
-- QEMU SHA-256: `f423a51d0e915ce68680c90a24006c4712bc194d31620845a0f652e7a38fa8fa`.
-- Generic replay: `after-parallel-indexed-bit-and-generic`.
-- Durable evidence: main repo `.deps/qemu-parallel-indexed-bit-and-2026-10-08/`.
+- QEMU SHA-256: `d8c6061027d1769604ecd3abbe30aebefb59a9df77ac0db3898a9843183f9c62`.
+- Generic replay: `after-sp-relative-byte-store-generic`.
+- Durable evidence: main repo `.deps/qemu-sp-relative-byte-store-2026-10-08/`.
+
+### Resolved E9DE SP-relative byte store
+
+The sole production change is a separate exact E9DE scalar path: take the
+source GPR from operand bits 12..15 and the unsigned byte offset from all
+twelve low bits, add it to the special SP with wrapping 32-bit arithmetic,
+and store the low byte. Offset bit 0 is data, not a load/store selector.
+There is no GPR/SP/PSR writeback; sizing is four bytes and retirement is once.
+Existing E9D0/E9D4 word/dword paths, helpers, parallel classification and
+common conditional machinery are unchanged.
+
+Pinned Apache stack constructor lines 421–424 and vendor E9DE/814A agree.
+Neighbor E9DC/E9DD byte loads and E9D8 halfword memory remain outside this
+exact scope. Fault-state expectations describe the existing model; the
+reference provides no fault-state snapshots and hardware behavior is unknown.
+
+Standalone research has 89 probes, 82 verified completions and no expectation
+mismatches. A precise byte-guard discriminator permits an adjacent byte
+while the intersecting byte fails. Reference access failures establish computed
+address, one-byte width and write category only. Its PC-guard fixture completes;
+the QEMU fetch-policy gate remains qualified independently. Successful wrapping
+into mapped memory is unavailable in this address map.
+
+The focused validator has 78 reference positives, one generic replay and
+11 modeled faults. Four separate full reference completions document the
+three deferred valid neighbors and the PC-guard policy disagreement. Seven
+reference fatal calls supply access/rejection categories without fault state.
+All 89 private fixture expectations were checked before parent acceptance.
+
+Focused acceptance and full ISA/profile/IRQ/boot plus adjacent indexed-bit
+gates pass. Unchanged firmware executes the store and advances one instruction
+to E9D8. The renamed default-loader replay matches every captured state field
+except profile and all LCD/latest-half sample bytes. Whole SRAM is not compared
+across different initialization modes. HOME flag/frame1/stage2 remains
+incomplete drawing; audio/timer service returns successfully but samples are zero.
 
 ### Resolved F194 parallel indexed-bit AND
 
@@ -1161,13 +1206,13 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached E9DE/814A SP-relative byte memory to the CPU worker.
-   Establish pinned primary/vendor facts and independent field, offset,
-   load/store, truncation and neighboring-memory expectations. Include
-   SP wrapping, supported/canonical fields, guards/access faults, conditional
-   sizing and retirement. Keep exact E9DE initial scope and preserve existing
-   SP-relative word/dword paths, scalar helpers and parallel classifier.
-   Review the proposed delta and validator before implementation.
+2. Assign reached E9D8/8149 SP-relative halfword memory to the CPU worker.
+   Establish pinned primary/vendor facts and independent load/store, source
+   and destination fields, offset bits, zero-extension/truncation, alignment
+   and neighboring-memory expectations. Include special SP versus GPR14,
+   boundaries, precise two-byte guards/access faults, conditional sizing and
+   retirement. Preserve E9D0/E9D4/E9DE, helpers, parallel and common paths.
+   Review the exact proposed scope and validator before implementation.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
@@ -1293,6 +1338,14 @@ no public disconnected-host switch or step mode excluding only USB advance.
 Do not modify stable Rust implementation or force guest MMIO state to align
 it. Disclose this environment difference in any later home comparison;
 compare only meaningful supported milestones/pixels/device effects.
+
+Read-only native launch design is retained in main
+`.deps/qemu-felucca-native-launch-design-2026-10-08/proposal.md`. Use the
+default generic loader with observers disabled and standard QMP/HMP queries
+for running status, retired instructions, guest/UI/service progress and
+correct-width nondestructive ALNK reads. Live observations are independent,
+not atomic snapshots; they do not prove fresh pixel/PCM equality or exact
+IRQ balance. Native implementation and execution remain pending.
 
 After sustained acceptance passes, add the native Felucca launcher. Measure
 guest/audio/watchdog progress before choosing its functional clock. The small
