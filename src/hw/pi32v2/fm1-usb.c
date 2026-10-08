@@ -363,7 +363,8 @@ void fm1_usb_init(FM1PocUSB *usb, Object *owner, Pi32v2CPU *cpu)
                   qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000000);
     }
     memory_region_init_io(&usb->mmio, owner, &usb_ops, usb, "fm1.usb0-cold", 0x40);
-    fm1_sfr_map(USB_BASE, &usb->mmio);
+    /* The host side (character backend) runs in the main loop. */
+    fm1_sfr_map_locked(USB_BASE, &usb->mmio);
     memory_region_init_io(&usb->pads_mmio, owner, &pads_ops, usb, "fm1.usb-pads", 4);
-    fm1_sfr_map(USB_PADS_BASE, &usb->pads_mmio);
+    fm1_sfr_map_locked(USB_PADS_BASE, &usb->pads_mmio);
 }

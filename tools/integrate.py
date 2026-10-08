@@ -126,6 +126,22 @@ def main():
                 raise SystemExit("pinned subpage read hook anchor differs")
             content = content.replace(before, after)
     write_changed(physmem, content)
+    # Honor lockless MMIO regions on TCG loads, as the physical-memory path
+    # already does. Stores and 16-byte loads keep taking the BQL.
+    cputlb = SOURCE / "accel/tcg/cputlb.c"
+    content = cputlb.read_text()
+    load = ("    BQL_LOCK_GUARD();\n"
+            "    return int_ld_mmio_beN(cpu, full, ret_be, addr, size, mmu_idx,\n"
+            "                           type, ra, mr, mr_offset);\n")
+    lockless = ("    if (mr->lockless_io) {\n"
+                "        return int_ld_mmio_beN(cpu, full, ret_be, addr, size, mmu_idx,\n"
+                "                               type, ra, mr, mr_offset);\n"
+                "    }\n" + load)
+    if lockless not in content:
+        if content.count(load) != 1:
+            raise SystemExit("pinned TCG lockless load hook anchor differs")
+        content = content.replace(load, lockless)
+    write_changed(cputlb, content)
     write_changed(SOURCE / "configs/targets/pi32v2-softmmu.mak",
                   "TARGET_ARCH=pi32v2\nTARGET_LONG_BITS=32\n")
     devices = SOURCE / "configs/devices/pi32v2-softmmu"

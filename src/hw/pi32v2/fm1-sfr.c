@@ -4,8 +4,14 @@
  * region dispatch on every access. Each page here is one leaf region that
  * forwards an access to the block owning its offset; the block's own
  * validity checks, widths and handlers apply unchanged. Offsets no block
- * owns fail as unassigned memory does. */
+ * owns fail as unassigned memory does.
+ *
+ * Pages are lockless for loads. Device state is changed only on the vCPU
+ * thread (MMIO, icount's virtual timers and queued CPU work), apart from
+ * blocks mapped with fm1_sfr_map_locked, whose reads keep the BQL. Writes
+ * always hold it: they reconfigure timers, IRQs, audio and the memory map. */
 #include "qemu/osdep.h"
+#include "qemu/main-loop.h"
 #include "system/address-spaces.h"
 #include "fm1-sfr.h"
 
@@ -20,6 +26,7 @@ typedef struct FM1SfrPage {
     struct {
         hwaddr offset, size;
         MemoryRegion *mr;
+        bool locked;
     } block[SFR_BLOCKS];
     uint8_t owner[SFR_PAGE / 4];    /* block index + 1 per word; 0 unowned */
 } FM1SfrPage;
@@ -28,7 +35,7 @@ static FM1SfrPage pages[SFR_PAGES];
 static unsigned page_count;
 
 static MemoryRegion *block_at(FM1SfrPage *p, hwaddr addr, unsigned size,
-                              hwaddr *offset)
+                              hwaddr *offset, bool *locked)
 {
     unsigned b = p->owner[addr / 4];
     if (!b--) {
@@ -38,6 +45,7 @@ static MemoryRegion *block_at(FM1SfrPage *p, hwaddr addr, unsigned size,
         return NULL;
     }
     *offset = addr - p->block[b].offset;
+    *locked = p->block[b].locked;
     return p->block[b].mr;
 }
 
@@ -45,9 +53,15 @@ static MemTxResult sfr_read(void *opaque, hwaddr addr, uint64_t *data,
                             unsigned size, MemTxAttrs attrs)
 {
     hwaddr offset;
-    MemoryRegion *mr = block_at(opaque, addr, size, &offset);
+    bool locked;
+    MemoryRegion *mr = block_at(opaque, addr, size, &offset, &locked);
     if (!mr) {
         return MEMTX_DECODE_ERROR;
+    }
+    if (locked && !bql_locked()) {
+        BQL_LOCK_GUARD();
+        return memory_region_dispatch_read(mr, offset, data,
+                                           size_memop(size) | MO_LE, attrs);
     }
     return memory_region_dispatch_read(mr, offset, data,
                                        size_memop(size) | MO_LE, attrs);
@@ -57,9 +71,15 @@ static MemTxResult sfr_write(void *opaque, hwaddr addr, uint64_t data,
                              unsigned size, MemTxAttrs attrs)
 {
     hwaddr offset;
-    MemoryRegion *mr = block_at(opaque, addr, size, &offset);
+    bool locked;
+    MemoryRegion *mr = block_at(opaque, addr, size, &offset, &locked);
     if (!mr) {
         return MEMTX_DECODE_ERROR;
+    }
+    if (!bql_locked()) {
+        BQL_LOCK_GUARD();
+        return memory_region_dispatch_write(mr, offset, data,
+                                            size_memop(size) | MO_LE, attrs);
     }
     return memory_region_dispatch_write(mr, offset, data,
                                         size_memop(size) | MO_LE, attrs);
@@ -85,11 +105,12 @@ static FM1SfrPage *page_for(hwaddr base)
     g_autofree char *name = g_strdup_printf("fm1.sfr-page@0x%08" HWADDR_PRIx, base);
     p->base = base;
     memory_region_init_io(&p->mmio, NULL, &sfr_ops, p, name, SFR_PAGE);
+    memory_region_enable_lockless_io(&p->mmio);
     memory_region_add_subregion(get_system_memory(), base, &p->mmio);
     return p;
 }
 
-void fm1_sfr_map(hwaddr address, MemoryRegion *mr)
+static void map_block(hwaddr address, MemoryRegion *mr, bool locked)
 {
     hwaddr base = address & ~(hwaddr)(SFR_PAGE - 1), offset = address - base;
     uint64_t size = memory_region_size(mr);
@@ -103,5 +124,16 @@ void fm1_sfr_map(hwaddr address, MemoryRegion *mr)
     p->block[p->count].offset = offset;
     p->block[p->count].size = size;
     p->block[p->count].mr = mr;
+    p->block[p->count].locked = locked;
     p->count++;
+}
+
+void fm1_sfr_map(hwaddr address, MemoryRegion *mr)
+{
+    map_block(address, mr, false);
+}
+
+void fm1_sfr_map_locked(hwaddr address, MemoryRegion *mr)
+{
+    map_block(address, mr, true);
 }
