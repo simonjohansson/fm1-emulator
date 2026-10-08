@@ -310,11 +310,12 @@ static const Pi32v2MachineOps machine_ops = {
 
 static bool board_adc_raw(void *opaque, unsigned channel, uint32_t *raw)
 {
+    FM1PocState *m = opaque;
     /* Functional board defaults, without physical calibration or a claim
      * about converter resolution. The controller retains each raw value. */
     switch (channel) {
     case 3: *raw = 600; return true; /* PB1 */
-    case 4: *raw = 512; return true; /* PB6 */
+    case 4: *raw = m->input.master_raw; return true; /* PB6 / MASTER */
     default: return false;
     }
 }

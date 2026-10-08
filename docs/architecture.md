@@ -26,8 +26,16 @@ The application loader maps raw offset zero at `0x02000120`, sets
 r0=`0x01c7fe08`, and starts other registers and SRAM at zero. The guest establishes
 its stacks and initializes memory. Erased 1 MiB NOR is seeded at physical
 `0x4120`; XIP maps physical `0x4000` to `0x02000000`. Application handoff is
-separate from architectural reset. ROM/SPL boot, ELF loading, and encrypted
-update packages are unsupported.
+separate from architectural reset. The package loader validates and decrypts
+uncompressed FWSC/UFW containers, retains flash and preset data, and supplies
+the decoded flash header and chip key through the existing SRAM handoff.
+Other SPL parameters remain unknown; no firmware identity selects defaults.
+ROM/SPL execution and ELF loading are unsupported.
+
+The Cocoa panel embeds the existing LCD surface. Mouse and keyboard inputs
+close the same matrix contacts; encoders emit quadrature transitions. MASTER
+supplies the board’s SAR ADC channel 4. Focus loss, pause, and shutdown release
+contacts, while keyboard and mouse holds are combined.
 
 ## Hardware and limits
 

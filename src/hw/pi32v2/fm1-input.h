@@ -5,10 +5,11 @@
 #include "hw/core/qdev.h"
 #include "qemu/notify.h"
 #include "ui/input.h"
+#include "ui/fm1-controls.h"
 #include "cpu.h"
 
 #define TYPE_FM1_INPUT "fm1-board-input"
-#define FM1_INPUT_BINDINGS 11
+#define FM1_INPUT_BINDINGS FM1_PANEL_CONTACTS
 #define FM1_INPUT_QUEUE_CAPACITY 64
 #define FM1_INPUT_COLUMNS 11
 OBJECT_DECLARE_SIMPLE_TYPE(FM1PocInput, FM1_INPUT)
@@ -31,6 +32,8 @@ struct FM1PocInput {
     bool down[FM1_INPUT_BINDINGS], quarantined[FM1_INPUT_BINDINGS];
     /* Only CPU work changes these levels; GPIO reads run on the same CPU. */
     uint8_t matrix[FM1_INPUT_COLUMNS];
+    uint16_t master_raw, master_pending;
+    bool master_changed;
     bool active, drain_scheduled, release_all, overflowed;
 };
 

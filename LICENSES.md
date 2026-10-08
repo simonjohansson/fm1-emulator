@@ -22,3 +22,11 @@ history under their original licenses. Their implementation was not copied
 or linked into QEMU. Firmware is loaded as runtime data and is not included;
 its original license and provenance still apply. Vendor SDKs and toolchains
 are not redistributed.
+
+The package decoder was written independently from the documented
+[JieLi file formats](https://kagaimiq.github.io/jielie/datafmt/newfw.html),
+[JLFS layout](https://kagaimiq.github.io/jielie/datafmt/jlfs.html), and
+[cipher description](https://kagaimiq.github.io/jielie/misc/cipher.html).
+The MIT-licensed jl-misctools supplied format evidence; its implementation
+was not copied. Panel geometry follows the manufacturer’s FM-1 product photo;
+the native drawing code uses no copied bitmap assets.

@@ -8,7 +8,7 @@ static void fm1_launcher_help(const char *program)
     printf("Usage: %s [--headless] [--no-audio] [--] FIRMWARE\n"
            "       %s --qemu [QEMU arguments]\n"
            "\n"
-           "Run an FM-1 application image. Close the window to quit.\n"
+           "Run an FM-1 .bin, .fwsc or .ufw image. Close the window to quit.\n"
            "\n"
            "  --headless  Run without a window or sound\n"
            "  --no-audio  Run without sound\n"
@@ -16,7 +16,8 @@ static void fm1_launcher_help(const char *program)
            "  --version   Show the emulator version\n"
            "  --qemu      Pass the remaining arguments directly to QEMU\n"
            "\n"
-           "Controls: Z/C notes, X/V octave, P/O pages, H HOME.\n"
+           "Panel: click keys/buttons; drag or scroll knobs to turn.\n"
+           "Keyboard: Z/C notes, X/V octave, P/O ENV/LFO, H HOME.\n"
            "USB console: stdout/stdin; Ctrl-C exits.\n",
            program, program);
 }

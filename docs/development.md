@@ -4,13 +4,13 @@ Build and run from the repository root:
 
 ```sh
 mise install
-make
+mise run build
 ./emulator path/to/firmware.bin
-make test
+mise run test
 ```
 
-`make test` runs compact synthetic CPU, USB, and native CLI checks without
-external firmware. Build first. Firmware behavior checks are optional and use
+`mise run test` runs compact synthetic CPU, panel input, package decoding, USB,
+and native CLI checks without external firmware. Build first. Firmware behavior checks are optional and use
 saved, unchanged `felucca.bin`, `felucca.elf`, and `felucca.dis` artifacts:
 
 ```sh
@@ -24,6 +24,13 @@ These check bootguard, UI progress, note/release audio, parameters/pages, IRQ
 returns, and USB console responses. They verify artifact identities and refuse
 existing capture labels. Captures live in `.cache/tests/`. Do not rebuild or
 patch firmware to make an emulator check pass.
+
+To also check a local update package against an independently saved raw image:
+
+```sh
+FM1_PACKAGE=/path/to/firmware.fwsc \
+FM1_RAW_REFERENCE=/path/to/app.bin mise run test
+```
 
 ## Source layout
 
@@ -47,7 +54,7 @@ QEMU is pinned to **11.1.2**, release commit
 `4fc49f46dc95d4a27de2509e7fceb2931e91faeb`; its archive SHA-256 and Python
 build-tool versions are checked in `tools/build.py`. Downloaded sources,
 private Python environment, build products, and logs stay in `.cache/`.
-Use `make` after changing sources; it integrates changed files before Ninja.
+Use `mise run build` after changing sources; it integrates changed files before Ninja.
 Use `mise exec python@3.13.15 -- python tools/build.py --standalone --reconfigure`
 when changing configuration.
 

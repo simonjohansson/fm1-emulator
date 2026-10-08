@@ -12,7 +12,7 @@
 #define FM1_NOR_XIP_SIZE (FM1_NOR_SIZE - FM1_NOR_XIP_OFFSET)
 
 /* Private NOR/SPI0 state for the unencrypted diagnostic application handoff.
- * Program/erase and package decryption are outside this read-only model. */
+ * Program/erase persistence is outside this read-only model. */
 typedef struct FM1PocNOR {
     MemoryRegion spi_mmio, sfc_mmio, encryption_mmio, xip;
     QEMUTimer *transfer_timer;

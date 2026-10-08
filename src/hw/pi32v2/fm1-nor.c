@@ -7,8 +7,10 @@
  * calibrated peripheral divider or encrypted package boot model. */
 #include "qemu/osdep.h"
 #include "qapi/error.h"
+#include "qemu/error-report.h"
 #include "system/address-spaces.h"
 #include "fm1-nor.h"
+#include "fm1-image.h"
 
 #define SPI0_BASE 0x11c00u
 #define SFC_BASE 0x40200u
@@ -279,14 +281,43 @@ void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
 {
     g_autofree gchar *raw = NULL;
     gsize length = 0;
+    char image_error[256];
+    FM1ImageHandoff handoff;
+    const char *extension = strrchr(raw_path, '.');
+    bool packaged = extension && (!g_ascii_strcasecmp(extension, ".fwsc") ||
+                                  !g_ascii_strcasecmp(extension, ".ufw"));
     nor->cpu = cpu;
-    if (!g_file_get_contents(raw_path, &raw, &length, NULL) || !length ||
-        length > FM1_NOR_SIZE - 0x4120u) {
-        nor_fail(nor, "cannot load diagnostic raw application into NOR");
+    if (!g_file_get_contents(raw_path, &raw, &length, NULL)) {
+        nor_fail(nor, "cannot read firmware image");
     }
     nor->bytes = g_malloc(FM1_NOR_SIZE);
-    memset(nor->bytes, 0xff, FM1_NOR_SIZE);
-    memcpy(nor->bytes + 0x4120u, raw, length);
+    if (!fm1_image_decode_handoff((const uint8_t *)raw, length, packaged,
+                                  nor->bytes, FM1_NOR_SIZE, &handoff,
+                                  image_error, sizeof(image_error))) {
+        error_report("cannot load application image: %s", image_error);
+        nor_fail(nor, "invalid or unsupported application image");
+    }
+    if (handoff.available) {
+        /* The generic package handoff carries a pointer to its decoded flash
+         * header and the parsed SFC key. The saved stock app consumes header
+         * fields +8/+13 through param[0], and the key through param+12.
+         * Storage words, calibration and MAC remain zero/unverified; this
+         * does not implement the SPL's complete hardware/ROM boot contract.
+         * Raw applications retain the previous zeroed SRAM handoff exactly. */
+        static const uint8_t header_pointer[4] = {0x40, 0xfe, 0xc7, 0x01};
+        uint8_t key[2] = {handoff.chip_key, handoff.chip_key >> 8};
+        if (address_space_write(&address_space_memory, 0x01c7fe40,
+                                MEMTXATTRS_UNSPECIFIED, handoff.flash_header,
+                                sizeof(handoff.flash_header)) != MEMTX_OK ||
+            address_space_write(&address_space_memory, 0x01c7fe08,
+                                MEMTXATTRS_UNSPECIFIED, header_pointer,
+                                sizeof(header_pointer)) != MEMTX_OK ||
+            address_space_write(&address_space_memory, 0x01c7fe14,
+                                MEMTXATTRS_UNSPECIFIED, key,
+                                sizeof(key)) != MEMTX_OK) {
+            nor_fail(nor, "cannot initialize package boot metadata in SRAM");
+        }
+    }
     nor->sfc_control = 1;
     nor->pd_out = FLASH_CS;
     nor->iomap_con0 = SFC_ROUTE;

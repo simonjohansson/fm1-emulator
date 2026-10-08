@@ -27,7 +27,7 @@ class EmulatorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not QEMU.is_file():
-            raise RuntimeError("Build ./emulator with make before running the tests")
+            raise RuntimeError("Build ./emulator with mise run build before running the tests")
         cls.cache = ROOT / ".cache" / "tests"
         cls.cache.mkdir(parents=True, exist_ok=True)
 

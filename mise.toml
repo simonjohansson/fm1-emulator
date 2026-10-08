@@ -1,2 +1,10 @@
 [tools]
 python = "3.13.15"
+
+[tasks.build]
+description = "Build and package the native macOS emulator"
+run = "python tools/build.py --standalone"
+
+[tasks.test]
+description = "Run CPU, input, image, and CLI regression tests"
+run = "python -m unittest discover -s tests -p 'test_*.py' -v"

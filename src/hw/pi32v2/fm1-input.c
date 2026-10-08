@@ -19,17 +19,15 @@ typedef struct FM1InputBinding {
 /* Board matrix coordinates. Encoder pairs expose each phase independently,
  * so Cocoa and standard QMP KEY events traverse the same electrical path. */
 static const FM1InputBinding bindings[FM1_INPUT_BINDINGS] = {
-    {Q_KEY_CODE_Z, 3, 4},
-    {Q_KEY_CODE_X, 0, 4},
-    {Q_KEY_CODE_A, 0, 0},
-    {Q_KEY_CODE_S, 1, 0},
-    {Q_KEY_CODE_C, 2, 4},
-    {Q_KEY_CODE_V, 1, 4},
-    {Q_KEY_CODE_H, 7, 1},
-    {Q_KEY_CODE_P, 2, 1},
-    {Q_KEY_CODE_O, 0, 1},
-    {Q_KEY_CODE_D, 8, 0},
-    {Q_KEY_CODE_F, 9, 0},
+#define CONTACT(label, qcode, column, row) \
+    {Q_KEY_CODE_##qcode, column, row},
+    FM1_PANEL_KEY_CONTACTS(CONTACT)
+    FM1_PANEL_BUTTON_CONTACTS(CONTACT)
+#undef CONTACT
+#define ENCODER(label, a, b, ac, ar, bc, br) \
+    {Q_KEY_CODE_##a, ac, ar}, {Q_KEY_CODE_##b, bc, br},
+    FM1_PANEL_ENCODER_CONTACTS(ENCODER)
+#undef ENCODER
 };
 
 /* All ingress/FIFO bookkeeping is protected by BQL. Invalidation clears the
@@ -40,6 +38,7 @@ static void input_invalidate(FM1PocInput *s)
     g_assert(bql_locked());
     s->generation++;
     s->head = s->count = 0;
+    s->master_changed = false;
     s->release_all = true;
     for (unsigned i = 0; i < FM1_INPUT_BINDINGS; i++) {
         s->quarantined[i] |= s->down[i];
@@ -59,6 +58,10 @@ static void input_drain(CPUState *cpu, run_on_cpu_data data)
     if (s->release_all) {
         memset(s->matrix, 0, sizeof(s->matrix));
         s->release_all = false;
+    }
+    if (s->master_changed) {
+        s->master_raw = s->master_pending;
+        s->master_changed = false;
     }
     while (s->count) {
         FM1InputLevel level = s->queue[s->head];
@@ -91,12 +94,28 @@ static void input_schedule(FM1PocInput *s)
 static void input_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *event)
 {
     FM1PocInput *s = FM1_INPUT(dev);
-    int qcode = qemu_input_linux_to_qcode(event->key.key);
+    int qcode;
 
     g_assert(bql_locked());
     if (!s->active) {
         return;
     }
+    if (event->type == INPUT_EVENT_KIND_ABS) {
+        if (event->abs.axis == FM1_PANEL_MASTER_AXIS && runstate_is_running()) {
+            int value = CLAMP(event->abs.value, INPUT_EVENT_ABS_MIN,
+                              INPUT_EVENT_ABS_MAX);
+            /* A pot retains its position when contacts are released. Only
+             * CPU work publishes the new level to the ADC's board provider. */
+            s->master_pending = qemu_input_scale_axis(value,
+                INPUT_EVENT_ABS_MIN, INPUT_EVENT_ABS_MAX,
+                0, FM1_PANEL_MASTER_MAX);
+            s->master_changed = true;
+            input_schedule(s);
+        }
+        return;
+    }
+    g_assert(event->type == INPUT_EVENT_KIND_KEY);
+    qcode = qemu_input_linux_to_qcode(event->key.key);
     for (unsigned i = 0; i < FM1_INPUT_BINDINGS; i++) {
         bool down = event->key.down;
         unsigned tail;
@@ -142,7 +161,7 @@ static void input_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *even
 
 static const QemuInputHandler input_handler = {
     .name = "FM-1 board contacts",
-    .mask = INPUT_EVENT_MASK_KEY,
+    .mask = INPUT_EVENT_MASK_KEY | INPUT_EVENT_MASK_ABS,
     .event = input_event,
 };
 
@@ -259,4 +278,5 @@ void fm1_input_bind(FM1PocInput *s, Pi32v2CPU *cpu)
 {
     g_assert(!DEVICE(s)->realized && !s->cpu);
     s->cpu = cpu;
+    s->master_raw = FM1_PANEL_MASTER_DEFAULT;
 }

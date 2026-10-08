@@ -995,6 +995,14 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         next = here + 4;
         tcg_gen_subi_i32(gpr[op & 15], read_gpr(d, op & 15), 1);
         count(d); branch(d, next + delta, next, gpr[op & 15], true);
+    } else if (op == 0xff80) {
+        /* Vendor FF80 000000B0 / FFFFFFF6 call forward 176 / back 10
+         * bytes from the six-byte instruction's sequential boundary. */
+        int32_t delta = (int32_t)(fetch(d, here + 2) |
+                                  ((uint32_t)fetch(d, here + 4) << 16));
+        next = here + 6;
+        set_call_return(d, next);
+        count(d); record_branch(d); jump(next + delta); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xffc0) == 0xea80) {
         int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
         next = here + 4;

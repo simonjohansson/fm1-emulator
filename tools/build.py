@@ -117,7 +117,7 @@ def publish_executable(build):
         "Close the window to quit. Use --help for controls.\n"
         "The USB console writes to stdout and accepts commands from stdin.\n"
         "Python and third-party library installations are not required to run.\n"
-        "This executable targets application-entry binaries; ROM/package boot is unsupported.\n"
+        "Raw .bin and uncompressed .fwsc/.ufw loading is supported; firmware compatibility varies.\n"
         "For redistribution retain licensing and provide the corresponding source/build inputs.\n")
     print(f"Standalone executable: {HERE.parent / 'emulator'}")
     package = CACHE / f"fm1-emulator-macos-{platform.machine()}.tar.gz"
