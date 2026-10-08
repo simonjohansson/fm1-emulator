@@ -198,6 +198,15 @@ class Behavior:
             require(after["selected_track"] == before["selected_track"], "selected track changed unexpectedly")
             require(after["env_decay"] == before["env_decay"] + 1, "ENV DEC detent did not increment song state")
             require(self.contact("h")["home"] == 1, "HOME did not return")
+        # The second GLO press reaches text fitting's negative byte store.
+        # Repeat the physical sequence to catch both a fault and lost release.
+        for _ in range(2):
+            before = self.observe()
+            require(self.contact("f6")["home"] == 0, "GLO did not open")
+            after = self.contact("f6")
+            require(after["home"] == 0, "second GLO press left the page")
+            require(after["ui_frames"] > before["ui_frames"], "GLO drawing stopped")
+            require(self.contact("h")["home"] == 1, "HOME did not return from GLO")
         complete = self.observe("complete-interactions")
         require(complete["ui_frames"] > baseline["ui_frames"], "UI frames did not advance")
         return baseline, complete
