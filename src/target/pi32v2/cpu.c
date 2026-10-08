@@ -21,7 +21,8 @@ static bool has_work(CPUState *cs) { return cpu_test_interrupt(cs, CPU_INTERRUPT
 static TCGTBCPUState get_tb_state(CPUState *cs)
 {
     CPUPi32v2State *env = cpu_env(cs);
-    return (TCGTBCPUState){ .pc = env->pc, .flags = env->in_irq };
+    return (TCGTBCPUState){ .pc = env->pc, .flags = env->in_irq |
+                           (env->repeat_end ? PI32V2_TB_REPEAT : 0) };
 }
 
 static void synchronize(CPUState *cs, const TranslationBlock *tb)
@@ -70,7 +71,7 @@ static bool interrupt(CPUState *cs, int request)
     Pi32v2CPU *cpu = PI32V2_CPU(cs);
     if (cpu->observer_held) { return false; }
     CPUPi32v2State *e = cpu_env(cs);
-    if (!(request & CPU_INTERRUPT_HARD) || e->in_irq || e->predicate_end ||
+    if (!(request & CPU_INTERRUPT_HARD) || e->in_irq || e->predicate_end || e->repeat_end ||
         (e->spr[ICFG] & 0x300) != 0x300) {
         return false;
     }

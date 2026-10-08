@@ -8,10 +8,12 @@
 
 /* Register numbering: Apache-2.0 Quarkslab pi32v2.slaspec. */
 enum { RETI = 0, RETS = 3, PSR = 5, ICFG = 11, USP = 12, SSP = 13, SP = 14 };
+enum { PI32V2_TB_REPEAT = 2 };
 typedef struct CPUArchState {
     uint32_t gpr[16], spr[16], pc;
     uint32_t irq_config, priority_mask;
     uint32_t predicate_from, predicate_to, predicate_end;
+    uint32_t repeat_start, repeat_end, repeat_register, repeat_remaining;
     bool in_irq;
     uint64_t instructions, irq_entries, rti_count;
     uint64_t irq11_entries, irq11_rti_count, irq63_entries, irq63_rti_count;

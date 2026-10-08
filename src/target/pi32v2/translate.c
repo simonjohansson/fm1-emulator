@@ -13,13 +13,15 @@ typedef struct PiDisasContext {
     DisasContextBase base;
     CPUPi32v2State *env;
     uint32_t stop;
-    bool count_enabled;
+    bool count_enabled, repeating;
     TCGv_i32 inputs[16];
 } PiDisasContext;
 static TCGv_i32 gpr[16], spr[16], pc;
 static TCGv_i64 instructions;
 #define DISAS_EXIT DISAS_TARGET_0
 static uint32_t instruction_end(PiDisasContext *d, uint32_t here);
+static unsigned operation_size(uint16_t op);
+static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op);
 
 void pi32v2_translate_init(void)
 {
@@ -117,7 +119,7 @@ static void jump(uint32_t dest)
 static void chain_jump(PiDisasContext *d, uint32_t dest, unsigned slot)
 {
     DisasContextBase *db = &d->base;
-    if (translator_use_goto_tb(db, dest)) {
+    if (!d->repeating && translator_use_goto_tb(db, dest)) {
         TCGLabel *conditional = gen_new_label();
         TCGv_i32 end = tcg_temp_new_i32();
         tcg_gen_ld_i32(end, tcg_env, offsetof(CPUPi32v2State, predicate_end));
@@ -164,6 +166,7 @@ static void init_disas(DisasContextBase *db, CPUState *cs)
     d->env = cpu_env(cs);
     d->stop = PI32V2_CPU(cs)->stop_pc;
     d->count_enabled = true;
+    d->repeating = d->env->repeat_end != 0;
 }
 static void tb_start(DisasContextBase *db, CPUState *cs) {}
 static void insn_start(DisasContextBase *db, CPUState *cs)
@@ -539,12 +542,14 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), (op & 63) * 4);
         store(d, tcg_constant_i32(packed_mask(x)), addr, MO_LEUL | MO_ALIGN);
         next = here + 4;
-    } else if ((op & 0xffe0) == 0xef00 || (op & 0xffe0) == 0xefc0 || op == 0xe864 || op == 0xe866) {
+    } else if ((op & 0xffe0) == 0xef00 || (op & 0xffe0) == 0xefc0 ||
+               (op & 0xffe0) == 0xef80 || op == 0xe864 || op == 0xe866) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 3;
-        if (op == 0xe864 && kind == 1) {
+        if ((op == 0xe864 && kind == 1) || (op & 0xffe0) == 0xef80) {
             /* Vendor E864/E401 and E405 XOR the full register into a word.
-             * Keep its read/write in one I/O boundary to avoid MMIO replay. */
+             * EF81/047F ANDs a packed mask into a word at base+4.
+             * Keep each read/write in one I/O boundary to avoid MMIO replay. */
             translator_io_start(db);
         }
         TCGv_i32 addr = tcg_temp_new_i32(), value = tcg_temp_new_i32();
@@ -552,6 +557,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                           (op & 31) * 4);
         load(d, value, addr, MO_LEUL | MO_ALIGN);
         if ((op & 0xffe0) == 0xefc0) { tcg_gen_andi_i32(value, value, ~packed_mask(x)); }
+        else if ((op & 0xffe0) == 0xef80) { tcg_gen_andi_i32(value, value, packed_mask(x)); }
         else if (op != 0xe864 && op != 0xe866) { tcg_gen_ori_i32(value, value, packed_mask(x)); }
         else {
             TCGv_i32 operand = read_gpr(d, (x >> 8) & 15);
@@ -1011,6 +1017,42 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         TCGv_i32 dest = tcg_temp_new_i32();
         pop(d, dest);
         count(d); dynamic_jump(d, dest);
+    } else if ((op & 0xff00) == 0x0300) {
+        unsigned reg = op & 15;
+        uint32_t end = next + (((op >> 4) & 15) + 1) * 2;
+        /* REP snapshots its count, skips the byte span at zero, and writes
+         * the remaining count back after each completed iteration. The body
+         * may overwrite the count register. Qualify only existing linear
+         * forms; executed nested/control-transfer forms remain faults. */
+        bool qualified = true;
+        for (uint32_t at = next; at < end; ) {
+            uint16_t body = fetch(d, at);
+            int writes = parallel_writes(d, at, body);
+            if (body >> 13 == 6 || (body & 0xf800) == 0xf000) {
+                uint16_t head = body >> 13 == 6 ? body & 0x1fff : body & ~0x1000;
+                uint32_t tail = at + operation_size(head);
+                int head_writes = parallel_writes(d, at, head);
+                int tail_writes = parallel_writes(d, tail, fetch(d, tail));
+                writes = head_writes < 0 || tail_writes < 0 ||
+                         (head_writes & tail_writes) ? -1 : head_writes | tail_writes;
+            }
+            uint32_t after = instruction_end(d, at);
+            if (writes < 0 || after > end) { qualified = false; break; }
+            at = after;
+        }
+        if (!qualified) {
+            TCGLabel *zero = gen_new_label();
+            tcg_gen_brcondi_i32(TCG_COND_EQ, gpr[reg], 0, zero);
+            gen_helper_pi32v2_illegal(tcg_env, tcg_constant_i32(op));
+            gen_set_label(zero);
+        }
+        TCGv_i32 dest = tcg_temp_new_i32();
+        gen_helper_pi32v2_repeat(dest, tcg_env, tcg_constant_i32(reg),
+                                 tcg_constant_i32(next), tcg_constant_i32(end));
+        count(d);
+        tcg_gen_mov_i32(pc, dest);
+        tcg_gen_exit_tb(NULL, 0);
+        db->is_jmp = DISAS_NORETURN;
     } else if (op == 0x0410) {
         push(d, spr[RETS]);
     } else if (op == 0x0488) {

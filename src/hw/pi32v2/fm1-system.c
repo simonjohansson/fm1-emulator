@@ -176,14 +176,18 @@ static uint64_t cache_read(void *opaque, hwaddr offset, unsigned size)
 {
     /* This machine has no asynchronous cache fill/flush queue: QEMU's memory
      * access and translated-code invalidation are synchronous. CACHE_CON's
-     * idle flag therefore describes the model's actual idle state. No other
-     * cache control/status semantics are claimed. */
+     * idle flag therefore describes the model's actual idle state. */
     return 0x4000;
 }
 
 static void cache_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
-    system_fail(opaque, "cache control writes are unsupported");
+    /* Allow a zero command or read/modify/write of the read-only idle bit.
+     * Reached startup clears already-zero control bits this way. Actual
+     * cache commands remain unqualified rather than silently discarded. */
+    if (value & ~0x4000ull) {
+        system_fail(opaque, "cache control writes are unsupported");
+    }
 }
 
 static uint64_t debug_read(void *opaque, hwaddr offset, unsigned size)

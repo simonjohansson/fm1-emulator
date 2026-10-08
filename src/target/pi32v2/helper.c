@@ -108,11 +108,34 @@ uint32_t HELPER(pi32v2_if)(CPUPi32v2State *env, uint32_t result,
 
 uint32_t HELPER(pi32v2_advance)(CPUPi32v2State *env, uint32_t next)
 {
+    if (env->repeat_end && next == env->repeat_end) {
+        env->gpr[env->repeat_register] = --env->repeat_remaining;
+        if (env->repeat_remaining) {
+            return env->repeat_start;
+        }
+        env->repeat_start = env->repeat_end = env->repeat_register = 0;
+    }
     if (env->predicate_end && next == env->predicate_end) {
         if (env->predicate_from) { next = env->predicate_to; }
         env->predicate_from = env->predicate_to = env->predicate_end = 0;
     }
     return next;
+}
+
+uint32_t HELPER(pi32v2_repeat)(CPUPi32v2State *env, uint32_t reg,
+                              uint32_t start, uint32_t end)
+{
+    if (env->predicate_end || env->repeat_end) {
+        pi32v2_fail(env, "nested repeat block is unsupported");
+    }
+    if (!env->gpr[reg]) { return end; }
+    env->repeat_start = start;
+    env->repeat_end = end;
+    env->repeat_register = reg;
+    env->repeat_remaining = env->gpr[reg];
+    /* As with conditional blocks, interrupt entry is deferred while this
+     * qualified linear block is active. IRQ suspension remains unverified. */
+    return start;
 }
 
 uint32_t HELPER(pi32v2_call_return)(CPUPi32v2State *env, uint32_t next)
