@@ -11,11 +11,11 @@
 #define FM1_NOR_XIP_OFFSET 0x4000u
 #define FM1_NOR_XIP_SIZE (FM1_NOR_SIZE - FM1_NOR_XIP_OFFSET)
 
-/* Private NOR/SPI0 state for the unencrypted diagnostic application handoff.
- * Program/erase persistence is outside this read-only model. */
+/* Private NOR/SPI0 state. Writes last for this session only; the supplied
+ * firmware file is never modified and no persistent host format is added. */
 typedef struct FM1PocNOR {
     MemoryRegion spi_mmio, sfc_mmio, encryption_mmio, xip;
-    QEMUTimer *transfer_timer;
+    QEMUTimer *transfer_timer, *write_timer;
     Pi32v2CPU *cpu;
     uint8_t *bytes;
     uint32_t control, buffer, sfc_control;
@@ -24,6 +24,9 @@ typedef struct FM1PocNOR {
     uint8_t encryption_control, command, phase;
     uint8_t transfer_byte;
     bool busy, pending, transfer_receive, selected;
+    bool write_enabled, write_busy, ignore_command, program_data;
+    uint8_t write_command, page_buffer[256];
+    uint32_t program_base, write_address;
     uint64_t transfers, completed_transfers, acknowledgments;
     uint64_t transactions, jedec_commands, status_commands, read_commands;
     uint64_t received_bytes, read_bytes, sfc_disables, sfc_restores;

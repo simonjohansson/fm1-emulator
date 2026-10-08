@@ -411,7 +411,8 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                (op & 0xfff0) == 0xe920 || (op & 0xfff0) == 0xe990 ||
                (op & 0xfff0) == 0xec30 ||
                (op & 0xfff0) == 0xec90 || (op & 0xfff0) == 0xeca0 ||
-               (op & 0xfff0) == 0xed20 || (op & 0xfff0) == 0xee30 ||
+               (op & 0xfff0) == 0xed20 || (op & 0xfff0) == 0xedb0 ||
+               (op & 0xfff0) == 0xee30 ||
                (op & 0xfff0) == 0xe8a0) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = (op >> 4) & 255;
@@ -440,6 +441,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
              * oracle; that separate operand form remains unsupported. */
             if (x & 4095) { goto illegal; }
             right = tcg_constant_i32(0); cond = TCG_COND_NE;
+        } else if (kind == 0xdb) {
+            /* Primary signed12 IF; vendor EDB5/0000 selects r5 < 0. */
+            right = tcg_constant_i32(sext(x & 4095, 12));
+            cond = TCG_COND_LT;
         } else if (kind == 0xc3 || kind == 0xe3) {
             /* Full-state literal boundaries establish EC30 unsigned12,
              * contradicting the primary packed constructor. Vendor EE30/6FFF
@@ -518,6 +523,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xffe0) == 0xef00 || (op & 0xffe0) == 0xefc0 || op == 0xe864 || op == 0xe866) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 3;
+        if (op == 0xe864 && kind == 1) {
+            /* Vendor E864/E401 and E405 XOR the full register into a word.
+             * Keep its read/write in one I/O boundary to avoid MMIO replay. */
+            translator_io_start(db);
+        }
         TCGv_i32 addr = tcg_temp_new_i32(), value = tcg_temp_new_i32();
         tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), op == 0xe864 || op == 0xe866 ? x & 252 :
                           (op & 31) * 4);
@@ -530,7 +540,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                 operand = bit_operand(operand, op);
             }
             if (kind == 0) { tcg_gen_or_i32(value, value, operand); }
-            else if (kind == 1 && op == 0xe866) { tcg_gen_xor_i32(value, value, operand); }
+            else if (kind == 1) { tcg_gen_xor_i32(value, value, operand); }
             else if (kind == 2) { tcg_gen_and_i32(value, value, operand); }
             else if (kind == 3) { tcg_gen_andc_i32(value, value, operand); }
             else { goto illegal; }
@@ -624,9 +634,9 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xfff0) == 0xee50) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = op & 15;
-        if (kind != 0 && kind != 1 && kind != 2 && kind != 3 && kind != 4 && kind != 8 && kind != 10) { goto illegal; }
+        if (kind != 0 && kind != 1 && kind != 2 && kind != 3 && kind != 4 && kind != 8 && kind != 10 && kind != 12) { goto illegal; }
         unsigned base = (x >> 4) & 15, reg = x >> 12;
-        if ((kind == 8 || kind == 10) && base == reg) { goto illegal; }
+        if ((kind == 8 || kind == 10 || kind == 12) && base == reg) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
         int32_t offset = (x & 15) | ((x >> 8) & 15) * 16;
         /* EE53 stores a byte at base + (imm8 - 256), without writeback.
@@ -634,8 +644,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (kind == 1 || kind == 3) { offset -= 256; }
         tcg_gen_addi_i32(addr, read_gpr(d, base), offset);
         if (kind == 2 || kind == 3 || kind == 10) { store(d, read_gpr(d, x >> 12), addr, MO_UB); }
-        else { load(d, gpr[x >> 12], addr, kind == 4 ? MO_SB : MO_UB); }
-        if (kind == 8 || kind == 10) { tcg_gen_mov_i32(gpr[base], addr); }
+        /* Vendor EE5C/1E61 reads a signed byte at base+225 and updates
+         * the base, matching the existing unsigned pre-index load policy. */
+        else { load(d, gpr[x >> 12], addr, kind == 4 || kind == 12 ? MO_SB : MO_UB); }
+        if (kind == 8 || kind == 10 || kind == 12) { tcg_gen_mov_i32(gpr[base], addr); }
         next = here + 4;
     } else if (op == 0xeed0) {
         uint16_t x = fetch(d, here + 2);
@@ -779,19 +791,20 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0xeddc) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 15, base = (x >> 4) & 15, dest = x >> 12;
-        if ((kind != 1 && kind != 2) || (kind == 1 && base == dest)) {
+        if (kind > 2 || (kind == 1 && base == dest)) {
             goto illegal;
         }
         TCGv_i32 addr = tcg_temp_new_i32();
         /* Vendor EDDC 3312 and separate executable probes establish the
          * unscaled incoming sum for loads. Vendor EDDC 0B31 stores the low
-         * halfword at the same pre-indexed address. Keep the unresolved
+         * halfword at the same pre-indexed address. EDDC 1100 loads an
+         * unsigned halfword, including a destination/index alias. Keep the unresolved
          * source/base store alias rejected, as for ECDC word stores. */
         tcg_gen_add_i32(addr, read_gpr(d, base), read_gpr(d, (x >> 8) & 15));
         /* Preserve the modeled pre-index writeback-before-access order. */
         tcg_gen_mov_i32(gpr[base], addr);
         if (kind == 1) { store(d, read_gpr(d, dest), addr, MO_LEUW | MO_ALIGN); }
-        else { load(d, gpr[dest], addr, MO_LESW | MO_ALIGN); }
+        else { load(d, gpr[dest], addr, (kind == 2 ? MO_LESW : MO_LEUW) | MO_ALIGN); }
         next = here + 4;
     } else if (op == 0xedd4) {
         uint16_t x = fetch(d, here + 2);
@@ -1003,6 +1016,9 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             push(d, spr[RETS]);
             for (int i = hi; i >= 4; i--) { push(d, read_gpr(d, i)); }
         } else {
+            /* A final selected stack return closes its IF arm just like RTS,
+             * before restoring registers or transferring to the popped PC. */
+            gen_helper_pi32v2_return_end(tcg_env, tcg_constant_i32(next));
             TCGv_i32 dest = tcg_temp_new_i32();
             for (unsigned i = 4; i <= hi; i++) { pop(d, gpr[i]); }
             pop(d, dest);

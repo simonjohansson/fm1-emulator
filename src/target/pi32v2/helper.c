@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
+#include "qemu/log.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
 #define HELPER_H "helper.h"
@@ -82,15 +83,20 @@ void HELPER(pi32v2_branch)(CPUPi32v2State *env)
 
 void HELPER(pi32v2_flush)(CPUPi32v2State *env, uint32_t address)
 {
-    /* Guest data stores already invalidate affected TCG code. The bounded
-     * machine has synchronous coherent memory, so no cache queue remains. */
-    pi32v2_check_access(env, address & ~31u, 32, 0);
+    /* CPU stores and completed NOR writes already invalidate affected TCG
+     * code. This machine has coherent memory and no pending cache queue.
+     * FLUSH names a cache line; it does not read that line from the bus,
+     * including when SFC is disconnected for a SPI flash transaction. */
 }
 
 uint32_t HELPER(pi32v2_if)(CPUPi32v2State *env, uint32_t result,
                           uint32_t then_end, uint32_t else_end)
 {
-    if (env->predicate_end) { pi32v2_fail(env, "nested conditional block is unsupported"); }
+    if (env->predicate_end) {
+        qemu_log_mask(LOG_GUEST_ERROR, "pi32v2: active IF end=%08x from=%08x to=%08x\n",
+                      env->predicate_end, env->predicate_from, env->predicate_to);
+        pi32v2_fail(env, "nested conditional block is unsupported");
+    }
     env->predicate_end = result ? then_end : else_end;
     if (!result && then_end == else_end) { env->predicate_end = 0; }
     if (result && then_end != else_end) {

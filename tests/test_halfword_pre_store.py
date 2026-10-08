@@ -20,6 +20,38 @@ class HalfwordPreStoreTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
 
+    def test_unsigned_pre_load_uses_incoming_index_and_zero_extends(self):
+        for base, dest, index in ((0, 1, 1), (3, 3, 11), (3, 0, 11)):
+            for stride in (2, -2):
+                with self.subTest(base=base, dest=dest, index=index, stride=stride):
+                    guest = Guest()
+                    guest.write(INSPECTION, 0x8000beef)
+                    guest.literal(6, 0x89abcde5)
+                    guest.emit(0xe064, 0x6580)
+                    guest.literal(base, INSPECTION + 2 - stride)
+                    guest.literal(index, stride)
+                    guest.emit(0xeddc, dest << 12 | index << 8 | base << 4)
+                    state = guest_state(self.directory, guest)
+                    self.assertEqual(state["registers"][dest], 0x8000)
+                    if base != dest:
+                        self.assertEqual(state["registers"][base], INSPECTION + 2)
+                    if index != dest:
+                        self.assertEqual(state["registers"][index], stride & 0xffffffff)
+                    self.assertEqual(state["specials"][5], 0x89abcde5)
+                    self.assertEqual(state["inspection"][0], 0x8000beef)
+                    self.assertEqual(state["instructions"], guest.instructions)
+
+    def test_skipped_unsigned_pre_load_does_not_write_back_or_access(self):
+        guest = Guest()
+        guest.literal(0, 1)
+        guest.literal(3, 0xdead0000)
+        guest.literal(11, 2)
+        guest.emit(0xea20, 1)
+        guest.emit(0xeddc, 0x3b30)
+        state = guest_state(self.directory, guest)
+        self.assertEqual(state["registers"][3], 0xdead0000)
+        self.assertEqual(state["instructions"], guest.instructions - 1)
+
     def test_store_updates_base_and_preserves_neighbor_and_flags(self):
         for stride in (2, -2):
             with self.subTest(stride=stride):

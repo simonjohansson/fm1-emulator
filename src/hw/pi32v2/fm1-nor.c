@@ -55,13 +55,19 @@ static void command_start(FM1PocNOR *nor, uint8_t command)
     nor->command = command;
     nor->phase = 0;
     nor->address = 0;
+    /* Only status reads are meaningful during a self-timed write. Other
+     * commands are ignored by the flash until the operation completes. */
+    nor->ignore_command = nor->write_busy && command != 0x05 && command != 0x35;
+    if (nor->ignore_command) { return; }
     switch (command) {
     case 0x9f: nor->jedec_commands++; break;
     case 0x05: case 0x35: nor->status_commands++; break;
     case 0x0b: nor->read_commands++; break;
-    case 0x02: case 0x06: case 0x20:
-        nor_fail(nor, "NOR program/erase/write-enable is unimplemented");
+    case 0x02:
+        memset(nor->page_buffer, 0xff, sizeof(nor->page_buffer));
+        nor->program_data = false;
         break;
+    case 0x04: case 0x06: case 0x20: break;
     default: nor_fail(nor, "unsupported NOR command");
     }
 }
@@ -71,18 +77,31 @@ static uint8_t transfer_byte(FM1PocNOR *nor)
     if (!nor->transfer_receive) {
         if (!nor->command) {
             command_start(nor, nor->transfer_byte);
-        } else if (nor->command == 0x0b && nor->phase < 3) {
+        } else if (nor->ignore_command) {
+            return 0xff;
+        } else if ((nor->command == 0x0b || nor->command == 0x02 ||
+                    nor->command == 0x20) && nor->phase < 3) {
             nor->address = (nor->address << 8) | nor->transfer_byte;
             nor->phase++;
+            if (nor->phase == 3) {
+                nor->address &= FM1_NOR_SIZE - 1;
+                nor->program_base = nor->address & ~255u;
+            }
         } else if (nor->command == 0x0b && nor->phase == 3) {
             /* Fast read has one dummy byte after the 24-bit address. */
             nor->phase++;
+        } else if (nor->command == 0x02 && nor->phase == 3) {
+            /* Page wrap retains only the last byte supplied for each slot;
+             * programming subsequently clears bits, never sets them. */
+            nor->page_buffer[nor->address++ & 255] = nor->transfer_byte;
+            nor->program_data = true;
         } else {
             nor_fail(nor, "unexpected NOR transmit byte");
         }
         return 0xff; /* NOR does not drive useful data during command bytes. */
     }
     nor->received_bytes++;
+    if (nor->ignore_command) { return 0xff; }
     switch (nor->command) {
     case 0x9f: {
         static const uint8_t id[] = {0x85, 0x60, 0x14};
@@ -91,9 +110,12 @@ static uint8_t transfer_byte(FM1PocNOR *nor)
         }
         return id[nor->phase++];
     }
-    case 0x05: case 0x35:
+    case 0x05:
         nor->phase = 1;
-        return 0; /* Erased, idle device: WIP=0, WEL=0, SR2=0. */
+        return (nor->write_busy ? 1 : 0) | (nor->write_enabled ? 2 : 0);
+    case 0x35:
+        nor->phase = 1;
+        return 0; /* No modeled SR2 configuration bits. */
     case 0x0b:
         if (nor->phase != 4) {
             nor_fail(nor, "NOR fast read before address/dummy completion");
@@ -102,6 +124,50 @@ static uint8_t transfer_byte(FM1PocNOR *nor)
         /* This 1 MiB part ignores the upper bits of the 24-bit address. */
         return nor->bytes[nor->address++ & (FM1_NOR_SIZE - 1)];
     default: nor_fail(nor, "NOR receive without a supported command"); return 0;
+    }
+}
+
+static void write_complete(void *opaque)
+{
+    FM1PocNOR *nor = opaque;
+    unsigned length = nor->write_command == 0x02 ? 256 : 4096;
+    uint32_t start = nor->write_address;
+    if (nor->write_command == 0x02) {
+        for (unsigned i = 0; i < length; i++) {
+            nor->bytes[start + i] &= nor->page_buffer[i];
+        }
+    } else {
+        memset(nor->bytes + start, 0xff, length);
+    }
+    /* Publish through QEMU's ROM-write path, which marks modified RAM and
+     * invalidates translated code. SPI reads and XIP then see the same bytes. */
+    uint32_t mapped = MAX(start, FM1_NOR_XIP_OFFSET);
+    if (mapped < start + length &&
+        address_space_write_rom(&address_space_memory,
+            FM1_NOR_XIP_BASE + mapped - FM1_NOR_XIP_OFFSET,
+            MEMTXATTRS_UNSPECIFIED, nor->bytes + mapped,
+            start + length - mapped) != MEMTX_OK) {
+        nor_fail(nor, "cannot publish NOR write to XIP");
+    }
+    nor->write_busy = nor->write_enabled = false;
+}
+
+static void command_end(FM1PocNOR *nor)
+{
+    if (nor->ignore_command) { return; }
+    if (nor->command == 0x06) { nor->write_enabled = true; }
+    else if (nor->command == 0x04) { nor->write_enabled = false; }
+    else if (nor->write_enabled && nor->phase == 3 &&
+             (nor->command == 0x20 ||
+              (nor->command == 0x02 && nor->program_data))) {
+        nor->write_command = nor->command;
+        nor->write_address = nor->command == 0x20 ?
+                             nor->address & ~4095u : nor->program_base;
+        nor->write_busy = true;
+        /* P25Q80H typical times, used as bounded functional timing rather
+         * than a calibrated physical part: PP 2 ms, sector erase 8 ms. */
+        timer_mod_ns(nor->write_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+                     (nor->command == 0x20 ? 8000000 : 2000000));
     }
 }
 
@@ -265,11 +331,12 @@ void fm1_nor_set_pins(FM1PocNOR *nor, uint32_t pd_out, uint32_t iomap_con0)
         nor->transactions++;
     }
     if (nor->selected && !selected && nor->command) {
-        if ((nor->command == 0x9f && nor->phase != 3) ||
+        if (!nor->ignore_command && ((nor->command == 0x9f && nor->phase != 3) ||
             ((nor->command == 0x05 || nor->command == 0x35) && !nor->phase) ||
-            (nor->command == 0x0b && nor->phase != 4)) {
+            (nor->command == 0x0b && nor->phase != 4))) {
             nor_fail(nor, "NOR CS released before a complete supported command");
         }
+        command_end(nor);
     }
     nor->selected = selected;
     nor->pd_out = pd_out;
@@ -322,6 +389,7 @@ void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
     nor->pd_out = FLASH_CS;
     nor->iomap_con0 = SFC_ROUTE;
     nor->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, transfer_complete, nor);
+    nor->write_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, write_complete, nor);
     memory_region_init_io(&nor->spi_mmio, owner, &spi_ops, nor, "fm1.spi0", 20);
     memory_region_add_subregion(get_system_memory(), SPI0_BASE, &nor->spi_mmio);
     memory_region_init_io(&nor->sfc_mmio, owner, &sfc_ops, nor, "fm1.sfc", 4);
@@ -330,7 +398,8 @@ void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
                           "fm1.sfcenc", 16);
     memory_region_add_subregion(get_system_memory(), ENCRYPTION_BASE,
                                 &nor->encryption_mmio);
-    /* Immutable for this stage; unsupported program/erase never changes it. */
+    /* Read-only to CPU stores; completed SPI writes update this ROM region
+     * through QEMU's coherent ROM-write API. */
     memory_region_init_rom(&nor->xip, NULL, "fm1.diag-xip", FM1_NOR_XIP_SIZE,
                            &error_fatal);
     memcpy(memory_region_get_ram_ptr(&nor->xip), nor->bytes + FM1_NOR_XIP_OFFSET,

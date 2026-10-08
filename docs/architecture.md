@@ -44,11 +44,13 @@ protection/P33/watchdog, ALNK0 audio, SAR/WLA, USB, and idle UART1 receiver
 initialization. Controllers own their registers, transfers, and IRQ outputs;
 the board owns composition and wiring.
 Unimplemented accesses or configurations fault explicitly.
+NOR page program and sector erase update SPI/XIP data after their modeled busy
+interval. Writes last for the current session; the firmware file stays unchanged.
 
 Felucca boot, input, guest audio generation, UI progress, and descriptor-driven
 USB CDC enumeration/DTR/endpoint DMA are tested. CoreAudio consumes guest
 samples; it does not synthesize substitute audio. Emulation is below real time.
-NOR program/erase persistence, ROM boot, whole-machine reset, complete IRQ
+NOR persistence across runs, ROM boot, whole-machine reset, complete IRQ
 nesting/arbitration, USB MIDI, external UART transfers, and wider firmware
 compatibility remain incomplete or unverified.
 
