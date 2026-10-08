@@ -1,6 +1,36 @@
 # FM-1 QEMU known-firmware instruction gaps
 
-## Current production after Batch A (2026-10-08)
+## Current production after Batch B (2026-10-08)
+
+**49 missing forms / 54 role rows remain.** Batch B admits all 15 reviewed
+six-byte scalar branch forms and fixes their exact scanner widths. On the
+same 21 executable payloads / 120,836 confirmed sites:
+
+| Revision | Admitted | Rejected | Known width gaps |
+| --- | ---: | ---: | ---: |
+| Frozen pre-batch baseline | 117,088 | 3,748 | 496 |
+| Accepted Batch A | 117,441 | 3,395 | 496 |
+| Accepted Batch B | 117,937 | 2,899 | 0 |
+
+Batch B adds 496 admitted sites with zero regressions (849 cumulative new
+sites across A/B). Unchanged Felucca has 346 rejected static sites. The
+corrected 76-form / 82-role baseline retains the unsigned-maximum placement
+correction described below. Deferred 04C8 and unsigned parallel maximum,
+71 opaque E53F regions / 12 raw patterns remain separate.
+
+Actual production translator SHA-256:
+`ea56ba039c93c1b941eb34c4e867e1cc48a05a51fa94187d0c2ea1d598ea2ae5`.
+Fresh exact-C extraction, 51 static sanity checks, 45 short-context checks,
+original-input replays and independent review: main repo
+`.deps/qemu-batch-b-2026-10-08/`. Static admission does not establish runtime
+reachability, frequency, performance or complete firmware compatibility.
+
+Separate runtime acceptance passes 1,754 focused cases and eleven broad/affected
+gates. Unchanged/default-loader firmware still stops at E99C/8D00,
+0x0200a2fa, with the same count and device state as A; no reached boot advance.
+Completed HOME and nonzero audio remain unverified. Next is grouped Batch C.
+
+## Accepted Batch A inventory (historical, 2026-10-08)
 
 **64 missing forms / 69 role rows remain.** Batch A admits 12 forms / 13
 role rows; exact compact RETS push 04C8 remains deferred. One unsigned maximum

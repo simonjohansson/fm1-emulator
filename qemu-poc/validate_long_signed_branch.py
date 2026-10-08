@@ -54,7 +54,10 @@ def branch_case(name, register, value, immediate, displacement, opcode=0xFF0C):
     words = [*setup, 0xEAC0 | ((delta >> 16) & 63), delta & 0xFFFF]
     words.extend([0] * ((branch_pc - ENTRY) // 2 - len(words)))
     words.extend([opcode, (register << 12) | (immediate & 0xFFF), displacement & 0xFFFF])
-    taken = value > immediate if opcode == 0xFF0C else (value & 0xFFFFFFFF) > (immediate & 0xFFF)
+    taken = (value < immediate if opcode == 0xFF0B else
+             value <= immediate if opcode == 0xFF0D else
+             value > immediate if opcode == 0xFF0C else
+             (value & 0xFFFFFFFF) > (immediate & 0xFFF))
     stop = branch_pc + 6 + (displacement * 2 if taken else 0)
     words.extend([0] * max(0, (stop - ENTRY) // 2 + 4 - len(words)))
     image = save_image(name, words)
@@ -168,16 +171,19 @@ def main():
     for condition in (0, 1):
         for has_else in (False, True):
             conditional_case(condition, has_else)
-    for opcode in (0xFF0A, 0xFF0B, 0xFF0D, 0xFF0E, 0xFF0F):
+    for opcode in (0xFF0B, 0xFF0D):
+        branch_case(f"batch-b-{opcode:04x}-taken", 1, -2, -1, 7, opcode=opcode)
+        branch_case(f"batch-b-{opcode:04x}-untaken", 1, 0, -1, 7, opcode=opcode)
+    for opcode in (0xFF0A, 0xFF0E, 0xFF0F):
         unsupported_case(opcode)
-    summary = {"passed": True, "reference_compared_cases": 27,
-               "independent_sizing_cases": 2, "unsupported_neighbor_cases": 5,
+    summary = {"passed": True, "reference_compared_cases": 31,
+               "independent_sizing_cases": 2, "unsupported_neighbor_cases": 3,
                "unsupported_conditional_cases": 1,
                "qemu_sha256": hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
                "instruction": "FF0C signed greater-than literal branch",
                "hardware_validation": False}
     (CACHE / "validation.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print("PASS FF0C: 27 oracle comparisons, two independent sizing checks and six explicit faults")
+    print("PASS FF0C: 31 oracle comparisons, two independent sizing checks and four explicit faults")
 
 
 if __name__ == "__main__":

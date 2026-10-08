@@ -2116,7 +2116,7 @@ Audio IRQ11 entries/returns 107/107; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_le_if.py
 ```
 
-### Grouped Batch A and latest checkpoint
+### Grouped Batch A checkpoint (historical)
 
 Batch A admits 12 of its 13 reviewed forms: five scalar forms (packed
 SUB, compact register ASR, ADC, SBC and special SP ADD), plus seven missing
@@ -2230,3 +2230,57 @@ also have durable ignored copies alongside the persistent worktree:
   `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-diag-boot-2026-10-05/`
 - Native window and pause checks:
   `/Users/simonjohansson/src/fm1-emulator/.deps/qemu-window-2026-10-06/`
+
+### Grouped Batch B and latest checkpoint (2026-10-08)
+
+All 15 exact six-byte scalar forms are accepted together: FF0B/FF0D signed
+literal < / <=; FF20/21/23/28/29/2A/2B/2D packed EQ/NE/unsigned LT/GT/LE
+and signed GE/LT/LE; FF40/42/43/48 register EQ/unsigned GE/LT/GT and FF4A
+signed GE. Register extension low byte zero remains conservative canonical
+admission. Every form uses signed16 word displacement from PC+6, preserves
+PSR/RETS and retires once. Exact scanner widths track the same 15 opcodes.
+Shared helpers, predicates, IRQ policy and parallel classification are preserved.
+
+Pinned primary contradictions are retained: FF0B has an unsigned literal
+token, FF0D names packed rather than signed12, FF4A names a different register
+field, and FF2D lacks a constructor. Saved vendor bytes and independently
+expected full-state reference probes resolve these four forms. The existing
+packed-repeat policy remains separate from disputed primary constructors.
+Reference IF scanning/completion, branch-exit predicate clearing and canonical
+admission differences remain raw evidence, not hardware validation.
+
+Sol 6.1 High workers prepared private slices and independently reviewed the
+finite matrix, combined source and focused tests before parent integration.
+One production build passes all 1,754 focused cases: 1,594 successes and 160
+precise model faults, covering fields/aliases, signed boundaries, displacement
+endpoints, PSR/RETS preservation, IF selection/skipping/completion/following IF,
+owned memory and six-byte/target fetch guards. The 1,738 initial copied-reference
+research calls had zero timeouts; focused QEMU acceptance launches no reference.
+Eleven required/affected ISA/profile/IRQ/boot/branch gates pass; their 896 copied
+reference calls include 12 independently reviewed replacements for obsolete
+negative-neighbor tests. Every other assertion and neighboring admission stays
+within its prior scope.
+
+Fresh actual-production C extraction passes 51 static sanity and 45 unpadded
+short-context checks. On the same 21 executable payloads, Batch B adds 496
+admitted sites with zero regressions; totals are 117,937 admitted / 2,899 rejected.
+All 496 known width gaps are resolved. There remain 49 forms / 54 role rows;
+unchanged Felucca has 346 rejected static sites. The 71 opaque E53F regions /
+12 raw patterns and deferred 04C8/unsigned parallel maximum remain separate.
+Static admission establishes no reachability, frequency, performance or complete
+firmware compatibility.
+
+Unchanged MAX 200,000,000 boot remains E99C/8D00 at 0x0200a2fa after
+120,323,443 instructions and 962,587,552 ns: no reached boot advance. IRQ11
+entries/returns remain 107/107; IRQ63 5362/5362. All 57,344 captured sample words
+are zero; bootguard is pending. Stage 5/home 1/frame 1 does not establish
+completed HOME. Renamed default-loader JSON except profile, exact LCD PPM and
+latest ALNK bytes match; cross-loader whole SRAM is excluded. A/B captures
+also match all JSON, whole SRAM, samples and pixels within each loader mode.
+HOME, synthesis, 30 guest seconds, physical input and native execution remain open.
+
+Durable evidence and reproduction commands: main repo
+.deps/qemu-batch-b-2026-10-08/. Translator SHA-256:
+ea56ba039c93c1b941eb34c4e867e1cc48a05a51fa94187d0c2ea1d598ea2ae5.
+QEMU SHA-256: 8c26d479eb3fca46783b4729d36762712bad43267c34694a287a2a2a485f6560.
+Next is grouped Batch C, including the reached E99C conditional form.

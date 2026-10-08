@@ -398,8 +398,13 @@ def main():
     independent_conditional_case("then", "final", 1, False, has_else=False, displacement=4)
     for low in (1, 2, 4, 8, 16, 32, 64, 128, 255):
         policy_fault(f"canonical-low-byte-{low:02x}", low=low)
-    for opcode in (0xFF40, 0xFF42, 0xFF43, 0xFF48, 0xFF49):
-        policy_fault(f"deferred-neighbor-{opcode:04x}", opcode=opcode)
+    for opcode, taken, untaken in ((0xFF40, (4, 4), (5, 4)),
+                                  (0xFF42, (5, 4), (3, 4)),
+                                  (0xFF43, (3, 4), (5, 4)),
+                                  (0xFF48, (5, 4), (3, 4))):
+        for label, (left, right) in (("taken", taken), ("untaken", untaken)):
+            ordinary_case(f"batch-b-{opcode:04x}-{label}", opcode=opcode, left=left, right=right)
+    policy_fault("deferred-neighbor-ff49", opcode=0xFF49)
     for stage in ("branch", "target"):
         guard_fault(stage)
     final_then_fault(False)
@@ -409,11 +414,11 @@ def main():
         exit_followup_fault(side, position)
     summary = {"passed": True, "instruction": "exact canonical FF41 six-byte register inequality",
                "ordinary_reference_cases": len(cases), "conditional_reference_cases": 6,
-               "total_reference_positive_cases": len(cases) + 6,
+               "total_reference_positive_cases": len(cases) + 14, "batch_b_control_cases": 8,
                "independent_primary_model_positive_cases": 13, "generic_replays": 1,
-               "canonical_admission_policy_faults": 9, "deferred_neighbor_faults": 5,
+               "canonical_admission_policy_faults": 9, "deferred_neighbor_faults": 1,
                "pc_guard_faults": 2, "final_then_family_guard_faults": 3,
-               "inherited_followup_if_faults": 3, "total_model_faults": 22,
+               "inherited_followup_if_faults": 3, "total_model_faults": 18,
                "primary_blob": "622d767fceb3ad46972ae821394226ff1e6117b2",
                "low_byte_policy": "primary requires zero; reference accepts all nine tested nonzero bytes",
                "reference_scanner_limitation": "FF41 scanned as4; skipped displacement word and arm completion differ",
@@ -422,7 +427,7 @@ def main():
                "pc32_wrap_validation": False, "hardware_fault_state_validation": False,
                "qemu_sha256": hashlib.sha256(validate.QEMU.read_bytes()).hexdigest()}
     (CACHE / "validation.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print(f"PASS FF41: {len(cases) + 6} oracle positives, 13 independent model positives, generic and 22 faults")
+    print(f"PASS FF41: {len(cases) + 14} oracle positives, 13 independent model positives, generic and 18 faults")
 
 
 if __name__ == "__main__":

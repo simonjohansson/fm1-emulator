@@ -859,6 +859,52 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_andi_i32(masked, read_gpr(d, x >> 12), packed_mask(x));
         next = here + 6;
         count(d); branch(d, next + (int16_t)displacement * 2, next, masked, op & 1);
+    } else if (op == 0xff20 || op == 0xff21 || op == 0xff23 ||
+               op == 0xff28 || op == 0xff29 || op == 0xff2a ||
+               op == 0xff2b || op == 0xff2d) {
+        uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
+        TCGCond cond;
+        switch (op & 15) {
+        case 0: cond = TCG_COND_EQ; break;
+        case 1: cond = TCG_COND_NE; break;
+        case 3: cond = TCG_COND_LTU; break;
+        case 8: cond = TCG_COND_GTU; break;
+        case 9: cond = TCG_COND_LEU; break;
+        case 10: cond = TCG_COND_GE; break;
+        case 11: cond = TCG_COND_LT; break;
+        default: cond = TCG_COND_LE; break;
+        }
+        /* Vendor FF2D/3D7A compares signed r3 <= 16000. The pinned
+         * primary instead labels FF0D as packed <=; keep that discrepancy
+         * explicit and preserve the existing packed-repeat model policy. */
+        next = here + 6;
+        count(d); compare_branch(d, next + (int16_t)displacement * 2, next, cond,
+                                 read_gpr(d, x >> 12), tcg_constant_i32(packed_mask(x)));
+    } else if (op == 0xff0b || op == 0xff0d || op == 0xff40 ||
+               op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff4a) {
+        uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
+        TCGCond cond;
+        TCGv_i32 right;
+        if (op == 0xff0b || op == 0xff0d) {
+            /* Saved vendor literals and independent full-state probes resolve
+             * primary unsigned/packed operand contradictions as signed12. */
+            cond = op == 0xff0b ? TCG_COND_LT : TCG_COND_LE;
+            right = tcg_constant_i32(sext(x & 4095, 12));
+        } else {
+            if (x & 255) { goto illegal; }
+            switch (op) {
+            case 0xff40: cond = TCG_COND_EQ; break;
+            case 0xff42: cond = TCG_COND_GEU; break;
+            case 0xff43: cond = TCG_COND_LTU; break;
+            case 0xff48: cond = TCG_COND_GTU; break;
+            default: cond = TCG_COND_GE; break; /* Exact FF4A. */
+            }
+            /* Vendor FF4A uses C bits8:11; the primary B field is contradicted. */
+            right = read_gpr(d, (x >> 8) & 15);
+        }
+        next = here + 6;
+        count(d); compare_branch(d, next + (int16_t)displacement * 2, next, cond,
+                                 read_gpr(d, x >> 12), right);
     } else if (op == 0xff41) {
         uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
         if (x & 255) { goto illegal; }
@@ -1036,6 +1082,10 @@ static unsigned operation_size(uint16_t op)
 {
     if ((op & 0xffc0) == 0xffc0 || (op & 0xfff0) == 0xffe0 || op == 0xff80 ||
         op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09 || op == 0xff0c ||
+        op == 0xff0b || op == 0xff0d ||
+        op == 0xff20 || op == 0xff21 || op == 0xff23 || op == 0xff28 || op == 0xff29 ||
+        op == 0xff2a || op == 0xff2b || op == 0xff2d ||
+        op == 0xff40 || op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff4a ||
         op == 0xff41 || op == 0xff60 || op == 0xff61) { return 6; }
     return op >> 13 == 7 ? 4 : 2;
 }
