@@ -56,7 +56,7 @@ void HELPER(pi32v2_budget)(CPUPi32v2State *env)
 void pi32v2_check_access(CPUPi32v2State *env, uint32_t address,
                          unsigned size, unsigned flags)
 {
-    Pi32v2CPU *cpu = PI32V2_CPU(env_cpu(env));
+    Pi32v2CPU *cpu = env_archcpu(env);
     if (cpu->ops && cpu->ops->check_access) {
         cpu->ops->check_access(env, address, size, flags);
     }
@@ -64,7 +64,7 @@ void pi32v2_check_access(CPUPi32v2State *env, uint32_t address,
 
 void pi32v2_note_branch(CPUPi32v2State *env)
 {
-    Pi32v2CPU *cpu = PI32V2_CPU(env_cpu(env));
+    Pi32v2CPU *cpu = env_archcpu(env);
     if (cpu->ops && cpu->ops->note_branch) {
         cpu->ops->note_branch(env);
     }

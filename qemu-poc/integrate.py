@@ -29,6 +29,23 @@ def main():
             dest.parent.mkdir(parents=True, exist_ok=True)
             if not dest.exists() or dest.read_bytes() != path.read_bytes():
                 shutil.copy2(path, dest)
+    # Keep the small Cocoa host hook in the overlay rather than copying the
+    # upstream backend. Anchors belong to the pinned release; fail on drift.
+    cocoa = SOURCE / "ui/cocoa.m"
+    content = cocoa.read_text()
+    for before, after in [
+        ('#include "system/runstate.h"',
+         '#include "system/runstate.h"\n#include "fm1-cocoa-activity.h"'),
+        ('    [NSApp setDelegate:controller];',
+         '    [NSApp setDelegate:controller];\n    cocoa_vm_activity_init();'),
+        ('static void cocoa_display_cleanup(void)\n{',
+         'static void cocoa_display_cleanup(void)\n{\n    cocoa_vm_activity_cleanup();'),
+    ]:
+        if after not in content:
+            if content.count(before) != 1:
+                raise SystemExit("pinned Cocoa activity hook anchor differs")
+            content = content.replace(before, after)
+    write_changed(cocoa, content)
     write_changed(SOURCE / "configs/targets/pi32v2-softmmu.mak",
                   "TARGET_ARCH=pi32v2\nTARGET_LONG_BITS=32\n")
     devices = SOURCE / "configs/devices/pi32v2-softmmu"

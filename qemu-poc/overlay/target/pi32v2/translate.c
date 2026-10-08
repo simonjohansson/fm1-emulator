@@ -1334,6 +1334,21 @@ static void tb_stop(DisasContextBase *db, CPUState *cs)
         gen_helper_pi32v2_advance(pc, tcg_env, tcg_constant_i32(db->pc_next));
         tcg_gen_exit_tb(NULL, 0);
     } else if (db->is_jmp != DISAS_NORETURN) {
+        if (translator_use_goto_tb(db, db->pc_next)) {
+            TCGLabel *conditional = gen_new_label();
+            TCGv_i32 end = tcg_temp_new_i32();
+            tcg_gen_ld_i32(end, tcg_env,
+                          offsetof(CPUPi32v2State, predicate_end));
+            tcg_gen_brcondi_i32(TCG_COND_NE, end, 0, conditional);
+            /* Keep one architectural instruction per TB. Its successor's
+             * prologue still checks interrupts and the icount deadline.
+             * Active predicates retain the original dispatcher exit, even
+             * when advance closes an arm and makes a pending IRQ admissible. */
+            tcg_gen_movi_i32(pc, db->pc_next);
+            tcg_gen_goto_tb(0);
+            tcg_gen_exit_tb(db->tb, 0);
+            gen_set_label(conditional);
+        }
         jump(db->pc_next);
     }
 }

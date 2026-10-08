@@ -269,6 +269,58 @@ def check_case(name, options, deliveries):
     print(f"PASS {name}: guest wrapper, source selection, acknowledgment and balanced RTI")
 
 
+def check_predicate_completion(selected_then):
+    name = "pending-timer-then-completion" if selected_then else "pending-timer-else-completion"
+    guest = DeviceGuest()
+    vector_patch = len(guest.words) + 4
+    guest.write(VECTOR + 63 * 4, 0)
+    guest.literal(13, SSP, special=True)
+    guest.literal(14, SP, special=True)
+    set_special(guest, 11, 0x100)  # Keep the pending timer globally masked.
+    guest.write(IRQ_CONFIG + 0x1c, 0x30000000)
+    guest.write(PRIORITY_MASK, 0)
+    guest.write(TIMER5, 8)
+    guest.write(TIMER5 + 8, 24000)
+    guest.write(TIMER5 + 4, 0)
+    guest.write(TIMER5, 9)
+    wait_timer(guest)
+    guest.literal(1, LOG)
+    guest.literal(4, int(selected_then))
+    # IF r4 != 0: two THEN instructions and two ELSE instructions.
+    # STI leaves an active predicate; the literal is the final fallthrough.
+    guest.emit(0xe8a4, 0x6000)
+    guest.emit(0x0061)
+    guest.emit(0xe044, 0x1111)
+    guest.emit(0x0061)
+    guest.emit(0xe044, 0x2222)
+    resume = guest.pc
+    # The first resumed instruction must already see the handler's marker.
+    guest.load(0, 1)
+    store_r0(guest, LOG + 0x20)
+    guest.literal(1, LOG + 0x24)
+    guest.store(4, 1)
+    stop = guest.pc
+    guest.words.extend([0] * 8)
+    wrapper = append_handler(guest, 63)
+    guest.words[vector_patch:vector_patch + 2] = [wrapper & 0xffff, wrapper >> 16]
+    state, sram = run(name, guest, stop)
+    validate.check(state["irq_entries"] == state["rti_count"] ==
+                   state["irq63_entries"] == state["irq63_rti_count"] == 1 and
+                   state["irq11_entries"] == state["irq11_rti_count"] == 0 and not state["in_irq"],
+                   f"{name}: unbalanced timer entry/RTI or unexpected source")
+    validate.check(state["last_irq_source"] == 63 and
+                   state["specials"][0] == resume and words(sram, RECORD[63] + 12)[0] == resume,
+                   f"{name}: IRQ was not admitted at the exact completed-arm boundary")
+    validate.check(words(sram, LOG)[0] == words(sram, LOG + 0x20)[0] == 1 and
+                   words(sram, RECORD[63])[0] == 0,
+                   f"{name}: first resumed instruction did not observe the handler marker")
+    validate.check(words(sram, LOG + 0x24)[0] == (0x1111 if selected_then else 0x2222),
+                   f"{name}: wrong selected arm or final instruction did not complete")
+    validate.check(not state["pending"] and state["acknowledgments"] == 1,
+                   f"{name}: timer latch was not acknowledged exactly once")
+    print(f"PASS {name}: pending timer admitted after final predicate fallthrough")
+
+
 def main():
     selected = FELUCCA.read_bytes()
     validate.check(hashlib.sha256(selected).hexdigest() == FELUCCA_SHA, "selected firmware changed")
@@ -288,6 +340,8 @@ def main():
     ]
     for name, options, deliveries in cases:
         check_case(name, options, deliveries)
+    check_predicate_completion(True)
+    check_predicate_completion(False)
     guest, stop, _, _ = fixture(equal_priority=True)
     state, _ = run("equal-priority-explicit-fault", guest, stop,
                    error="equal-priority audio/timer arbitration is unsupported")

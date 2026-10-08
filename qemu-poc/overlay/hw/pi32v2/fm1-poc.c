@@ -22,7 +22,7 @@
 
 static void fm1_poc_check_access(CPUPi32v2State *e, uint32_t address, unsigned size, unsigned flags)
 {
-    FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
+    FM1PocState *m = env_archcpu(e)->machine;
     m->last_access_address = address;
     m->last_access_size = size;
     m->last_access_flags = flags;
@@ -35,7 +35,7 @@ static void fm1_poc_check_access(CPUPi32v2State *e, uint32_t address, unsigned s
 
 static void fm1_poc_note_branch(CPUPi32v2State *e)
 {
-    FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
+    FM1PocState *m = env_archcpu(e)->machine;
     fm1_system_note_branch(&m->system, e->pc);
 }
 
