@@ -1777,7 +1777,7 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_ge_branch.py
 ```
 
-### F435 parallel signed minimum and latest checkpoint
+### F435 parallel signed minimum checkpoint
 
 The production delta adds only exact E435 mode1 destination classification
 for the existing scalar signed minimum. Both head and extended-tail roles use
@@ -1809,7 +1809,7 @@ The old scalar minimum gate retires only its newly obsolete F435+NOP
 negative/count16->15; all140 positive bytes/expected states and non-main
 functions remain unchanged. Original gate/evidence are retained.
 
-Latest stop: ED58/3E44 at `0x0200aa44`, 117,599,142
+At this milestone: ED58/3E44 at `0x0200aa44`, 117,599,142
 instructions and 940,793,144 ns. Vendor `r3 = h[++r4=228] (u)` is reached at `0x0200aa44` after
 text rendering in the first HOME draw. Establish exact unsigned-halfword
 pre-indexed load fields, signed/aligned displacement, nonalias policy and
@@ -1825,6 +1825,62 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_signed_minimum.py
+```
+
+### ED58..5B unsigned halfword pre-indexed immediate load and latest checkpoint
+
+A separate ED58..5B decoder branch admits only unsigned-halfword loads
+with distinct destination/base GPRs and operand bit0 clear. It uses signed2
+first-opcode lowbits times256 plus x8..11 times16 plus x&14, giving signed
+even-byte offsets -512 through +510. A temporary incoming-base EA is copied
+to the base before the modeled aligned LE16 read; result is zero extended,
+PC advances4 and the instruction retires once. Old memory paths, helpers,
+classifier, scanner, predicate, IRQ and state schemas remain unchanged.
+
+The exact pre-indexed halfword constructor is absent from pinned Apache
+SLEIGH; ED50 plain-load and ECD0 word pre-index forms are analogues only.
+Vendor ED58/3E44 and discriminatory standalone-reference probes establish
+the accepted unsigned-load fields and signed offsets. The actual reached
+base01c116f0 plus228 selects01c117d4, containing33808. All16 destination /
+base fields, ordinaryGPR14 versus specialSP, unsigned boundaries, signed
+extrema/offset bits, last SRAM halfword, XIP, permitted guard reads and
+balanced selected/skipped mixed2/4/6/8-byte contexts are checked.
+
+Research retains151 historical calls:10 initial neighbor probes,140
+original matrix fixtures and one final selected-alias fixture, with145
+historical sampled full-state completions and six
+fatal access categories without CPU fault snapshots. All48 aliases leave
+the address in the reference; with no exact primary/hardware alias contract,
+pre-effect alias rejection is conservative model admission policy. Stores
+remain deferred: negative-load-offset store probes instead use unsigned
+highbits in the reference. The original wrong store expectation and seed
+metadata annotation are retained with accurate separate characterizations;
+outside-inspection store target data is not directly observed.
+
+Final109 private fixtures have103 full sampled reference completions and
+six categorized fatal outcomes;108 fixtures reuse saved records, with one
+new selected-alias check. The final focused gate checks74 supported cases,
+one generic default-loader
+replay and35 modeled faults:18 aliases, five read2 faults after modeled
+writeback, two full4-byte PC guards, five deferred stores, four signed
+neighbors and one genuine six-byte C000+ED58 parallel classifier deferral.
+FD58 is an existing scalar branch and is not mislabeled parallel. Hardware
+alias/fault order, rollback and successful32-bit wrap remain unverified;
+reference fatals establish category only. No old tracked negative retires.
+
+Latest stop: F040/0165 + 624A at `0x0200aa52`, 117,601,373
+instructions and 940,810,992 ns. Vendor `r0 = 357` paired with `r2 = h[r4+4] (u)` is reached at
+`0x0200aa52`, after the accepted ED58 load and icon call. Scalar literal and
+compact halfword load already exist. Establish exact shared destination
+classification from pinned compact-load constructor and reference probes,
+with incoming addresses, disjoint destinations and tail fault phases.
+HOME frame1/stage3 remains an unfinished draw snapshot.
+Caches use `after-preindexed-unsigned-halfword-immediate` and its `-generic` label; main repo
+`.deps/qemu-preindexed-unsigned-halfword-immediate-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 103/103; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_preindexed_unsigned_halfword_immediate.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

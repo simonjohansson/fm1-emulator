@@ -648,6 +648,19 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         else if (kind == 10) { load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN); }
         else { store(d, read_gpr(d, x >> 12), addr, MO_LEUW | MO_ALIGN); }
         next = here + 4;
+    } else if ((op & 0xfffc) == 0xed58) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, dest = x >> 12;
+        /* Store direction and unresolved address-wins reference aliases
+         * remain deferred; the exact primary alias contract is absent. */
+        if ((x & 1) || base == dest) { goto illegal; }
+        int32_t offset = sext(op & 3, 2) * 256 + ((x >> 8) & 15) * 16 + (x & 14);
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, read_gpr(d, base), offset);
+        /* Preserve the modeled pre-index writeback-before-access policy. */
+        tcg_gen_mov_i32(gpr[base], addr);
+        load(d, gpr[dest], addr, MO_LEUW | MO_ALIGN);
+        next = here + 4;
     } else if ((op & 0xfffe) == 0xed50) {
         uint16_t x = fetch(d, here + 2);
         unsigned offset = (op & 1) * 256 + ((x >> 8) & 15) * 16 + (x & 14);

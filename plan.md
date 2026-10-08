@@ -472,6 +472,19 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   synthetic host checks; no QEMU/UI execution or tracked promotion yet.
   Evidence: `.deps/qemu-parallel-signed-minimum-2026-10-08/`.
 
+- 2026-10-08: Stage 3 ED58..5B unsigned pre-indexed immediate halfword loads
+  complete and independently reviewed. Separate13-line nonalias/load-only
+  decoder keeps every old path and shared helper/scanner/classifier fixed.
+  FullISA/profile/IRQ/boot, signed-halfword and priorword-load gates pass;
+  focused74+generic1+35 passes. Raw151 historical calls/145 sampled completions
+  versus final109fixtures/103full+6categorizedfatals are qualified. Exact
+  primary constructor absent; aliases/store offsets/faultstate remain bounded
+  model policy with originals retained. Unchanged boot advances2,231 to
+  F040/0165 +624A PC `0x0200aa52`; generic state/PPM/latestALNK match.
+  Audio103/103, timer5174/5174, guards and watchdog remain healthy; HOME
+  frame1/stage3 still unfinished. Evidence:
+  `.deps/qemu-preindexed-unsigned-halfword-immediate-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -598,7 +611,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is ED58 unsigned halfword pre-indexed immediate load, recorded below.
+  latest firmware blocker is F040 bundle with compact unsigned halfword load, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -608,21 +621,18 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: ED58 unsigned halfword pre-indexed immediate load
+## Current firmware blocker: F040 bundle with compact unsigned halfword load
 
-Latest unchanged boot: `.cache/felucca-validation/after-parallel-signed-minimum/`.
-Vendor `r3 = h[++r4=228] (u)` is reached at `0x0200aa44` after
-text rendering in the first HOME draw. Establish exact unsigned-halfword
-pre-indexed load fields, signed/aligned displacement, nonalias policy and
-writeback/access fault phases from vendor and separate reference. The pinned
-load/store primary lacks this exact constructor; adjacent ED50/54 and ECD0
-forms are analogues only, so broader displacement/alias behavior requires
-discriminating evidence.
-Preserve the old halfword paths and deferred aliases/stores pending evidence.
+Latest unchanged boot: `.cache/felucca-validation/after-preindexed-unsigned-halfword-immediate/`.
+Vendor `r0 = 357` paired with `r2 = h[r4+4] (u)` is reached at
+`0x0200aa52`, after the accepted ED58 load and icon call. Scalar literal and
+compact halfword load already exist. Establish exact shared destination
+classification from pinned compact-load constructor and reference probes,
+with incoming addresses, disjoint destinations and tail fault phases.
 HOME frame1/stage3 remains an unfinished draw snapshot.
 
-- PC `0x0200aa44`, words `ED58/3E44`.
-- Instructions 117,599,142; virtual time 940,793,144 ns.
+- PC `0x0200aa52`, words `F040/0165 + 624A`.
+- Instructions 117,601,373; virtual time 940,810,992 ns.
 - IRQ11 entries/returns 103/103;
   IRQ63 entries/returns 5174/5174.
 - ALNK completions 108, acknowledgments 103,
@@ -630,10 +640,51 @@ HOME frame1/stage3 remains an unfinished draw snapshot.
   55,296 captured sample words, 0 nonzero.
 - LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
-  Audio and timer service return successfully. The accepted minimum bundle advances through text rendering to another load, with HOME flag/frame1/stage3 still unfinished and no synthesis proof.
-- QEMU SHA-256: `1fbdb3cad628a30b3f8b69a6c05dcbba9930b12b98c3948ea07778bc56e62199`.
-- Generic replay: `after-parallel-signed-minimum-generic`.
-- Durable evidence: main repo `.deps/qemu-parallel-signed-minimum-2026-10-08/`.
+  Audio and timer service return successfully. The load executes with correct base writeback, then drawing reaches a missing compact halfword-load bundle mapping. HOME frame1/stage3 remains unfinished, with no synthesis proof.
+- QEMU SHA-256: `9dd1ddc9b39508209de2131b87ba2cea5f441eea43d80f36b662ad38b0e67b69`.
+- Generic replay: `after-preindexed-unsigned-halfword-immediate-generic`.
+- Durable evidence: main repo `.deps/qemu-preindexed-unsigned-halfword-immediate-2026-10-08/`.
+
+### Resolved ED58..5B unsigned halfword pre-indexed immediate load
+
+A separate ED58..5B decoder branch admits only unsigned-halfword loads
+with distinct destination/base GPRs and operand bit0 clear. It uses signed2
+first-opcode lowbits times256 plus x8..11 times16 plus x&14, giving signed
+even-byte offsets -512 through +510. A temporary incoming-base EA is copied
+to the base before the modeled aligned LE16 read; result is zero extended,
+PC advances4 and the instruction retires once. Old memory paths, helpers,
+classifier, scanner, predicate, IRQ and state schemas remain unchanged.
+
+The exact pre-indexed halfword constructor is absent from pinned Apache
+SLEIGH; ED50 plain-load and ECD0 word pre-index forms are analogues only.
+Vendor ED58/3E44 and discriminatory standalone-reference probes establish
+the accepted unsigned-load fields and signed offsets. The actual reached
+base01c116f0 plus228 selects01c117d4, containing33808. All16 destination /
+base fields, ordinaryGPR14 versus specialSP, unsigned boundaries, signed
+extrema/offset bits, last SRAM halfword, XIP, permitted guard reads and
+balanced selected/skipped mixed2/4/6/8-byte contexts are checked.
+
+Research retains151 historical calls:10 initial neighbor probes,140
+original matrix fixtures and one final selected-alias fixture, with145
+historical sampled full-state completions and six
+fatal access categories without CPU fault snapshots. All48 aliases leave
+the address in the reference; with no exact primary/hardware alias contract,
+pre-effect alias rejection is conservative model admission policy. Stores
+remain deferred: negative-load-offset store probes instead use unsigned
+highbits in the reference. The original wrong store expectation and seed
+metadata annotation are retained with accurate separate characterizations;
+outside-inspection store target data is not directly observed.
+
+Final109 private fixtures have103 full sampled reference completions and
+six categorized fatal outcomes;108 fixtures reuse saved records, with one
+new selected-alias check. The final focused gate checks74 supported cases,
+one generic default-loader
+replay and35 modeled faults:18 aliases, five read2 faults after modeled
+writeback, two full4-byte PC guards, five deferred stores, four signed
+neighbors and one genuine six-byte C000+ED58 parallel classifier deferral.
+FD58 is an existing scalar branch and is not mislabeled parallel. Hardware
+alias/fault order, rollback and successful32-bit wrap remain unverified;
+reference fatals establish category only. No old tracked negative retires.
 
 ### Resolved F435 parallel signed minimum
 
@@ -1462,16 +1513,15 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached ED58/3E44 unsigned halfword pre-indexed immediate load
-   to the CPU worker. Inspect existing immediate halfword paths and the prior
-   ECD0 nonalias word-load gate first. Qualify the missing exact primary
-   constructor using vendor/reference discrimination for displacement and
-   GPR fields; independently characterize
-   destination/base aliases and preserve explicit ambiguity/deferred policy.
-   Probe mapped boundaries, unsigned extension, all fields, guards, partial
-   fetch, writeback/access/count phases and selected/skipped mixed widths.
-   Preserve helpers/scanner/parallel/IRQ/predicate/schema and old decoder
-   paths. Review primary/raw design, source and validator before acceptance.
+2. Assign reached F040/0165 +624A compact unsigned halfword-load tail
+   classification to the CPU worker. Inspect current scalar and prior word /
+   compact store gates. Pinned maskE088=6008 describes unsigned aligned LE16,
+   low3 destination/base fields and signed5 displacement*2 (-32..30).
+   Establish supported bundle slots, incoming address/source capture,
+   aliases/conflicts, tail faults, flags/count and selected/skipped contexts.
+   Keep unadmitted head encodings explicit; do not widen prefix/scanner rules.
+   Retire only the obsolete ISA deferred-halfword-load tuple, preserving all
+   other fixtures/functions. Review raw/design/source/gate before acceptance.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
