@@ -195,6 +195,25 @@ def spi_start(guest):
 
 def nor_cases():
     records = {}
+    # Tiny subpage regions retain exact width, alignment and hole faults.
+    # SPI0 maps five word slots; no range is rounded up to a page.
+    for suffix, address, opcode, error in [
+        ("first-word", SPI, 0x6002, None),
+        ("buffer-word", SPI + 8, 0x6002, None),
+        ("last-word-rejected", SPI + 16, 0x6002, "unsupported SPI0 register read"),
+        ("byte-rejected", SPI, 0x400a, "unmapped access"),
+        ("half-rejected", SPI, 0x600a, "unmapped access"),
+        ("unaligned-word", SPI + 18, 0x6002, "unaligned access"),
+        ("after-region-hole", SPI + 20, 0x6002, "unmapped access"),
+    ]:
+        guest = Guest()
+        guest.literal(0, address)
+        fault_pc = guest.pc
+        guest.emit(opcode)  # r2 = [r0], accepted byte/half/word encodings.
+        name = f"spi-read-{suffix}"
+        records[name] = run(name, guest, error=error,
+                            fault_pc=fault_pc if error else None,
+                            expected={"registers": {2: 0}} if not error else None)
     # Warm an actual target TB, return to SRAM, change SFC, and call that same
     # target again. This also works with the diagnostic's one-instruction TBs.
     target_pc = ENTRY + 0x400

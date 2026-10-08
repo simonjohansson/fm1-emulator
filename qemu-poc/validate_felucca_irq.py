@@ -269,8 +269,10 @@ def check_case(name, options, deliveries):
     print(f"PASS {name}: guest wrapper, source selection, acknowledgment and balanced RTI")
 
 
-def check_predicate_completion(selected_then):
+def check_predicate_completion(selected_then, branch_taken=None):
     name = "pending-timer-then-completion" if selected_then else "pending-timer-else-completion"
+    if branch_taken is not None:
+        name += "-branch-taken" if branch_taken else "-branch-fallthrough"
     guest = DeviceGuest()
     vector_patch = len(guest.words) + 4
     guest.write(VECTOR + 63 * 4, 0)
@@ -286,13 +288,15 @@ def check_predicate_completion(selected_then):
     wait_timer(guest)
     guest.literal(1, LOG)
     guest.literal(4, int(selected_then))
-    # IF r4 != 0: two THEN instructions and two ELSE instructions.
-    # STI leaves an active predicate; the literal is the final fallthrough.
-    guest.emit(0xe8a4, 0x6000)
-    guest.emit(0x0061)
-    guest.emit(0xe044, 0x1111)
-    guest.emit(0x0061)
-    guest.emit(0xe044, 0x2222)
+    # STI leaves an active predicate. Complete each selected arm with either
+    # a literal or a conditional branch to its sequential boundary. Both
+    # branch outcomes must dispatch even when advance clears the predicate.
+    guest.emit(0xe8a4, 0x6000 if branch_taken is None else 0xb000)
+    for marker in (0x1111, 0x2222):
+        guest.emit(0x0061)
+        guest.emit(0xe044, marker)
+        if branch_taken is not None:
+            guest.branch_zero(5, guest.pc + 2, nonzero=not branch_taken)
     resume = guest.pc
     # The first resumed instruction must already see the handler's marker.
     guest.load(0, 1)
@@ -318,7 +322,7 @@ def check_predicate_completion(selected_then):
                    f"{name}: wrong selected arm or final instruction did not complete")
     validate.check(not state["pending"] and state["acknowledgments"] == 1,
                    f"{name}: timer latch was not acknowledged exactly once")
-    print(f"PASS {name}: pending timer admitted after final predicate fallthrough")
+    print(f"PASS {name}: pending timer admitted at the exact selected-arm boundary")
 
 
 def main():
@@ -342,6 +346,9 @@ def main():
         check_case(name, options, deliveries)
     check_predicate_completion(True)
     check_predicate_completion(False)
+    for selected_then in (True, False):
+        for branch_taken in (True, False):
+            check_predicate_completion(selected_then, branch_taken)
     guest, stop, _, _ = fixture(equal_priority=True)
     state, _ = run("equal-priority-explicit-fault", guest, stop,
                    error="equal-priority audio/timer arbitration is unsupported")

@@ -46,6 +46,38 @@ def main():
                 raise SystemExit("pinned Cocoa activity hook anchor differs")
             content = content.replace(before, after)
     write_changed(cocoa, content)
+    # Resolve contained ordinary MMIO reads using the existing subpage table.
+    # Keep upstream dispatch/validation and all complex accesses unchanged.
+    physmem = SOURCE / "system/physmem.c"
+    content = physmem.read_text()
+    for before, after in [
+        ('static MemTxResult subpage_read(void *opaque, hwaddr addr, uint64_t *data,',
+         '#include "fm1-subpage-read.h"\n\n'
+         'static MemTxResult subpage_read(void *opaque, hwaddr addr, uint64_t *data,'),
+        ('    res = flatview_read(subpage->fv, addr + subpage->base, attrs, buf, len);',
+         '    hwaddr xlat;\n'
+         '    MemoryRegion *mr = subpage_read_region(subpage, addr, len, attrs, &xlat);\n'
+         '    if (mr) {\n'
+         '        res = flatview_read_continue(subpage->fv, addr + subpage->base,\n'
+         '                                     attrs, buf, len, xlat, len, mr);\n'
+         '    } else {\n'
+         '        res = flatview_read(subpage->fv, addr + subpage->base, attrs, buf, len);\n'
+         '    }'),
+        ('    return flatview_access_valid(subpage->fv, addr + subpage->base,',
+         '    if (!is_write) {\n'
+         '        hwaddr xlat;\n'
+         '        MemoryRegion *mr = subpage_read_region(subpage, addr, len, attrs, &xlat);\n'
+         '        if (mr) {\n'
+         '            return memory_region_access_valid(mr, xlat, len, false, attrs);\n'
+         '        }\n'
+         '    }\n\n'
+         '    return flatview_access_valid(subpage->fv, addr + subpage->base,'),
+    ]:
+        if after not in content:
+            if content.count(before) != 1:
+                raise SystemExit("pinned subpage read hook anchor differs")
+            content = content.replace(before, after)
+    write_changed(physmem, content)
     write_changed(SOURCE / "configs/targets/pi32v2-softmmu.mak",
                   "TARGET_ARCH=pi32v2\nTARGET_LONG_BITS=32\n")
     devices = SOURCE / "configs/devices/pi32v2-softmmu"

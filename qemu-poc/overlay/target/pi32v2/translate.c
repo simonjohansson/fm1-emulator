@@ -112,6 +112,23 @@ static void jump(uint32_t dest)
     gen_helper_pi32v2_advance(pc, tcg_env, tcg_constant_i32(dest));
     tcg_gen_exit_tb(NULL, 0);
 }
+/* Each static successor owns one QEMU chain slot. Active predicates keep
+ * dispatcher exits so completion can redirect PC and admit pending IRQs. */
+static void chain_jump(PiDisasContext *d, uint32_t dest, unsigned slot)
+{
+    DisasContextBase *db = &d->base;
+    if (translator_use_goto_tb(db, dest)) {
+        TCGLabel *conditional = gen_new_label();
+        TCGv_i32 end = tcg_temp_new_i32();
+        tcg_gen_ld_i32(end, tcg_env, offsetof(CPUPi32v2State, predicate_end));
+        tcg_gen_brcondi_i32(TCG_COND_NE, end, 0, conditional);
+        tcg_gen_movi_i32(pc, dest);
+        tcg_gen_goto_tb(slot);
+        tcg_gen_exit_tb(db->tb, slot);
+        gen_set_label(conditional);
+    }
+    jump(dest);
+}
 static void dynamic_jump(PiDisasContext *d, TCGv_i32 value)
 {
     record_branch(d);
@@ -124,10 +141,10 @@ static void branch(PiDisasContext *d, uint32_t dest, uint32_t next,
 {
     TCGLabel *taken = gen_new_label();
     tcg_gen_brcondi_i32(nonzero ? TCG_COND_NE : TCG_COND_EQ, value, 0, taken);
-    jump(next);
+    chain_jump(d, next, 0);
     gen_set_label(taken);
     record_branch(d);
-    jump(dest);
+    chain_jump(d, dest, 1);
     d->base.is_jmp = DISAS_NORETURN;
 }
 static void compare_branch(PiDisasContext *d, uint32_t dest, uint32_t next,
@@ -135,10 +152,10 @@ static void compare_branch(PiDisasContext *d, uint32_t dest, uint32_t next,
 {
     TCGLabel *taken = gen_new_label();
     tcg_gen_brcond_i32(cond, left, right, taken);
-    jump(next);
+    chain_jump(d, next, 0);
     gen_set_label(taken);
     record_branch(d);
-    jump(dest);
+    chain_jump(d, dest, 1);
     d->base.is_jmp = DISAS_NORETURN;
 }
 static void init_disas(DisasContextBase *db, CPUState *cs)
@@ -987,10 +1004,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
         next = here + 4;
         /* The long GOTO shares CALL's displacement fields but preserves RETS. */
-        count(d); record_branch(d); jump(next + delta); db->is_jmp = DISAS_NORETURN;
+        count(d); record_branch(d); chain_jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe00c) == 0x8004) {
         int32_t delta = sext(((op & 3) << 10) | (((op >> 4) & 15) << 6) | (((op >> 8) & 31) << 1), 12);
-        count(d); record_branch(d); jump(next + delta); db->is_jmp = DISAS_NORETURN;
+        count(d); record_branch(d); chain_jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe08f) == 0x8001) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
         set_call_return(d, next);
@@ -1334,22 +1351,8 @@ static void tb_stop(DisasContextBase *db, CPUState *cs)
         gen_helper_pi32v2_advance(pc, tcg_env, tcg_constant_i32(db->pc_next));
         tcg_gen_exit_tb(NULL, 0);
     } else if (db->is_jmp != DISAS_NORETURN) {
-        if (translator_use_goto_tb(db, db->pc_next)) {
-            TCGLabel *conditional = gen_new_label();
-            TCGv_i32 end = tcg_temp_new_i32();
-            tcg_gen_ld_i32(end, tcg_env,
-                          offsetof(CPUPi32v2State, predicate_end));
-            tcg_gen_brcondi_i32(TCG_COND_NE, end, 0, conditional);
-            /* Keep one architectural instruction per TB. Its successor's
-             * prologue still checks interrupts and the icount deadline.
-             * Active predicates retain the original dispatcher exit, even
-             * when advance closes an arm and makes a pending IRQ admissible. */
-            tcg_gen_movi_i32(pc, db->pc_next);
-            tcg_gen_goto_tb(0);
-            tcg_gen_exit_tb(db->tb, 0);
-            gen_set_label(conditional);
-        }
-        jump(db->pc_next);
+        PiDisasContext *d = container_of(db, PiDisasContext, base);
+        chain_jump(d, db->pc_next, 0);
     }
 }
 static const TranslatorOps ops = {

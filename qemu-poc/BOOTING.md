@@ -10,43 +10,52 @@ Follow [plan.md](../plan.md) for authorization, review and licensing boundaries.
 
 The unchanged application passed **4,625,000,000 instructions / 37 guest
 seconds**, reaching **36,999 firmware milliseconds** with bootguard magic
-`0x42475244`, failed=0/pending=0. UI frames advanced to 2,140; IRQ11 returned
-6,315/6,315 and IRQ63 318,758/318,758. No instruction, watchdog, guard, guest
+`0x42475244`, failed=0/pending=0. UI frames advanced to 2,142; IRQ11 returned
+6,315/6,315 and IRQ63 318,750/318,750. No instruction, watchdog, guard, guest
 crash or LCD/P33 timeout was observed. A separate stage9 HOME capture at 1,017
 firmware milliseconds has an idle visible LCD and complete pixels. The final
 37-second budget stops during a transfer; it is not an idle-frame endpoint.
 
 Three note presses generate nonzero PCM; all releases clear the note bitmap
 and reduce sample energy below 1.4% of held levels after 500 guest ms. ALNK
-captured 3,235,840 sample words, including 235,226 nonzero words. Octave minus/
+captured 3,235,840 sample words, including 237,150 nonzero words. Octave minus/
 plus, BPM 120→121, ENV decay 55→56→57 and repeated page/HOME navigation pass
 through standard KEY events and the guest's GPIO scans. Input duplicate,
 simultaneous, pause/rearming, overflow recovery and shutdown checks passed.
-Existing three-frame display captures remain byte-identical to saved QEMU output.
+Earlier three-frame display captures matched the saved QEMU output.
 
 The accepted binary SHA-256 is
-`f66546da77422a22a3e0cb249f175f513997e57182175ddd2e45a7743f2cb9f9`.
-The CPU forms remain unchanged. Ordinary fallthroughs now chain between
-one-instruction blocks; active predicates, calls, branches, mask changes and
-RTI retain dispatcher exits. Typed CPU callbacks avoid redundant QOM checks.
-CPU/profile and IRQ gates passed, including two pending-IRQ predicate-completion
-cases. At 200 million instructions, full CPU/device state, SRAM, ALNK and LCD
-bytes match the saved baseline exactly; the unchanged 1,071 opcode cases were
-not repeated.
+`aa2f207ca55a6fd33068135212080174595e4722d588af73cb30c17c6479bd5b`.
+The CPU forms remain unchanged. Ordinary fallthroughs and static branches
+chain between one-instruction blocks when no predicate is active. Active
+predicates, calls, mask changes and RTI retain dispatcher exits. Typed CPU
+callbacks avoid redundant QOM checks. Contained hardware reads reuse QEMU's
+existing subpage section table, retaining register validation and dispatch;
+complex accesses and writes use the original path. Register ranges are unchanged.
 
-The matched 37-second behavior workload improved from **239.8 to 110.6 host
-seconds (2.17×)**, with boot/input/audio checks passing on both binaries.
-That CPU regression used `d8ac885f1d50fc591e2f9da71186f79028717d57b3af2b2bda8e839aa8298e86`
-before the host-only Cocoa activity hook. The current native binary passed
-bootguard beyond 31,700 firmware milliseconds, pause/resume and repeated
-note/page/HOME contacts. Cocoa sustains about **19 advancing UI frames/s**;
-note contacts reach guest state in 30–47 host ms and page/HOME changes in
-77–106 ms. These measure guest state, rather than pixel presentation latency.
-The guest still runs at about 0.32× real time.
+CPU/profile and IRQ gates pass, including taken/fallthrough branches completing
+both selected IF arms with a pending timer IRQ. Tiny-region read width, alignment,
+unsupported-register and hole faults pass. At 200 million instructions, full
+CPU/device state, SRAM, ALNK and LCD bytes match the previous binary exactly;
+the unchanged 1,071 opcode cases were not repeated.
+
+The latest matched 37-second behavior run improves from **118.9 to 89.2 host
+seconds (1.33×)**, with boot/input/audio checks passing on both binaries. Short
+ordinary-application measurements improve from 19.4 to 27.9 advancing UI frames/s
+and from 0.327× to 0.466× real time. A four-instruction block experiment adds only
+about 1.5% in that short measurement and exposes a translation-time IF fault
+complication; it was removed. Guest clocks remain 8 ns/instruction.
+The native Cocoa run sustains **27–28 advancing UI frames/s** and 0.45–0.46×
+real time through 32,561 firmware milliseconds, with bootguard failed=0/pending=0.
+Pause/resume and repeated note/page/HOME contacts pass before and after bootguard;
+notes reach guest state in 29–46 host ms and page/HOME changes in 63–93 ms.
+These are guest-state response times, rather than pixel presentation latency.
+The viewer was running without a checkpoint hold at the final captured check.
 
 Latest performance captures and executables are in the main repository's
-`.deps/qemu-performance-2026-10-08/`, especially `optimized-37s/`,
-`baseline-harness/`, `exact-200m-*` and `native-active/`. Earlier bring-up
+`.deps/qemu-performance-2026-10-08/`, especially `pass2-final-37s/`,
+`pass2-baseline-harness/`, `pass2-final-exact-200m/` and `pass2-native/`.
+Earlier bring-up
 evidence remains in `.deps/qemu-behavior-2026-10-08/`, especially
 `accepted-37s/`, `lifecycle/` and
 `display-compat/`. The earlier 31-second bootguard run is in
@@ -84,8 +93,8 @@ actual scan cadence, bootguard, repeated contacts and guest audio:
 mise exec python@3.13.15 -- python qemu-poc/validate_felucca_behavior.py --label next-behavior
 ```
 
-It refuses existing capture labels. The optimized 37 guest seconds took about
-111 host seconds. Keep the quick bounded runner for first-failure feedback.
+It refuses existing capture labels. The current 37 guest seconds took about
+89 host seconds. Keep the quick bounded runner for first-failure feedback.
 
 ## Continuous Cocoa display
 
