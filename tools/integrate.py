@@ -94,8 +94,8 @@ def main():
                 raise SystemExit("pinned native launcher hook anchor differs")
             content = content.replace(before, after)
     write_changed(entry, content)
-    # Resolve contained ordinary MMIO reads using the existing subpage table.
-    # Keep upstream dispatch/validation and all complex accesses unchanged.
+    # Peripheral pages (fm1-sfr.c) left no subpages, so the former subpage
+    # read hook is retired: restore upstream text in trees it patched.
     physmem = SOURCE / "system/physmem.c"
     content = physmem.read_text()
     for before, after in [
@@ -121,11 +121,12 @@ def main():
          '    }\n\n'
          '    return flatview_access_valid(subpage->fv, addr + subpage->base,'),
     ]:
-        if after not in content:
-            if content.count(before) != 1:
-                raise SystemExit("pinned subpage read hook anchor differs")
-            content = content.replace(before, after)
+        if after in content:
+            content = content.replace(after, before)
+        elif content.count(before) != 1:
+            raise SystemExit("pinned physmem.c subpage anchor differs")
     write_changed(physmem, content)
+    (SOURCE / "system/fm1-subpage-read.h").unlink(missing_ok=True)
     # Honor lockless MMIO regions on TCG loads, as the physical-memory path
     # already does. Stores and 16-byte loads keep taking the BQL.
     cputlb = SOURCE / "accel/tcg/cputlb.c"
