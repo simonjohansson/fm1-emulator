@@ -148,12 +148,17 @@ static void gen_alu(TCGv_i32 dest, TCGv_i32 a, TCGv_i32 b, unsigned mode)
     tcg_gen_or_i32(spr[PSR], spr[PSR], flags);
     tcg_gen_mov_i32(dest, r);
 }
+/* An instruction that accesses memory ends its TB. With icount, MMIO is
+ * allowed only in a TB's last instruction; an earlier access would replay
+ * the whole instruction, including register updates that precede it. */
 static void load(PiDisasContext *d, TCGv_i32 value, TCGv_i32 addr, MemOp op)
 {
+    translator_io_start(&d->base);
     tcg_gen_qemu_ld_i32(value, addr, 0, op);
 }
 static void store(PiDisasContext *d, TCGv_i32 value, TCGv_i32 addr, MemOp op)
 {
+    translator_io_start(&d->base);
     check_write(addr, memop_size(op));
     tcg_gen_qemu_st_i32(value, addr, 0, op);
 }
@@ -1485,6 +1490,13 @@ static uint32_t instruction_end(PiDisasContext *d, uint32_t here)
     return here + operation_size(op);
 }
 
+/* Observer instructions (stop, frame, loop) start a TB of their own. */
+static bool observed(CPUState *cs, uint32_t address)
+{
+    Pi32v2CPU *cpu = PI32V2_CPU(cs);
+    return address == cpu->stop_pc || (cpu->frame_pc && address == cpu->frame_pc) ||
+           (cpu->loop_pc && address == cpu->loop_pc);
+}
 static void translate_insn(DisasContextBase *db, CPUState *cs)
 {
     PiDisasContext *d = container_of(db, PiDisasContext, base);
@@ -1505,7 +1517,9 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         return;
     }
     if (PI32V2_CPU(cs)->frame_pc && here == PI32V2_CPU(cs)->frame_pc) {
-        /* Observe a completed guest frame, then execute its real next opcode. */
+        /* Observe a completed guest frame, then execute its real next opcode.
+         * The observer reads the virtual clock: a TB of its own. */
+        translator_io_start(db);
         gen_helper_pi32v2_frame(tcg_env);
     }
     if (PI32V2_CPU(cs)->loop_pc && here == PI32V2_CPU(cs)->loop_pc) {
@@ -1558,7 +1572,8 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         next = decode_operation(d, here, op);
     }
     db->pc_next = next;
-    if (db->is_jmp == DISAS_NEXT && !translator_is_same_page(db, next + 5)) {
+    if (db->is_jmp == DISAS_NEXT &&
+        (!translator_is_same_page(db, next + 5) || observed(cs, next))) {
         db->is_jmp = DISAS_TOO_MANY;
     }
 }
@@ -1581,8 +1596,14 @@ void pi32v2_translate_code(CPUState *cs, TranslationBlock *tb,
                           int *max_insns, vaddr start, void *host_pc)
 {
     PiDisasContext d = {};
-    /* Preserve conditional completion and IRQ admission at each architectural
-     * instruction boundary for every image. Wider TBs need a separate gate. */
-    *max_insns = 1;
+    /* IF arms and REP bodies complete at every instruction boundary, so
+     * they keep single-instruction TBs. Elsewhere a TB runs until a branch,
+     * an IRQ-relevant state change or a memory access, all of which end it;
+     * icount ends TBs at timer deadlines. IRQs are therefore still admitted
+     * at the same instruction boundaries. */
+    CPUPi32v2State *env = cpu_env(cs);
+    if (env->repeat_end || env->predicate_end) {   /* as the TB flags */
+        *max_insns = 1;
+    }
     translator_loop(cs, tb, max_insns, start, host_pc, &ops, &d.base, TCG_TYPE_VA);
 }

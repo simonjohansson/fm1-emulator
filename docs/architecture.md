@@ -16,9 +16,11 @@ state and stop bounded runs without changing instruction semantics.
 
 ## Execution and loading
 
-QEMU TCG supplies portable native code generation. The current target translates
-one architectural instruction per block, with guarded fallthrough/static-branch
-chaining. Predicate completion and interrupt boundaries remain explicit.
+QEMU TCG supplies portable native code generation. A translation block runs
+until a branch, a memory access or an interrupt-relevant state change; IF arms,
+REP bodies and observer addresses keep one instruction per block. Icount ends
+blocks at timer deadlines, so interrupts are admitted at the same instruction
+boundaries as with single-instruction blocks.
 Functional clocks use 8 ns per counted instruction; this is a model policy,
 not a measurement of physical hardware timing.
 

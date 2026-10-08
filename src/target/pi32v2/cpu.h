@@ -8,9 +8,11 @@
 
 /* Register numbering: Apache-2.0 Quarkslab pi32v2.slaspec. */
 enum { RETI = 0, RETS = 3, PSR = 5, ICFG = 11, USP = 12, SSP = 13, SP = 14 };
-/* TB flags: bit 0 in_irq, bit 1 an active REP block, bit 2 XIP fetch enabled.
- * cs_base carries the machine's fetch-guard generation. */
-enum { PI32V2_TB_IRQ = 1, PI32V2_TB_REPEAT = 2, PI32V2_TB_XIP = 4 };
+/* TB flags: bit 0 in_irq, bit 1 an active REP block, bit 2 XIP fetch enabled,
+ * bit 3 an active IF arm. cs_base carries the machine's fetch-guard
+ * generation. */
+enum { PI32V2_TB_IRQ = 1, PI32V2_TB_REPEAT = 2, PI32V2_TB_XIP = 4,
+       PI32V2_TB_PREDICATE = 8 };
 /* Guard kinds reported through Pi32v2MachineOps.guard_fault. */
 enum { PI32V2_GUARD_STACK, PI32V2_GUARD_WRITE, PI32V2_GUARD_PC,
        PI32V2_GUARD_XIP_DISABLED, PI32V2_GUARD_XIP_BOUNDS };

@@ -4,6 +4,8 @@
 #include "qemu/log.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
+#include "exec/icount.h"
+#include "accel/tcg/cpu-loop.h"
 #define HELPER_H "helper.h"
 #include "exec/helper-info.c.inc"
 
@@ -18,15 +20,31 @@ void pi32v2_fail(CPUPi32v2State *env, const char *reason)
     exit(EXIT_FAILURE);
 }
 
+/* A failing helper may run in the middle of a multi-instruction TB, where
+ * icount already includes the TB's later instructions and the virtual clock
+ * may not be read. Count instructions up to and including this one, as when
+ * it ended its TB, so a fault capture records its exact virtual time. Only
+ * for paths that never return to the TB. */
+static void stop_at(CPUPi32v2State *env, uintptr_t ra)
+{
+    CPUState *cs = env_cpu(env);
+    if (cpu_restore_state(cs, ra) && icount_enabled()) {
+        cs->neg.icount_decr.u16.low--;
+    }
+    cs->neg.can_do_io = true;
+}
+#define helper_fail(env, reason) (stop_at(env, GETPC()), pi32v2_fail(env, reason))
+
 void HELPER(pi32v2_illegal)(CPUPi32v2State *env, uint32_t insn)
 {
     g_autofree char *reason = g_strdup_printf("unsupported instruction 0x%04x", insn);
-    pi32v2_fail(env, reason);
+    helper_fail(env, reason);
 }
 
 void HELPER(pi32v2_finish)(CPUPi32v2State *env)
 {
     Pi32v2CPU *cpu = PI32V2_CPU(env_cpu(env));
+    stop_at(env, GETPC());
     if (cpu->observer_ops && cpu->observer_ops->finish) {
         cpu->observer_ops->finish(env);
     }
@@ -51,7 +69,7 @@ void HELPER(pi32v2_loop)(CPUPi32v2State *env)
 
 void HELPER(pi32v2_budget)(CPUPi32v2State *env)
 {
-    pi32v2_fail(env, "instruction limit reached");
+    helper_fail(env, "instruction limit reached");
 }
 
 void pi32v2_check_stack(CPUPi32v2State *env)
@@ -75,6 +93,7 @@ void pi32v2_guard_fault(CPUPi32v2State *env, unsigned kind,
 void HELPER(pi32v2_guard_fault)(CPUPi32v2State *env, uint32_t kind,
                                  uint32_t address, uint32_t size)
 {
+    stop_at(env, GETPC());
     pi32v2_guard_fault(env, kind, address, size);
 }
 
@@ -92,7 +111,7 @@ uint32_t HELPER(pi32v2_if)(CPUPi32v2State *env, uint32_t result,
     if (env->predicate_end) {
         qemu_log_mask(LOG_GUEST_ERROR, "pi32v2: active IF end=%08x from=%08x to=%08x\n",
                       env->predicate_end, env->predicate_from, env->predicate_to);
-        pi32v2_fail(env, "nested conditional block is unsupported");
+        helper_fail(env, "nested conditional block is unsupported");
     }
     env->predicate_end = result ? then_end : else_end;
     if (!result && then_end == else_end) { env->predicate_end = 0; }
@@ -131,7 +150,7 @@ uint32_t HELPER(pi32v2_repeat)(CPUPi32v2State *env, uint32_t reg,
                               uint32_t start, uint32_t end)
 {
     if (env->predicate_end || env->repeat_end) {
-        pi32v2_fail(env, "nested repeat block is unsupported");
+        helper_fail(env, "nested repeat block is unsupported");
     }
     if (!env->gpr[reg]) { return end; }
     env->repeat_start = start;
@@ -149,7 +168,7 @@ uint32_t HELPER(pi32v2_call_return)(CPUPi32v2State *env, uint32_t next)
      * THEN+ELSE return handling disagrees with the separate reference; keep
      * that form explicit until the hardware contract is established. */
     if (next == env->predicate_end && env->predicate_from) {
-        pi32v2_fail(env, "final THEN call with ELSE is unsupported");
+        helper_fail(env, "final THEN call with ELSE is unsupported");
     }
     return HELPER(pi32v2_advance)(env, next);
 }
@@ -160,7 +179,7 @@ void HELPER(pi32v2_return_end)(CPUPi32v2State *env, uint32_t next)
      * transferring to RETS. Match CALL's bounded policy; THEN with ELSE stays
      * explicit until that control-transfer contract is established. */
     if (next == env->predicate_end && env->predicate_from) {
-        pi32v2_fail(env, "final THEN return with ELSE is unsupported");
+        helper_fail(env, "final THEN return with ELSE is unsupported");
     }
     HELPER(pi32v2_advance)(env, next);
 }
@@ -171,7 +190,7 @@ void HELPER(pi32v2_unsigned_le_end)(CPUPi32v2State *env, uint32_t next)
      * either destination starts another IF. Keep CALL/RTS's bounded policy
      * for the unresolved final THEN with ELSE control transfer. */
     if (next == env->predicate_end && env->predicate_from) {
-        pi32v2_fail(env, "final THEN FF49 branch with ELSE is unsupported");
+        helper_fail(env, "final THEN FF49 branch with ELSE is unsupported");
     }
     HELPER(pi32v2_advance)(env, next);
 }
@@ -182,7 +201,7 @@ void HELPER(pi32v2_unsigned_le_end)(CPUPi32v2State *env, uint32_t next)
 void HELPER(pi32v2_signed_branch_end)(CPUPi32v2State *env, uint32_t next)
 {
     if (env->predicate_from && next == env->predicate_end) {
-        pi32v2_fail(env, "final THEN signed-literal branch with ELSE is unsupported");
+        helper_fail(env, "final THEN signed-literal branch with ELSE is unsupported");
     }
 }
 
@@ -192,7 +211,7 @@ void HELPER(pi32v2_signed_branch_end)(CPUPi32v2State *env, uint32_t next)
 void HELPER(pi32v2_long_register_ne_end)(CPUPi32v2State *env, uint32_t next)
 {
     if (env->predicate_from && next == env->predicate_end) {
-        pi32v2_fail(env, "final THEN FF41 register branch with ELSE is unsupported");
+        helper_fail(env, "final THEN FF41 register branch with ELSE is unsupported");
     }
 }
 
@@ -227,15 +246,15 @@ uint32_t HELPER(pi32v2_alu)(CPUPi32v2State *env, uint32_t a, uint32_t b,
 
 uint32_t HELPER(pi32v2_div)(CPUPi32v2State *env, uint32_t numerator, uint32_t denominator)
 {
-    if (!denominator) { pi32v2_fail(env, "divide-by-zero behavior is unsupported"); }
+    if (!denominator) { helper_fail(env, "divide-by-zero behavior is unsupported"); }
     return numerator / denominator;
 }
 
 uint32_t HELPER(pi32v2_divs)(CPUPi32v2State *env, uint32_t numerator, uint32_t denominator)
 {
-    if (!denominator) { pi32v2_fail(env, "divide-by-zero behavior is unsupported"); }
+    if (!denominator) { helper_fail(env, "divide-by-zero behavior is unsupported"); }
     if (numerator == 0x80000000u && denominator == 0xffffffffu) {
-        pi32v2_fail(env, "signed-division-overflow behavior is unsupported");
+        helper_fail(env, "signed-division-overflow behavior is unsupported");
     }
     return (int32_t)numerator / (int32_t)denominator;
 }
@@ -243,7 +262,7 @@ uint32_t HELPER(pi32v2_divs)(CPUPi32v2State *env, uint32_t numerator, uint32_t d
 void HELPER(pi32v2_rti)(CPUPi32v2State *env)
 {
     if (!env->in_irq) {
-        pi32v2_fail(env, "rti outside interrupt context");
+        helper_fail(env, "rti outside interrupt context");
     }
     env->pc = env->spr[RETI];
     env->spr[SSP] = env->spr[SP];

@@ -24,7 +24,8 @@ static TCGTBCPUState get_tb_state(CPUState *cs)
     return (TCGTBCPUState){ .pc = env->pc, .cs_base = env->fetch_epoch,
                            .flags = (env->in_irq ? PI32V2_TB_IRQ : 0) |
                            (env->repeat_end ? PI32V2_TB_REPEAT : 0) |
-                           (env->xip_fetch ? PI32V2_TB_XIP : 0) };
+                           (env->xip_fetch ? PI32V2_TB_XIP : 0) |
+                           (env->predicate_end ? PI32V2_TB_PREDICATE : 0) };
 }
 
 static void synchronize(CPUState *cs, const TranslationBlock *tb)
