@@ -7,8 +7,8 @@ establish signed minimum with destination bits12:15, left bits4:7 and right
 bits8:11. Results use actual incoming GPR values, including all source aliases.
 PSR/RETS preservation is checked against the independent executable reference.
 Scalar decoding changes only mode1; multiply/divide and unsigned minimum,
-helpers and parallel classification stay fixed. F435 bundles remain model
-unsupported. Modes2..15 and instruction guard faults preserve existing policy;
+helpers stay fixed. Mode1 bundles now have a dedicated parallel gate;
+mode0 remains parallel-deferred. Modes2..15 and instruction guard faults preserve existing policy;
 these checks do not establish hardware fault state or invalid-ISA behavior.
 The actual preceding ED13 IF/literal/min body must complete before another IF.
 """
@@ -231,17 +231,16 @@ def main():
     generic_replay(*replay)
     for mode in range(2, 16):
         fault_case(f"unsupported-mode-{mode}", mode=mode)
-    fault_case("deferred-parallel-head", parallel=True)
     fault_case("pc-guard", guard=True)
     summary = {"passed": True, "instruction": "exact E435 mode1 signed minimum",
                "reference_compared_cases": len(cases) + 5, "unsigned_mode0_controls": 25,
-               "actual_if_body_cases": 5, "generic_replays": 1, "total_model_faults": 16,
-               "unsupported_modes": 14, "deferred_parallel_faults": 1, "pc_guard_faults": 1,
+               "actual_if_body_cases": 5, "generic_replays": 1, "total_model_faults": 15,
+               "unsupported_modes": 14, "deferred_parallel_faults": 0, "pc_guard_faults": 1,
                "primary_arithmetic_blob": "19b640bc036b14df78ee32ac45595d759b502317",
                "qemu_sha256": hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
                "hardware_validation": False, "hardware_fault_state_validation": False}
     (CACHE / "validation.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print(f"PASS E435: {len(cases) + 5} reference comparisons, generic replay and sixteen model faults")
+    print(f"PASS E435: {len(cases) + 5} reference comparisons, generic replay and fifteen model faults")
 
 
 if __name__ == "__main__":

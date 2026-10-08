@@ -1050,11 +1050,14 @@ The primary constructor and vendor disassembly agree. Mode0 unsigned minimum,
 other scalar families, unsupported modes and parallel classification remain
 unchanged. No firmware identity or guest PC selects CPU behavior.
 
-`validate_signed_minimum.py` passes 140 separate-reference cases, one generic
-replay and 16 model faults. Signed boundaries, every operand field, aliases,
+At the scalar milestone, `validate_signed_minimum.py` passed140 separate-reference
+cases, one generic replay and16 model faults. The later parallel-minimum
+milestone retains all140 positives and retires only the F435+NOP deferred
+negative, leaving15 current model faults. Signed boundaries, every operand field, aliases,
 mode0 controls, PSR/count and five actual conditional-body sequences are checked.
-Modes2..15, deferred F435 bundle rejection and the PC guard retain precise
-fault state. The old ED10 gate removes only its now-obsolete minimum body fault;
+The historical gate checked Modes2..15, deferred F435 bundle rejection
+and the PC guard fault state. Exact mode1 bundles are now supported by the
+later dedicated parallel gate; mode0 remains deferred. The old ED10 gate removes only its now-obsolete minimum body fault;
 all 158 positive cases remain, with 19 current model faults. Hardware fault
 state remains unverified.
 
@@ -1730,7 +1733,7 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_preindexed_word_immediate.py
 ```
 
-### ED00 signed register greater-or-equal branch and latest checkpoint
+### ED00 signed register greater-or-equal branch checkpoint
 
 The source adds only exact ED00/FFF0 admission and D0 signed GE selection
 through the existing four-byte compare-branch path. It compares signed32
@@ -1759,7 +1762,7 @@ state remain unverified; mapped displacement boundaries are exercised.
 Taken exits may retain model predicates and fault the following IF after
 branch retirement; IRQ blocking is source-inspected, without IRQ proof.
 
-Latest stop: F435/2621 + 2603 at `0x0200998a`, 117,588,671
+At this milestone: F435/2621 + 2603 at `0x0200998a`, 117,588,671
 instructions and 940,709,376 ns. Vendor bundle `r2 = smin(r2, r6)` with tail `r3 = [sp+24]` is reached
 at `0x0200998a`, the untaken ED00 fallthrough in cv_rect. The scalar E435
 mode1 signed minimum is already implemented; establish exact shared
@@ -1772,6 +1775,56 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_ge_branch.py
+```
+
+### F435 parallel signed minimum and latest checkpoint
+
+The production delta adds only exact E435 mode1 destination classification
+for the existing scalar signed minimum. Both head and extended-tail roles use
+the unchanged incoming-GPR snapshots and tail-first execution, with one
+bundle retirement. The minimum leaves PSR/RETS unchanged; flags written by a
+disjoint tail survive. No helper, scanner, predicate, IRQ or scalar decoder
+changes, and no firmware identity or PC selects this behavior.
+
+Pinned Apache constructor and vendor F435/2621 +2603 agree: signed32
+r2=min(incoming r2,incoming r6), paired with r3=[special SP+24]. Research
+retains154 historical standalone-reference calls; the final153 fixtures have
+126 canonical successes,
+seven separately checked full-state model-policy completions and 20 fatal
+categories without reference CPU fault snapshots. Supported coverage checks
+all16 destination fields and source aliases, signed extrema/equality,
+incoming store values/addresses, overwritten sources, flag-writing tails,
+two extended-minimum tail roles and16 balanced selected/skipped conditional
+contexts. Independent review replaced one nondiscriminating tail-source
+fixture with a decisive old7 versus updated8 test; both original and new raw
+outcomes are retained. Mode0, conflicting destinations and deferred unsigned minimum /
+signed maximum tails are reference-valid but remain explicitly unsupported
+by current parallel scope. PC guard admission is model policy.
+
+The focused gate checks126 successes, one generic default-loader replay and
+27 modeled faults:15 mode prechecks, four conflicts/deferred tails, six
+width4 tail accesses and two full-bundle PC guards. Fault phase/order and
+no-retirement assertions are POC policy, without hardware rollback proof.
+The old scalar minimum gate retires only its newly obsolete F435+NOP
+negative/count16->15; all140 positive bytes/expected states and non-main
+functions remain unchanged. Original gate/evidence are retained.
+
+Latest stop: ED58/3E44 at `0x0200aa44`, 117,599,142
+instructions and 940,793,144 ns. Vendor `r3 = h[++r4=228] (u)` is reached at `0x0200aa44` after
+text rendering in the first HOME draw. Establish exact unsigned-halfword
+pre-indexed load fields, signed/aligned displacement, nonalias policy and
+writeback/access fault phases from vendor and separate reference. The pinned
+load/store primary lacks this exact constructor; adjacent ED50/54 and ECD0
+forms are analogues only, so broader displacement/alias behavior requires
+discriminating evidence.
+Preserve the old halfword paths and deferred aliases/stores pending evidence.
+HOME frame1/stage3 remains an unfinished draw snapshot.
+Caches use `after-parallel-signed-minimum` and its `-generic` label; main repo
+`.deps/qemu-parallel-signed-minimum-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 103/103; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_parallel_signed_minimum.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

@@ -459,6 +459,19 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   independently, with execution withheld until HOME/input acceptance.
   Evidence: `.deps/qemu-signed-register-ge-branch-2026-10-08/`.
 
+- 2026-10-08: Stage 3 F435 parallel signed minimum complete and independently
+  reviewed. Sole4-line exactE435/mode1 classifier preserves common machinery.
+  New126+generic1+27 and adjusted scalar140+1+15 gates pass; all140 old
+  positives/functions retained. FullISA/profile/IRQ/boot and GE gates pass.
+  Review corrected one weak tail-source discriminator; original raw retained,
+  with154 historical calls /153 final fixtures /133 final full completions.
+  Unchanged boot advances10,471 instructions to ED58/3E44 at `0x0200aa44`;
+  renamed generic state/PPM/latestALNK match. Audio103/103, timer5174/5174
+  and guards stay healthy, while HOME frame1/stage3 remains unfinished.
+  Private native supervisor is frozen and independently reviewed with54
+  synthetic host checks; no QEMU/UI execution or tracked promotion yet.
+  Evidence: `.deps/qemu-parallel-signed-minimum-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -585,7 +598,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is F435 parallel signed minimum, recorded below.
+  latest firmware blocker is ED58 unsigned halfword pre-indexed immediate load, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -595,29 +608,64 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: F435 parallel signed minimum
+## Current firmware blocker: ED58 unsigned halfword pre-indexed immediate load
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-register-ge-branch/`.
-Vendor bundle `r2 = smin(r2, r6)` with tail `r3 = [sp+24]` is reached
-at `0x0200998a`, the untaken ED00 fallthrough in cv_rect. The scalar E435
-mode1 signed minimum is already implemented; establish exact shared
-parallel destination admission, incoming operands, tail roles and fault
-order before adding a narrow classifier entry. HOME frame1/stage3
-remains an unfinished draw snapshot.
+Latest unchanged boot: `.cache/felucca-validation/after-parallel-signed-minimum/`.
+Vendor `r3 = h[++r4=228] (u)` is reached at `0x0200aa44` after
+text rendering in the first HOME draw. Establish exact unsigned-halfword
+pre-indexed load fields, signed/aligned displacement, nonalias policy and
+writeback/access fault phases from vendor and separate reference. The pinned
+load/store primary lacks this exact constructor; adjacent ED50/54 and ECD0
+forms are analogues only, so broader displacement/alias behavior requires
+discriminating evidence.
+Preserve the old halfword paths and deferred aliases/stores pending evidence.
+HOME frame1/stage3 remains an unfinished draw snapshot.
 
-- PC `0x0200998a`, words `F435/2621 + 2603`.
-- Instructions 117,588,671; virtual time 940,709,376 ns.
+- PC `0x0200aa44`, words `ED58/3E44`.
+- Instructions 117,599,142; virtual time 940,793,144 ns.
 - IRQ11 entries/returns 103/103;
-  IRQ63 entries/returns 5173/5173.
+  IRQ63 entries/returns 5174/5174.
 - ALNK completions 108, acknowledgments 103,
   coalesced 5, pending `0x0`;
   55,296 captured sample words, 0 nonzero.
 - LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
-  Audio and timer service return successfully. The correct ED00 fallthrough reaches a parallel minimum bundle, with HOME flag/frame1/stage3 still unfinished and no synthesis proof.
-- QEMU SHA-256: `80f85e23f2a2b82bcdc94630a9d34453f160de6bfef21b0665efdafa6fa4f6b4`.
-- Generic replay: `after-signed-register-ge-branch-generic`.
-- Durable evidence: main repo `.deps/qemu-signed-register-ge-branch-2026-10-08/`.
+  Audio and timer service return successfully. The accepted minimum bundle advances through text rendering to another load, with HOME flag/frame1/stage3 still unfinished and no synthesis proof.
+- QEMU SHA-256: `1fbdb3cad628a30b3f8b69a6c05dcbba9930b12b98c3948ea07778bc56e62199`.
+- Generic replay: `after-parallel-signed-minimum-generic`.
+- Durable evidence: main repo `.deps/qemu-parallel-signed-minimum-2026-10-08/`.
+
+### Resolved F435 parallel signed minimum
+
+The production delta adds only exact E435 mode1 destination classification
+for the existing scalar signed minimum. Both head and extended-tail roles use
+the unchanged incoming-GPR snapshots and tail-first execution, with one
+bundle retirement. The minimum leaves PSR/RETS unchanged; flags written by a
+disjoint tail survive. No helper, scanner, predicate, IRQ or scalar decoder
+changes, and no firmware identity or PC selects this behavior.
+
+Pinned Apache constructor and vendor F435/2621 +2603 agree: signed32
+r2=min(incoming r2,incoming r6), paired with r3=[special SP+24]. Research
+retains154 historical standalone-reference calls; the final153 fixtures have
+126 canonical successes,
+seven separately checked full-state model-policy completions and 20 fatal
+categories without reference CPU fault snapshots. Supported coverage checks
+all16 destination fields and source aliases, signed extrema/equality,
+incoming store values/addresses, overwritten sources, flag-writing tails,
+two extended-minimum tail roles and16 balanced selected/skipped conditional
+contexts. Independent review replaced one nondiscriminating tail-source
+fixture with a decisive old7 versus updated8 test; both original and new raw
+outcomes are retained. Mode0, conflicting destinations and deferred unsigned minimum /
+signed maximum tails are reference-valid but remain explicitly unsupported
+by current parallel scope. PC guard admission is model policy.
+
+The focused gate checks126 successes, one generic default-loader replay and
+27 modeled faults:15 mode prechecks, four conflicts/deferred tails, six
+width4 tail accesses and two full-bundle PC guards. Fault phase/order and
+no-retirement assertions are POC policy, without hardware rollback proof.
+The old scalar minimum gate retires only its newly obsolete F435+NOP
+negative/count16->15; all140 positive bytes/expected states and non-main
+functions remain unchanged. Original gate/evidence are retained.
 
 ### Resolved ED00 signed register greater-or-equal branch
 
@@ -1125,11 +1173,14 @@ The primary constructor and vendor disassembly agree. Mode0 unsigned minimum,
 other scalar families, unsupported modes and parallel classification remain
 unchanged. No firmware identity or guest PC selects CPU behavior.
 
-`validate_signed_minimum.py` passes 140 separate-reference cases, one generic
-replay and 16 model faults. Signed boundaries, every operand field, aliases,
+At the scalar milestone, `validate_signed_minimum.py` passed140 separate-reference
+cases, one generic replay and16 model faults. The later parallel-minimum
+milestone retains all140 positives and retires only the F435+NOP deferred
+negative, leaving15 current model faults. Signed boundaries, every operand field, aliases,
 mode0 controls, PSR/count and five actual conditional-body sequences are checked.
-Modes2..15, deferred F435 bundle rejection and the PC guard retain precise
-fault state. The old ED10 gate removes only its now-obsolete minimum body fault;
+The historical gate checked Modes2..15, deferred F435 bundle rejection
+and the PC guard fault state. Exact mode1 bundles are now supported by the
+later dedicated parallel gate; mode0 remains deferred. The old ED10 gate removes only its now-obsolete minimum body fault;
 all 158 positive cases remain, with 19 current model faults. Hardware fault
 state remains unverified.
 
@@ -1411,15 +1462,16 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached F435/2621 + 2603 parallel signed minimum to the CPU
-   worker. Inspect existing scalar E435 and prior parallel classification
-   gates. Establish pinned mode1/destination and incoming operand semantics,
-   both head/tail roles, destination conflicts and precise tail/access/count
-   phases. Probe signed edges, fields/aliases, mixed widths, selected/skipped
-   contexts, old-source stores and explicit deferred modes. Retire only the
-   newly obsolete scalar F435 negative; preserve all140 positives and common
-   helpers/classifier behavior apart from one verified mapping. Review
-   design/source/validator before parent acceptance.
+2. Assign reached ED58/3E44 unsigned halfword pre-indexed immediate load
+   to the CPU worker. Inspect existing immediate halfword paths and the prior
+   ECD0 nonalias word-load gate first. Qualify the missing exact primary
+   constructor using vendor/reference discrimination for displacement and
+   GPR fields; independently characterize
+   destination/base aliases and preserve explicit ambiguity/deferred policy.
+   Probe mapped boundaries, unsigned extension, all fields, guards, partial
+   fetch, writeback/access/count phases and selected/skipped mixed widths.
+   Preserve helpers/scanner/parallel/IRQ/predicate/schema and old decoder
+   paths. Review primary/raw design, source and validator before acceptance.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
@@ -1568,7 +1620,15 @@ default generic loader with observers disabled and standard QMP/HMP queries
 for running status, retired instructions, guest/UI/service progress and
 correct-width nondestructive ALNK reads. Live observations are independent,
 not atomic snapshots; they do not prove fresh pixel/PCM equality or exact
-IRQ balance. Native implementation and execution remain pending.
+IRQ balance. A frozen private host supervisor is retained in main
+`.deps/qemu-felucca-native-launch-design-2026-10-08/prototype/` with
+independent Sol6.1 Extra high review and54 passing synthetic parser/protocol
+checks. Pinned-source monitor formats and nondestructive16-bit ALNK reads
+are verified; QEMU/UI/guest execution remains false. The prototype uses
+fixed shift3 align/sleep, bounded standard QMP, an independently quit gate
+instance and an interactive instance that stays executing after measured
+progress. Promotion and execution require completed HOME, sustained30 guest
+seconds and physical note/release/octave/BPM acceptance on the same binary.
 
 After sustained acceptance passes, add the native Felucca launcher. Measure
 guest/audio/watchdog progress before choosing its functional clock. The small
