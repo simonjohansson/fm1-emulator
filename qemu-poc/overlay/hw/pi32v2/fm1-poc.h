@@ -11,9 +11,12 @@
 #include "fm1-usb.h"
 #include "fm1-alnk.h"
 #include "fm1-syscon.h"
+#include "fm1-adc.h"
+#include "fm1-analog.h"
 
 #define TYPE_FM1_POC_MACHINE MACHINE_TYPE_NAME("fm1-poc")
 #define FM1_POC_MAX_ALNK_RESETS 16
+#define FM1_POC_MAX_ADC_RESETS 16
 OBJECT_DECLARE_SIMPLE_TYPE(FM1PocState, FM1_POC_MACHINE)
 typedef struct FM1TimerState {
     FM1PocState *machine;
@@ -40,6 +43,8 @@ struct FM1PocState {
     FM1PocUSB usb;
     FM1PocALNK alnk;
     FM1PocSyscon syscon;
+    FM1PocADC adc;
+    FM1PocAnalog analog;
     unsigned frames;
     const char *frame_dir;
     QEMUTimer *display_key_timer;
@@ -48,6 +53,10 @@ struct FM1PocState {
     QEMUTimer *alnk_reset_timer;
     int64_t alnk_reset_times[FM1_POC_MAX_ALNK_RESETS];
     unsigned alnk_reset_count, alnk_reset_index;
+    QEMUTimer *adc_reset_timer;
+    int64_t adc_reset_times[FM1_POC_MAX_ADC_RESETS];
+    unsigned adc_reset_count, adc_reset_index;
+    uint32_t analog_initial_wla_con0;
     uint16_t shift, latched;
     uint8_t matrix[11];
     uint64_t shift_edges, latch_edges;

@@ -21,7 +21,7 @@ not files the current QEMU raw-image loader can execute directly.
 | `build/foundation/firmware.bin` | 592 | `d22ba9de32a8ba3cfee7aec804468d7dea2db8a7c83d0c0707f996cbcfff8ac7` | Application entry; startup, matrix, RAM code and TIMER5. Timer subsection enters `0x02000238` |
 | `tests/fixtures/display/firmware.bin` | 2,700 | `3bc59ff7d09de123174b49ea786582a1e137b2e1609074b5189c9fb024f19ba2` | Application entry; SPI/DMA display and physical matrix fixture |
 | `build/fm1-diag.bin` | 14,804 | `781005cfcc4e0b562291fa747a0fa956204ee97c396c39214df04feaf86cc7e2` | Unchanged FM-1_980 application handoff; running diagnostic/disconnected USB retry |
-| `FELUCCA/build/felucca.bin` | 417,668 | `12a4b4ea47248467f566ec3b6984b08f2f89d6ef5a8e9e494cab5184e8fadb36` | Pinned unchanged application; startup, splash and completed audio/timer IRQ service; latest SAR ADC control mapping failure after completed audio/timer service |
+| `FELUCCA/build/felucca.bin` | 417,668 | `12a4b4ea47248467f566ec3b6984b08f2f89d6ef5a8e9e494cab5184e8fadb36` | Pinned unchanged application; startup, splash and completed audio/timer IRQ service; latest F1F4 parallel signed division failure after SAR support |
 | `build/display/firmware.bin` | 17,056 | `ec7279a0d78bad1e511e147c854d91c4e72682f0c3842286615294043fc50dc0` | Separate full display application; not the 2,700-byte acceptance fixture |
 | `build/fm1-diag.fwsc` | 609,649 | `5ed4ea26bef92218a07392ab374f226ae1bd69cb03c833ae5d5155c5274361e0` | Package available; package boot not established in QEMU |
 | `build/display/firmware.fwsc` | 609,649 | `6c086e0c550ef1b418007bbc4bb33b3b767a6a4901fe6145a88eb3d1adf29d57` | Package available; package boot not established in QEMU |
@@ -141,10 +141,10 @@ matrix/shift-register/analog/audio connections. Host code consumes modeled
 pixels/PCM and supplies physical or transport events. Removing the viewer must
 leave the same guest hardware and device timing.
 
-Stage 2 uses the same evidenced controller-map superset for every image:
+All images use the same evidenced controller-map superset:
 512 KiB SRAM at `0x01c00000`; XIP/SFC/SPI0/NOR; SPI1/LCD; GPIO and IOMAP;
-TIMER4/5; protection/P33/watchdog; disconnected USB; ALNK0; and supported IRQ
-configuration registers. Unsupported configurations remain explicit faults.
+TIMER4/5; protection/P33/watchdog; disconnected USB; ALNK0; SAR/WLA; and
+supported IRQ configuration registers. Unsupported configurations remain explicit faults.
 ALNK0's dedicated model owns `0x12e00` for all images. Its cold CON0 read/write
 of zero covers the diagnostic's old disabled model without a second overlapping
 mapping in system registers.
@@ -177,11 +177,23 @@ and LCD bytes match before/after within fixture and generic modes. Local reset
 is model validation; physical/whole-machine/watchdog reset and runtime
 unrealize/re-realize are unvalidated. Existing capture schemas stay unchanged.
 
+A private resettable SAR child owns CON/RES at `0x13100` and its completion
+timer. A separate analog component owns WLA_CON0 at `0x11900`; board callbacks
+bind raw inputs for channels3/PB1 and4/PB6. Local ADC reset preserves that
+shared word, providers and other controllers. Only polling with the reviewed
+configuration is supported; IRQ24 and additional channels/configurations fault
+explicitly. Raw32 passthrough, 10 us latency, command/readback/busy/reset and
+initial handoff values are functional policies without hardware calibration.
+`validate_adc.py` passes 76 probes using existing guest SRAM readbacks and
+capture formats. Fatal ADC poststate is source-reviewed only, and repeated
+reset schedules check visible final state without per-event attestation.
+See the latest SAR checkpoint in `BOOTING.md` for acceptance and provenance.
+
 Known gaps remain: fixed functional timer/SPI/audio clocks rather than an
 evidenced clock tree; whole-transfer/half DMA capture assuming stable buffers;
 unvalidated skipped-callback captures; no persistent NOR program/erase; remaining
 controller lifecycles and hardware reset dispatch; only IRQ11/63 selection,
-without nesting/equal-priority arbitration; no ADC, UART or connected USB
+without nesting/equal-priority arbitration; no UART or connected USB
 MIDI/CDC; no validated audio endpoint or CoreAudio playback. The current USB
 scenario combines no host and unavailable SIE clock; it proves guest retry,
 not that cable absence necessarily disables SIE register access. Shared clock

@@ -306,6 +306,17 @@ static const Pi32v2MachineOps machine_ops = {
     .check_access = fm1_poc_check_access, .note_branch = fm1_poc_note_branch,
 };
 
+static bool board_adc_raw(void *opaque, unsigned channel, uint32_t *raw)
+{
+    /* Functional board defaults, without physical calibration or a claim
+     * about converter resolution. The controller retains each raw value. */
+    switch (channel) {
+    case 3: *raw = 600; return true; /* PB1 */
+    case 4: *raw = 512; return true; /* PB6 */
+    default: return false;
+    }
+}
+
 static void machine_init(MachineState *ms)
 {
     FM1PocState *m = FM1_POC_MACHINE(ms);
@@ -351,6 +362,15 @@ static void machine_init(MachineState *ms)
     sysbus_realize(SYS_BUS_DEVICE(&m->alnk), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(&m->alnk), 0, 0x12e00);
     sysbus_connect_irq(SYS_BUS_DEVICE(&m->alnk), 0, m->alnk_irq);
+    /* Zero is the board's functional application handoff choice, not an
+     * established analog-block reset value. Optional test seeds are separate. */
+    fm1_analog_init(&m->analog, OBJECT(m), m->cpu, m->analog_initial_wla_con0);
+    memory_region_add_subregion(get_system_memory(), 0x11900, &m->analog.mmio);
+    object_initialize_child(OBJECT(m), "sar-adc", &m->adc, TYPE_FM1_ADC);
+    fm1_adc_bind(&m->adc, m->cpu, &m->analog, (1u << 3) | (1u << 4),
+                 board_adc_raw, m);
+    sysbus_realize(SYS_BUS_DEVICE(&m->adc), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(&m->adc), 0, 0x13100);
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
     fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
     memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 8);

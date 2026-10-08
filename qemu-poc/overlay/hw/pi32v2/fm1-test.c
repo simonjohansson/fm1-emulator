@@ -483,6 +483,62 @@ static void configure_alnk_test_resets(FM1PocState *m)
     m->alnk_reset_count = count;
 }
 
+static void adc_test_reset(void *opaque)
+{
+    BQL_LOCK_GUARD();
+    FM1PocState *m = opaque;
+
+    /* Private opt-in lifecycle injection only. Guest MMIO reads into SRAM
+     * provide evidence through the existing capture, without a new sidecar. */
+    device_cold_reset(DEVICE(&m->adc));
+    m->adc_reset_index++;
+    if (m->adc_reset_index < m->adc_reset_count) {
+        timer_mod_ns(m->adc_reset_timer, m->adc_reset_times[m->adc_reset_index]);
+    }
+}
+
+static void configure_adc_test_inputs(FM1PocState *m)
+{
+    const char *initial = getenv("FM1_POC_ANALOG_INITIAL_WLA_CON0");
+    const char *schedule = getenv("FM1_POC_ADC_RESETS_NS");
+
+    if (initial) {
+        char *end = NULL;
+        errno = 0;
+        uint64_t value = g_ascii_strtoull(initial, &end, 0);
+        if (errno || !*initial || *initial == '-' || *end || value > UINT32_MAX) {
+            error_report("FM1_POC_ANALOG_INITIAL_WLA_CON0 requires a 32-bit unsigned integer");
+            exit(EXIT_FAILURE);
+        }
+        m->analog_initial_wla_con0 = value;
+    }
+    if (!schedule) {
+        return;
+    }
+    if (!getenv("FM1_POC_STATE_DIR") || !*getenv("FM1_POC_STATE_DIR")) {
+        error_report("FM1_POC_ADC_RESETS_NS requires FM1_POC_STATE_DIR");
+        exit(EXIT_FAILURE);
+    }
+    g_auto(GStrv) entries = g_strsplit(schedule, ",", FM1_POC_MAX_ADC_RESETS + 1);
+    unsigned count = g_strv_length(entries);
+    if (!count || count > FM1_POC_MAX_ADC_RESETS) {
+        error_report("FM1_POC_ADC_RESETS_NS requires 1 to 16 sorted positive nanoseconds");
+        exit(EXIT_FAILURE);
+    }
+    for (unsigned i = 0; i < count; i++) {
+        char *end = NULL;
+        errno = 0;
+        uint64_t ns = g_ascii_strtoull(entries[i], &end, 0);
+        if (errno || !*entries[i] || *entries[i] == '-' || *end || !ns ||
+            ns > INT64_MAX || (i && ns < (uint64_t)m->adc_reset_times[i - 1])) {
+            error_report("FM1_POC_ADC_RESETS_NS requires 1 to 16 sorted positive nanoseconds");
+            exit(EXIT_FAILURE);
+        }
+        m->adc_reset_times[i] = ns;
+    }
+    m->adc_reset_count = count;
+}
+
 void fm1_test_reset_state(CPUPi32v2State *e)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
@@ -534,6 +590,7 @@ void fm1_test_configure(FM1PocState *m, MachineState *ms)
     m->diag_fixture = diag || m->alnk_probe;
     m->felucca_fixture = felucca;
     configure_alnk_test_resets(m);
+    configure_adc_test_inputs(m);
     m->cpu->frame_pc = display ? 0x020004fa : 0;
     m->frame_dir = getenv("FM1_POC_FRAME_DIR");
     if (!m->frame_dir && !m->display_live) { m->frame_dir = "."; }
@@ -628,6 +685,10 @@ void fm1_test_seed_ram(FM1PocState *m)
 
 void fm1_test_start(FM1PocState *m)
 {
+    if (m->adc_reset_count) {
+        m->adc_reset_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, adc_test_reset, m);
+        timer_mod_ns(m->adc_reset_timer, m->adc_reset_times[0]);
+    }
     if (m->alnk_reset_count) {
         g_autofree char *path = g_strdup_printf("%s/alnk-reset.jsonl",
                                                getenv("FM1_POC_STATE_DIR"));

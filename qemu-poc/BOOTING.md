@@ -1269,7 +1269,7 @@ Audio IRQ11 entries/returns 1/0; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_preindexed_halfword_load.py
 ```
 
-### E86C word memory left-shift and latest checkpoint
+### E86C word memory left-shift checkpoint
 
 Exact scalar E86C low2 mode0 reads an aligned little-endian word at incoming
 base+(x&252), shifts it left by count nibble0..15 and writes it once. Address
@@ -1307,7 +1307,7 @@ Audio samples remain zero and home frames remain absent. Renamed unchanged gener
 state except profile and all captured sample/LCD bytes match; whole SRAM is not
 compared across different initialization modes.
 
-Latest stop: F123/2800 +60A1 at `0x020059a8`, 116,552,281
+At this milestone: F123/2800 +60A1 at `0x020059a8`, 116,552,281
 instructions and 932,418,256 ns. The first ADC control write 0 to `0x13100` is reached in the compact store tail
 at `0x020059ac`, inside the parallel bundle whose reported PC is `0x020059a8`.
 CPU encoding is supported; the register mapping is missing. The head would
@@ -1319,6 +1319,58 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_memory_left_shift.py
+```
+
+### SAR ADC and canonical analog ownership and latest checkpoint
+
+A private resettable SysBus SAR controller now owns CON/RES at `0x13100`;
+a separate analog component canonically owns WLA_CON0 at `0x11900`. Board
+callbacks bind channels 3/PB1 and 4/PB6 to raw32 inputs 600/512 unchanged. These
+fixed maps and topology are shared by every image. No CPU, Rust, firmware or
+existing capture schema changes were needed.
+
+Primary SDK facts establish RW32/RO32 registers, divider6=96, startupF=120 ADC
+clocks, EN/IE/kick/pending fields and channel wiring. Source clock, bit3 meaning,
+resolution and precise command/reset behavior remain unproven. Functional
+choices are explicit: analog application handoff zero, local cold zero, 10 us virtual
+completion, payload bit6 reads zero/clears pending and starts only when enabled;
+bit7 writes are ignored. Enable alone starts nothing. Busy kick latches a new
+sample and deadline after full validation; identical no-kick writes preserve
+phase, busy reconfiguration without kick faults, supported idle changes retain
+pending/result. Disable cancels work while retaining result/pending unless a
+kick clears it. IRQ24 and unsupported channels/configurations remain explicit
+faults. WLA bit14 changes require canonical ownership and reject while busy;
+other initial fields survive. SAR reset cancels and clears only local state,
+preserving analog/provider/wiring; unrealize unregisters its validator.
+
+The reviewed gate passes 76 model probes: seven positives, 28 faults, seven local
+reset, 21 profile/layout/name/observer-off and 13 parser cases. Existing SRAM
+readbacks verify driver sequencing, repeated/RMW kick and pending, functional
+deadlines, cancellation/restart, idle changes, shared-field/provider preservation
+and unrelated ALNK/TIMER5 service. Fatal ADC poststate, provider failure and
+deadline overflow remain source-reviewed only. Repeated/max reset schedules
+check visible final state, without per-event callback-count attestation. An
+initial isolation fixture used unsupported TIMER5 control 1; only that fixture
+was corrected to 9/8009, and all 76 cases then passed. Production remained frozen.
+Full ISA, 98 profiles, 10 IRQ, boot, syscon, ALNK reset and audio-device gates pass.
+
+Unchanged firmware advances 2,571 instructions through ADC initialization to
+F1F4 at `0x0200e2fc`, with 101 audio and 5,105 timer returns. Renamed generic
+captured state except profile and all captured sample/LCD bytes match; whole SRAM
+is not compared across initialization modes. Samples remain zero and home
+remains unverified. No hardware calibration or all-firmware claim is made.
+
+Latest stop: F1F4/0011 +2B81 at `0x0200e2fc`, 116,554,852
+instructions and 932,438,824 ns. Vendor `r0 = r1 / r0 (s)` is paired with `[sp+44] = incoming r1` in the
+foreground master-input smoothing path. Scalar signed division already works;
+research exact parallel admission, incoming snapshots, modes, flags and fault
+phases before changing the shared classifier. Preserve existing helpers.
+Caches use `after-adc` and its `-generic` label; main repo
+`.deps/qemu-adc-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 101/101; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_adc.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

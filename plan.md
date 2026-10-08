@@ -126,7 +126,8 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   assumes stable source buffers; active-buffer mutation needs explicit tests
   and an evidenced consumption model before generic streaming claims.
 - NOR supports reads but not persistent write/erase or full hardware boot.
-  ADC, UART and connected USB MIDI/CDC remain missing. Current build captures
+  UART and connected USB MIDI/CDC remain missing. SAR supports reviewed polling
+  inputs/configuration with uncalibrated timing. Current build captures
   audio samples but does not enable CoreAudio playback.
 - Saved results now prove unchanged splash and completed audio/timer IRQ
   service. Synthesis, home and real-time throughput remain unverified. Keep
@@ -363,6 +364,14 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   bundle PC `0x020059a8`; no home/nonzero synthesis yet. Evidence:
   `.deps/qemu-memory-left-shift-2026-10-08/`.
 
+- 2026-10-08: Stage 3 reusable SAR ADC and separate canonical WLA owner complete,
+  independently reviewed. Gate: 76 model probes passes; full ISA/profile/IRQ/boot
+  and syscon/ALNK lifecycle/audio-device regressions pass. Unchanged firmware
+  advances 2,571 instructions to parallel signed division at `0x0200e2fc`;
+  renamed captured state/sample/LCD match. Raw inputs, 10 us/command/reset policy
+  and fatal-state/source-review limits remain explicit. Evidence:
+  `.deps/qemu-adc-2026-10-08/`. Home/synthesis still open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -489,7 +498,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is unmapped SAR ADC control, recorded below.
+  latest firmware blocker is parallel signed division F1F4, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -499,28 +508,66 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: unmapped SAR ADC control
+## Current firmware blocker: parallel signed division F1F4
 
-Latest unchanged boot: `.cache/felucca-validation/after-memory-left-shift/`.
-The first ADC control write 0 to `0x13100` is reached in the compact store tail
-at `0x020059ac`, inside the parallel bundle whose reported PC is `0x020059a8`.
-CPU encoding is supported; the register mapping is missing. The head would
-form WLA address `0x11900`, whose following read at `0x020059ae` has not yet
-executed. Implement reviewed generic SAR/analog ownership and board inputs.
+Latest unchanged boot: `.cache/felucca-validation/after-adc/`.
+Vendor `r0 = r1 / r0 (s)` is paired with `[sp+44] = incoming r1` in the
+foreground master-input smoothing path. Scalar signed division already works;
+research exact parallel admission, incoming snapshots, modes, flags and fault
+phases before changing the shared classifier. Preserve existing helpers.
 
-- PC `0x020059a8`, words `F123/2800 +60A1`.
-- Instructions 116,552,281; virtual time 932,418,256 ns.
+- PC `0x0200e2fc`, words `F1F4/0011 +2B81`.
+- Instructions 116,554,852; virtual time 932,438,824 ns.
 - IRQ11 entries/returns 101/101;
-  IRQ63 entries/returns 5104/5104.
+  IRQ63 entries/returns 5105/5105.
 - ALNK completions 106, acknowledgments 101,
   coalesced 5, pending `0x0`;
   54,272 captured sample words, 0 nonzero.
 - LCD visible=True, busy=True; guard debug message
   `0x0`, watchdog expirations 0.
   Audio and timer service return successfully; synthesis and home remain incomplete.
-- QEMU SHA-256: `4177a8633bdadb3e1dce439a0cd8fdf11436250ad5df0321a027221eb4757a72`.
-- Generic replay: `after-memory-left-shift-generic`.
-- Durable evidence: main repo `.deps/qemu-memory-left-shift-2026-10-08/`.
+- QEMU SHA-256: `440a52cf7b1d837d609603d10f265db4bad92e89e8fe0b731c6ecbc9fbc9ce54`.
+- Generic replay: `after-adc-generic`.
+- Durable evidence: main repo `.deps/qemu-adc-2026-10-08/`.
+
+### Resolved SAR ADC and canonical analog ownership
+
+A private resettable SysBus SAR controller now owns CON/RES at `0x13100`;
+a separate analog component canonically owns WLA_CON0 at `0x11900`. Board
+callbacks bind channels 3/PB1 and 4/PB6 to raw32 inputs 600/512 unchanged. These
+fixed maps and topology are shared by every image. No CPU, Rust, firmware or
+existing capture schema changes were needed.
+
+Primary SDK facts establish RW32/RO32 registers, divider6=96, startupF=120 ADC
+clocks, EN/IE/kick/pending fields and channel wiring. Source clock, bit3 meaning,
+resolution and precise command/reset behavior remain unproven. Functional
+choices are explicit: analog application handoff zero, local cold zero, 10 us virtual
+completion, payload bit6 reads zero/clears pending and starts only when enabled;
+bit7 writes are ignored. Enable alone starts nothing. Busy kick latches a new
+sample and deadline after full validation; identical no-kick writes preserve
+phase, busy reconfiguration without kick faults, supported idle changes retain
+pending/result. Disable cancels work while retaining result/pending unless a
+kick clears it. IRQ24 and unsupported channels/configurations remain explicit
+faults. WLA bit14 changes require canonical ownership and reject while busy;
+other initial fields survive. SAR reset cancels and clears only local state,
+preserving analog/provider/wiring; unrealize unregisters its validator.
+
+The reviewed gate passes 76 model probes: seven positives, 28 faults, seven local
+reset, 21 profile/layout/name/observer-off and 13 parser cases. Existing SRAM
+readbacks verify driver sequencing, repeated/RMW kick and pending, functional
+deadlines, cancellation/restart, idle changes, shared-field/provider preservation
+and unrelated ALNK/TIMER5 service. Fatal ADC poststate, provider failure and
+deadline overflow remain source-reviewed only. Repeated/max reset schedules
+check visible final state, without per-event callback-count attestation. An
+initial isolation fixture used unsupported TIMER5 control 1; only that fixture
+was corrected to 9/8009, and all 76 cases then passed. Production remained frozen.
+Full ISA, 98 profiles, 10 IRQ, boot, syscon, ALNK reset and audio-device gates pass.
+
+Unchanged firmware advances 2,571 instructions through ADC initialization to
+F1F4 at `0x0200e2fc`, with 101 audio and 5,105 timer returns. Renamed generic
+captured state except profile and all captured sample/LCD bytes match; whole SRAM
+is not compared across initialization modes. Samples remain zero and home
+remains unverified. No hardware calibration or all-firmware claim is made.
 
 ### Resolved E86C word memory left-shift
 
@@ -983,15 +1030,14 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached SAR control write 0 at `0x13100` to the device worker. Its
-   parent parallel bundle PC is `0x020059a8`, compact store tail `0x020059ac`;
-   the following shared WLA read remains predicted. Review reusable resettable
-   SAR, separate canonical analog ownership, board raw-input bindings and exact
-   supported configuration/command/pending lifecycle. Preserve other devices,
-   stable capture formats and Rust; qualify timing/reset/command policies.
-   Test repeated kick, RMW pending, cancel/restart/fresh phase, local reset,
-   unsupported configuration without partial commit, shared word preservation,
-   width/alignment faults and renamed generic replay.
+2. Assign reached F1F4/0011 +2B81 parallel signed division to the CPU worker.
+   Establish exact primary/scalar facts and independent full-reference probes.
+   Check aliases, divisor/result boundaries, incoming snapshots, compact/extended
+   tails, conditional completion, conflicts and malformed-mode prechecks before
+   tail effects. Distinguish tail faults from divide-zero/overflow helper faults
+   after a successful tail; do not claim rollback or hardware fault ordering.
+   Preserve scalar division, helpers and other parallel families. Keep unsigned
+   parallel mode deferred unless separately scoped and evidenced.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
@@ -1015,31 +1061,21 @@ nesting only if captured firmware behavior requires it, with independently
 reviewed admission, stack/context restoration and focused validation. Current
 captures do not prove undocumented hardware shadow or nesting behavior.
 
-### Implement ADC only when reached
+### Preserve the accepted SAR/analog contract
 
-No ADC model is implemented yet. The first foreground CON write 0 to
-`0x13100` is captured at compact tail `0x020059ac`, with parent bundle PC
-`0x020059a8`. Its header has not committed on the failed tail. The following
-WLA read at `0x020059ae` from `0x11900` remains predicted, not captured.
-Primary SDK facts: SAR CON `0x13100` RW32 and RES `0x13104` RO32;
-WLA_CON0 `0x11900` belongs to a separate shared analog block. Ordinary ADC
-channels clear its bit14 analog-test route; other consumers own other fields.
-Do not make the whole WLA word ADC-owned or assume a whole-word zero reset.
-Guest uses channels3 battery and4 master, enable bit4, interrupt enable bit5
-(disabled here), kick/start bit6 and completion pending bit7. Driver repeated
-bit6 writes without a software clear support command/pulse behavior; a stored
-zero-to-one transition is insufficient. Exact bit6 readback/self-clear, busy
-restart and acknowledgment details still require explicit model policy and
-review. SAR interrupt24 remains unsupported until evidenced and reached.
+SAR polling and local reset are now accepted through the generic controller
+and separate canonical WLA owner. Preserve the qualified command/pending,
+busy restart and idle reconfiguration policies recorded above. IRQ24, other
+board inputs and timing configurations remain explicit unsupported behavior.
+The 10 us latency, raw 600/512 inputs and handoff/reset values are functional
+assumptions. New configurations need primary evidence and independent review;
+do not substitute firmware identities for register-driven behavior.
 
-Proposed deterministic raw inputs battery600/master512 and functional 10 us
-latency are assumptions, not hardware calibration. The SDK documents divider6
-as divide96 and startup delay in eight-clock units; source clock/conversion
-latency remain unknown. Cover conversion, clear, cancel/restart, result/width/
-configuration faults and stale timer cancellation. Preserve canonical shared
-ownership, existing device maps and public Rust boundaries. Primary research
-and exact SDK/file identities are retained in the main repo's
-`.deps/qemu-adc-research-2026-10-08/primary-evidence.md`. No model exists yet.
+Primary SDK/file identities remain in `.deps/qemu-adc-research-2026-10-08/`;
+actual reached input, reviewed source, 76 focused probes and unchanged/generic
+replays are in `.deps/qemu-adc-2026-10-08/`. Fatal ADC poststate remains source-
+reviewed; repeated schedules do not attest every callback separately. Whole-
+machine reset remains open despite accepted local ADC and ALNK reset.
 
 ### Reach a complete home frame
 
