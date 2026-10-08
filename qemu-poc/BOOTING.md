@@ -1827,7 +1827,7 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_signed_minimum.py
 ```
 
-### ED58..5B unsigned halfword pre-indexed immediate load and latest checkpoint
+### ED58..5B unsigned halfword pre-indexed immediate load checkpoint
 
 A separate ED58..5B decoder branch admits only unsigned-halfword loads
 with distinct destination/base GPRs and operand bit0 clear. It uses signed2
@@ -1868,7 +1868,7 @@ FD58 is an existing scalar branch and is not mislabeled parallel. Hardware
 alias/fault order, rollback and successful32-bit wrap remain unverified;
 reference fatals establish category only. No old tracked negative retires.
 
-Latest stop: F040/0165 + 624A at `0x0200aa52`, 117,601,373
+At this milestone: F040/0165 + 624A at `0x0200aa52`, 117,601,373
 instructions and 940,810,992 ns. Vendor `r0 = 357` paired with `r2 = h[r4+4] (u)` is reached at
 `0x0200aa52`, after the accepted ED58 load and icon call. Scalar literal and
 compact halfword load already exist. Establish exact shared destination
@@ -1881,6 +1881,94 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_preindexed_unsigned_halfword_immediate.py
+```
+
+### compact unsigned halfword load tails in parallel bundles and latest checkpoint
+
+The shared parallel destination classifier admits compact unsigned
+halfword loads matching `(op & 0xe088) == 0x6008`, with destination mask
+`1u << (op & 7)`. This is the sole CPU source addition. The scalar decoder
+remains unchanged: aligned little-endian 16-bit memory is read through the
+incoming low-bank base in bits 4 through 6, with signed five-bit displacement
+times two (-32 through +30 bytes), and the result is zero extended. There is
+no base writeback or PSR update. Ordinary base/destination aliases therefore
+remain supported.
+
+Admission is confined to tails under existing two-byte and four-byte heads,
+forming four-byte and six-byte bundles. Compact group 3 cannot be a head
+under the existing and primary prefix rules. No new eight-byte role is
+admitted. Prefix normalization, scanning, scalar execution, predicate, IRQ,
+device and state schema paths remain unchanged. Existing bundle machinery
+captures the incoming tail address before head effects and requires disjoint
+head/tail destinations.
+
+The pinned compact-load constructor directly supports the exact load-only
+mask, fields and unsigned halfword semantics; unlike the preceding ED58
+milestone, this constructor is present. The reached F040/0165 + 624A pair
+sets r0 to 357 and loads r2 from h[r4+4] without writeback. Its captured
+incoming r4 is 0x01c117d4, selecting 0x01c117d8 with sampled halfword 59164.
+These test inputs do not select CPU behavior by firmware identity or PC.
+
+Saved separate-reference research contains 86 calls: 74 canonical supported
+cases (56 ordinary, 16 balanced conditional cases and two skipped bad-EA
+cases), two destination-conflict policy completions, two PC-span policy
+completions and eight categorized fatal two-byte reads. There are 78 full
+sampled state completions and no canonical mismatch. Coverage includes all
+eight destination, base and ordinary alias fields; unsigned boundaries;
+signed offset extrema and intermediate fields; incoming-address/result
+ordering; head flag preservation; scalar controls; last SRAM halfword, XIP
+and guarded reads; and final/nonfinal THEN/ELSE four-byte and six-byte bundles
+followed by another IF. Skipped invalid addresses are not read. Seeded full
+words are checked; unowned reference words retain poison while cold QEMU
+fixture/default-loader neighbors are zero, so no whole-memory equality is
+claimed.
+
+The focused gate covers 74 supported cases, one generic default-loader
+replay and 12 modeled faults: two destination conflicts, eight tail reads
+and two complete four-byte/six-byte PC-span guards. The reference completes
+conflicts with head-wins behavior and completes the configured PC guards;
+existing QEMU pre-effect rejection is conservative model policy, not proof
+of ISA invalidity. Tail data reads precede head execution and bundle
+retirement in the model. A flag-writing head therefore leaves GPRs, PSR,
+memory and count unchanged after a modeled tail-read fault. Reference fatal
+outcomes establish read category, address and width only; they expose no CPU
+poststate and do not validate hardware ordering, rollback or fault priority.
+The outer model bundle PC and inner reference tail PC are recorded separately.
+Only the obsolete ISA deferred-halfword-load tuple F101/3020 + 603A retires;
+all other fixture definitions and unrelated functions remain unchanged.
+
+The parent build and seven serialized acceptance gates pass on the approved
+freeze: full ISA, CPU profiles, Felucca IRQ, boot, ED58 unsigned pre-indexed
+halfword, signed halfword and the new focused parallel gate. The latter
+passes 74 supported cases, one generic replay and 12 modeled faults with
+a per-fixture MAX of 100. The initial runner naming error is preserved
+separately; its corrected CPU-profile invocation passed.
+Unchanged firmware under a 200,000,000-instruction bound advances 4,949
+instructions from F040 to 0111 TBH at `0x02009bbc`, after 117,606,322 retired
+instructions and 940,850,584 ns. Renamed generic loading matches all captured
+JSON state except the profile label, exact LCD PPM bytes and latest ALNK-half
+bytes. Whole SRAM is not compared across poisoned fixture and cold generic
+initialization. Audio entries/returns are 103/103 and TIMER entries/returns
+are 5,175/5,175, with guard messages and watchdog expirations zero. The LCD
+is busy at debug stage4/home1/frame1; bootguard is still pending at 940 guest
+ms. All 55,296 captured sample words are zero. Completed HOME, synthesis,
+sustained 30 seconds, physical-input acceptance and native execution remain
+unverified.
+
+Latest stop: 0111 (TBH) at `0x02009bbc`, 117,606,322
+instructions and 940,850,584 ns. After the F040/0165 + 624A compact unsigned halfword tail is admitted,
+unchanged firmware advances 4,949 instructions to the compact 0111 TBH
+instruction at `0x02009bbc` during HOME drawing. Exact compact table-branch
+semantics remain the next read-only research scope. Captured debug stage is
+4 with home=1 and ui_frames=1, but the LCD is busy; this is an unfinished
+HOME draw, not a completed frame. Guest ms=940, scan frames=470, bootguard
+failed=0/pending=1 and all captured audio sample words remain zero.
+Caches use `after-parallel-compact-unsigned-halfword` and its `-generic` label; main repo
+`.deps/qemu-parallel-compact-unsigned-halfword-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 103/103; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_parallel_compact_unsigned_halfword.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

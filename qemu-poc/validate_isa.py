@@ -642,7 +642,6 @@ def main():
                        "parallel literal ADD lost full destination bank, incoming source, flags or eight-byte retirement")
     for name, base, tail, reason in [
         ("overlapping-destination", 0x01c08000, [0xe041, 0x2222], "unsupported instruction 0xf101"),
-        ("deferred-halfword-load", 0x01c08000, [0x603a], "unsupported instruction 0xf101"),
         ("unaligned-halfword-store", 0x01c08001, [0x60b9], "unaligned access"),
     ]:
         image = CACHE / f"literal-add-parallel-{name}.bin"

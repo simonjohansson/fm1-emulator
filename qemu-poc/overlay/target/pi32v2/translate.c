@@ -934,6 +934,7 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     }
     if ((op & 0xff88) == 0x0780) { return 1u << ((op >> 4) & 7); }
     if ((op & 0xe008) == 0x6000) { return op & 128 ? 0 : 1u << (op & 7); }
+    if ((op & 0xe088) == 0x6008) { return 1u << (op & 7); }
     /* Reached F101/3020 + 60B9 stores the incoming low halfword,
      * with neither a GPR destination nor base writeback. */
     if ((op & 0xe088) == 0x6088) { return 0; }
