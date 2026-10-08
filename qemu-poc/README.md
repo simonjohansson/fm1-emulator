@@ -9,6 +9,43 @@ macOS is the current target; Linux and Windows are deferred.
 - [OPCODE_COVERAGE.md](OPCODE_COVERAGE.md): saved-corpus instruction gaps.
 - [LICENSES.md](LICENSES.md): implementation provenance and licensing.
 
+## Native macOS executable
+
+Build the standalone program from the repository root:
+
+```sh
+make emulator
+./emulator path/to/firmware.bin
+```
+
+The generated `emulator` is one native executable with GLib, gettext and PCRE2
+linked in. Running it requires only macOS's built-in libraries and frameworks;
+no Python, mise, Homebrew or external QEMU installation is used at runtime.
+It opens the Cocoa display with CoreAudio output and runs until the window closes.
+Use `./emulator --help` for controls, `--no-audio` for silent display or
+`--headless` for execution without a window. `--qemu` exposes the original QEMU
+arguments for developer diagnostics.
+
+The firmware argument is a raw application-entry image accepted by the current
+FM-1 loader. ROM boot and packed/encrypted firmware packages remain unsupported.
+Firmware is supplied separately and is never identified by name or hash to select
+CPU or hardware behavior.
+
+Compilation still uses QEMU's Python/Meson/Ninja toolchain, managed by mise, and
+macOS compiler/GLib development files. `make emulator` uses an isolated standalone
+build and checks that the output loads only macOS system libraries. Static
+archives for GLib, gettext and PCRE2 must be available to the compiler. The normal
+developer build and bounded validation scripts remain available below.
+
+The current verified artifact is Apple Silicon (arm64), with minimum macOS 27
+selected by the local compiler. Other deployment targets/platforms are unvalidated.
+The build also produces `qemu-poc/.cache/fm1-emulator-macos-arm64.tar.gz` containing
+the executable and notices, with no Python scripts or external library files.
+
+The release directory is `qemu-poc/.cache/release/`; only `emulator` is required
+for execution. Keep the accompanying license notices and corresponding source/
+build inputs when redistributing. The generated root executable is ignored by Git.
+
 ## Build and run
 
 From `/Users/simonjohansson/src/fm1-qemu-poc` (`codex/qemu-poc`):

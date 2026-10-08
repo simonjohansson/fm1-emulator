@@ -46,6 +46,20 @@ def main():
                 raise SystemExit("pinned Cocoa activity hook anchor differs")
             content = content.replace(before, after)
     write_changed(cocoa, content)
+    # Native firmware launcher shares QEMU's main-thread Cocoa lifecycle.
+    entry = SOURCE / "system/main.c"
+    content = entry.read_text()
+    for before, after in [
+        ('#include "system/system.h"',
+         '#include "system/system.h"\n#include "fm1-launcher.h"'),
+        ('    qemu_init(argc, argv);',
+         '    fm1_launcher_arguments(&argc, &argv);\n    qemu_init(argc, argv);'),
+    ]:
+        if after not in content:
+            if content.count(before) != 1:
+                raise SystemExit("pinned native launcher hook anchor differs")
+            content = content.replace(before, after)
+    write_changed(entry, content)
     # Resolve contained ordinary MMIO reads using the existing subpage table.
     # Keep upstream dispatch/validation and all complex accesses unchanged.
     physmem = SOURCE / "system/physmem.c"
