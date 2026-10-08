@@ -16,7 +16,9 @@ import time
 from behavior import QMP
 from support import QEMU, ROOT, environment
 
-DEFAULT_READY = "0x01c7c08c:0x42475244,0,0"
+# Read-only Felucca observations: valid debug block and the stage written
+# after ui_draw returns. Bootguard is a later 30-second health check.
+DEFAULT_READY = ("0x01c7c040:0x44424731", "0x01c7c06c:9")
 INSTRUCTIONS_PER_MS = 125000  # Existing shift=3 functional clock: 8 ns/step.
 
 
@@ -234,7 +236,7 @@ def main():
     parser.add_argument("--seconds", type=float, default=30, help="host seconds of clicking after readiness (default: 30)")
     parser.add_argument("--boot-timeout", type=float, default=180, help="host boot deadline (default: 180)")
     parser.add_argument("--ready-memory", type=memory_condition, action="append", help="require SRAM ADDRESS:WORD[,WORD...]; repeat for multiple conditions")
-    parser.add_argument("--ready-console", help="require this console regex; overrides default bootguard check")
+    parser.add_argument("--ready-console", help="require this console regex; overrides default UI-ready check")
     parser.add_argument("--hold-ms", type=float, default=80, help="button hold in both host and guest milliseconds (default: 80)")
     parser.add_argument("--gap-ms", type=float, default=20, help="released gap in both host and guest milliseconds (minimum/default: 20)")
     parser.add_argument("--seed", type=int, help="random seed; saved with the input sequence")
@@ -250,7 +252,7 @@ def main():
         except re.error as error:
             parser.error(f"invalid readiness regex: {error}")
     if args.ready_memory is None:
-        args.ready_memory = [] if args.ready_console else [memory_condition(DEFAULT_READY)]
+        args.ready_memory = [] if args.ready_console else [memory_condition(value) for value in DEFAULT_READY]
     args.firmware = args.firmware.resolve()
     if not args.firmware.is_file() or not QEMU.is_file():
         parser.error("firmware and built ./emulator must exist")

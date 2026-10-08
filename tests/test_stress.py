@@ -79,6 +79,21 @@ class StressTests(unittest.TestCase):
                 self.assertGreaterEqual(event["guest_instructions"] - previous["guest_instructions"],
                                         2_500_000)
 
+    def test_default_starts_at_ui_ready_without_waiting_for_bootguard(self):
+        guest = Guest()
+        guest.write(0x01c7c040, 0x44424731)
+        guest.write(0x01c7c06c, 9)
+        ready = guest.instructions
+        guest.branch_zero(2, guest.pc)
+        result, report, events, _ = self.run_stress(guest, "--seconds", ".1")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(events)
+        self.assertEqual(report["ready_memory"], [
+            {"address": 0x01c7c040, "values": [0x44424731]},
+            {"address": 0x01c7c06c, "values": [9]}])
+        self.assertGreaterEqual(events[0]["guest_instructions"], ready)
+        self.assertLess(report["boot_host_seconds"], 5)
+
     def test_readiness_timeout_never_sends_input(self):
         guest = Guest()
         guest.literal(0, 0)
