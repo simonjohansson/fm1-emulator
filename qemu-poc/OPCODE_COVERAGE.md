@@ -25,6 +25,13 @@ predicate completion, IRQ behavior or complete firmware compatibility.
 Focused execution gates and unchanged-firmware progress are separate evidence.
 The latest runtime checkpoint and next reached gap are in [BOOTING.md](BOOTING.md).
 
+Console bring-up subsequently reached `SSYNC` (`0x0022`). It now emits a full
+TCG memory barrier in the single-CPU, coherent, synchronous memory/MMIO model;
+it does not advance devices or alter IRQ state. Focused store/load, flags,
+retirement and conditional completion checks cover this qualified behavior.
+Physical cache/write-buffer timing remains unverified. The static counts above
+remain the frozen Batch D inventory and have not been recomputed.
+
 ## Inputs and method
 
 The frozen union contains **37 artifact paths, 35 ELF identities and 21
@@ -60,7 +67,7 @@ E53F regions / 12 complete raw patterns** stay outside confirmed form counts.
 | C | EC20 vendor-only IF; E8A0 nonzero low12 operands remain outside its admitted subset |
 | D | EE53 signed-offset byte store; EC50 kind3 doubleword pre-store |
 | E | Eight register-pair arithmetic/shift forms |
-| F | Four special-register/control forms: extended push, SSYNC, trigger, IDLE |
+| F | Three special-register/control forms: extended push, trigger, IDLE |
 | G | Four testset, flag-EQ branch and repeat forms |
 | H | Two qualified floating branches; opaque decoding research is separate |
 

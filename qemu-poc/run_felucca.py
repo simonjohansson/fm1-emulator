@@ -52,7 +52,8 @@ def run_cocoa(firmware_dir):
     if "coreaudio" not in audio.stdout.split():
         raise SystemExit("Enable macOS sound: mise exec python@3.13.15 -- python qemu-poc/build.py")
     env = {key: value for key, value in os.environ.items() if not key.startswith("FM1_POC_")}
-    print("Opening the Felucca display with macOS sound. Close the window to quit.", flush=True)
+    print("Opening the Felucca display with macOS sound. Close the window to quit.",
+          file=sys.stderr, flush=True)
     os.chdir(HERE.parent)
     # Preserve 8 ns/instruction; sleep when ahead without requiring real-time catch-up.
     # Ordinary application handoff has no validation observer or instruction limit.
@@ -61,7 +62,9 @@ def run_cocoa(firmware_dir):
                     "-display", "cocoa,zoom-to-fit=on,zoom-interpolation=off",
                     "-audiodev", "coreaudio,id=fm1,out.frequency=44100,out.channels=2",
                     "-global", "fm1-alnk.audiodev=fm1",
-                    "-serial", "none", "-monitor", "none", "-nodefaults",
+                    "-chardev", "stdio,id=fm1-console,signal=on",
+                    "-serial", "chardev:fm1-console",
+                    "-monitor", "none", "-nodefaults",
                     "-kernel", str(firmware_dir / "felucca.bin"), "-append", "application"], env)
 
 

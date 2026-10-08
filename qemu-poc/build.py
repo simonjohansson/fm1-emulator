@@ -114,6 +114,7 @@ def publish_executable(build):
     integrate.write_changed(release / "RUNNING.txt",
         "Run: ./emulator path/to/firmware.bin\n"
         "Close the window to quit. Use --help for controls.\n"
+        "The USB console writes to stdout and accepts commands from stdin.\n"
         "Python and third-party library installations are not required to run.\n"
         "This executable targets application-entry binaries; ROM/package boot is unsupported.\n"
         "For redistribution retain licensing and provide the corresponding source/build inputs.\n")

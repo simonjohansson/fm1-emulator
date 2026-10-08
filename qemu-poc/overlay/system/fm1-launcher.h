@@ -16,7 +16,8 @@ static void fm1_launcher_help(const char *program)
            "  --version   Show the emulator version\n"
            "  --qemu      Pass the remaining arguments directly to QEMU\n"
            "\n"
-           "Controls: Z/C notes, X/V octave, P/O pages, H HOME.\n",
+           "Controls: Z/C notes, X/V octave, P/O pages, H HOME.\n"
+           "USB console: stdout/stdin; Ctrl-C exits.\n",
            program, program);
 }
 
@@ -151,8 +152,10 @@ static void fm1_launcher_arguments(int *argc, char ***argv)
         FM1_LAUNCHER_ARG("-global");
         FM1_LAUNCHER_ARG("fm1-alnk.audiodev=fm1");
     }
+    FM1_LAUNCHER_ARG("-chardev");
+    FM1_LAUNCHER_ARG("stdio,id=fm1-console,signal=on");
     FM1_LAUNCHER_ARG("-serial");
-    FM1_LAUNCHER_ARG("none");
+    FM1_LAUNCHER_ARG("chardev:fm1-console");
     FM1_LAUNCHER_ARG("-monitor");
     FM1_LAUNCHER_ARG("none");
     FM1_LAUNCHER_ARG("-nodefaults");

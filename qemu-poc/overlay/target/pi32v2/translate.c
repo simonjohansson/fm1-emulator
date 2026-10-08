@@ -1173,6 +1173,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (op == 0x0060) { tcg_gen_andi_i32(spr[ICFG], spr[ICFG], ~0x200u); }
         else { tcg_gen_ori_i32(spr[ICFG], spr[ICFG], 0x200); }
         db->is_jmp = DISAS_EXIT;
+    } else if (op == 0x0022) {
+        /* SSYNC orders memory and MMIO. This single-CPU machine has coherent
+         * synchronous accesses and no outstanding CPU write/cache queue.
+         * Preserve full ordering without advancing virtual time or IRQs. */
+        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_SC);
     } else if (op != 0x0020 && op != 0x0000) {
         goto illegal;
     }
