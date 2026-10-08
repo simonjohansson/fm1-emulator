@@ -1373,7 +1373,7 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_adc.py
 ```
 
-### F1F4 parallel signed division and latest checkpoint
+### F1F4 parallel signed division checkpoint
 
 The sole production change is an exact E1F4 signed-mode1 destination mask in
 parallel classification. Scalar division, helpers, incoming GPR snapshots,
@@ -1403,7 +1403,7 @@ Unchanged boot advances 54 instructions to FF41 at `0x0200db62`, with audio
 entries/returns 101/101 and timer 5,105/5,105. HOME frames and nonzero samples
 remain absent; no firmware patch or hardware compatibility claim is made.
 
-Latest stop: FF41/0100/FCF0 at `0x0200db62`, 116,554,906
+At this milestone: FF41/0100/FCF0 at `0x0200db62`, 116,554,906
 instructions and 932,439,256 ns. Vendor `if (r0 != r1) goto -1568` targets `0x0200d548`.
 The current scanner reports a four-byte access for this six-byte instruction.
 Establish exact primary fields, displacement base, predicate boundaries and
@@ -1414,6 +1414,52 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_parallel_signed_divide.py
+```
+
+### FF41 long register-inequality branch and latest checkpoint
+
+Exact canonical FF41 now compares the full 32-bit GPRs in operand bits12:15
+and 8:11, preserves all registers/PSR/RETS and branches by twice the signed 16-bit displacement
+in its third word, relative to PC+6. Its primary constructor explicitly requires a zero low byte.
+Exact scanner sizing is six bytes. A dedicated internal family guard rejects a
+final selected THEN with ELSE before retirement/branch effects; existing FF0C,
+CALL and common predicate helpers and all classifiers remain unchanged.
+
+Pinned primary and vendor fields agree. Separate research retained 328 probes,
+305 expected full-state completions, scanner/conditional disagreements and all
+nine reference-valid nonzero low bytes. The reviewed focused gate passes 73
+reference positives, 13 independently expected six-byte model positives, one
+default-loader replay and 22 modeled faults. Full ISA, 98 profiles, IRQ, boot,
+long signed-literal and signed-register-LE regressions pass.
+
+The independent executable scans FF41 as four bytes in conditional arms,
+executing a skipped zero displacement as an extra NOP or faulting on third word 4.
+Primary six-byte expectations check markers, counts and following IF separately,
+with raw contradictions retained. A guarded final THEN exit faults at FF41
+before count; other taken exits preserve the inherited following-IF fault after
+branch retirement. Retained predicates can block IRQ admission by inspection;
+no IRQ validation of those exits is claimed. Canonical low-byte and neighboring
+FF40/42/43/48/49 rejection are model admission/deferred policies despite valid
+reference completions. True 32-bit PC-wrap execution, hardware conditional and
+fault behavior remain unverified. No persisted capture schema changes.
+
+Unchanged boot advances 44 instructions to F194 at `0x020086c4` in btn_hold.
+HOME=1 and ui_frames=1, but stage=1 and the LCD remains busy; drawing has not
+completed. Audio/timer entries and returns remain 101/101 and 5,105/5,105, with
+zero nonzero samples. Renamed generic captured state and all sample/LCD bytes
+match, without whole-SRAM comparison across initialization modes.
+
+Latest stop: F194/1152 +6004 at `0x020086c4`, 116,554,950
+instructions and 932,439,608 ns. Vendor `r1 = r5 & (1 << r1)` is paired with `r4 = [incoming r0]`
+in `btn_hold`, reached through HOME input processing. Scalar E194 exists;
+research exact mode2 parallel admission, index and incoming/tail semantics
+before changing the classifier.
+Caches use `after-long-register-ne-branch` and its `-generic` label; main repo
+`.deps/qemu-long-register-ne-branch-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 101/101; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_long_register_ne_branch.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

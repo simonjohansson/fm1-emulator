@@ -21,7 +21,7 @@ not files the current QEMU raw-image loader can execute directly.
 | `build/foundation/firmware.bin` | 592 | `d22ba9de32a8ba3cfee7aec804468d7dea2db8a7c83d0c0707f996cbcfff8ac7` | Application entry; startup, matrix, RAM code and TIMER5. Timer subsection enters `0x02000238` |
 | `tests/fixtures/display/firmware.bin` | 2,700 | `3bc59ff7d09de123174b49ea786582a1e137b2e1609074b5189c9fb024f19ba2` | Application entry; SPI/DMA display and physical matrix fixture |
 | `build/fm1-diag.bin` | 14,804 | `781005cfcc4e0b562291fa747a0fa956204ee97c396c39214df04feaf86cc7e2` | Unchanged FM-1_980 application handoff; running diagnostic/disconnected USB retry |
-| `FELUCCA/build/felucca.bin` | 417,668 | `12a4b4ea47248467f566ec3b6984b08f2f89d6ef5a8e9e494cab5184e8fadb36` | Pinned unchanged application; startup, splash and completed audio/timer IRQ service; latest FF41 long register-inequality branch failure after parallel signed division |
+| `FELUCCA/build/felucca.bin` | 417,668 | `12a4b4ea47248467f566ec3b6984b08f2f89d6ef5a8e9e494cab5184e8fadb36` | Pinned unchanged application; startup, splash and completed audio/timer IRQ service; latest F194 parallel indexed-bit AND failure in HOME input processing |
 | `build/display/firmware.bin` | 17,056 | `ec7279a0d78bad1e511e147c854d91c4e72682f0c3842286615294043fc50dc0` | Separate full display application; not the 2,700-byte acceptance fixture |
 | `build/fm1-diag.fwsc` | 609,649 | `5ed4ea26bef92218a07392ab374f226ae1bd69cb03c833ae5d5155c5274361e0` | Package available; package boot not established in QEMU |
 | `build/display/firmware.fwsc` | 609,649 | `6c086e0c550ef1b418007bbc4bb33b3b767a6a4901fe6145a88eb3d1adf29d57` | Package available; package boot not established in QEMU |

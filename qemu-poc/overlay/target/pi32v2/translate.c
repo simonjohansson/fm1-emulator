@@ -783,6 +783,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_andi_i32(masked, read_gpr(d, x >> 12), packed_mask(x));
         next = here + 6;
         count(d); branch(d, next + (int16_t)displacement * 2, next, masked, op & 1);
+    } else if (op == 0xff41) {
+        uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
+        if (x & 255) { goto illegal; }
+        next = here + 6;
+        gen_helper_pi32v2_long_register_ne_end(tcg_env, tcg_constant_i32(next));
+        count(d); compare_branch(d, next + (int16_t)displacement * 2, next, TCG_COND_NE,
+                                 read_gpr(d, x >> 12), read_gpr(d, (x >> 8) & 15));
     } else if (op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09 || op == 0xff0c) {
         uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
         TCGCond cond;
@@ -932,7 +939,7 @@ static unsigned operation_size(uint16_t op)
 {
     if ((op & 0xffc0) == 0xffc0 || (op & 0xfff0) == 0xffe0 || op == 0xff80 ||
         op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09 || op == 0xff0c ||
-        op == 0xff60 || op == 0xff61) { return 6; }
+        op == 0xff41 || op == 0xff60 || op == 0xff61) { return 6; }
     return op >> 13 == 7 ? 4 : 2;
 }
 static uint32_t instruction_end(PiDisasContext *d, uint32_t here)

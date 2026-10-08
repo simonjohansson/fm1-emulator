@@ -381,6 +381,16 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   mode0/conflicts remain qualified model policies. Evidence:
   `.deps/qemu-parallel-signed-divide-2026-10-08/`. HOME/synthesis still open.
 
+- 2026-10-08: Stage 3 exact FF41 register-inequality branch and six-byte sizing
+  complete, independently reviewed. Dedicated final THEN+ELSE guard preserves
+  existing helpers and predicate policy. Focused 73 reference positives,
+  13 independent primary model positives, one generic and 22 modeled faults
+  pass, with full/adjacent branch gates. Unchanged boot advances 44 instructions
+  to F194 at `0x020086c4` in HOME input processing; renamed captures match.
+  First HOME flag/frame count is set, but no completed frame/synthesis claim.
+  Reference scanner/conditional and canonical-policy differences are retained.
+  Evidence: `.deps/qemu-long-register-ne-branch-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -507,7 +517,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is FF41 long register-inequality branch, recorded below.
+  latest firmware blocker is F194 parallel indexed-bit AND, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -517,16 +527,16 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: FF41 long register-inequality branch
+## Current firmware blocker: F194 parallel indexed-bit AND
 
-Latest unchanged boot: `.cache/felucca-validation/after-parallel-signed-divide/`.
-Vendor `if (r0 != r1) goto -1568` targets `0x0200d548`.
-The current scanner reports a four-byte access for this six-byte instruction.
-Establish exact primary fields, displacement base, predicate boundaries and
-independent reference behavior before changing the shared CPU paths.
+Latest unchanged boot: `.cache/felucca-validation/after-long-register-ne-branch/`.
+Vendor `r1 = r5 & (1 << r1)` is paired with `r4 = [incoming r0]`
+in `btn_hold`, reached through HOME input processing. Scalar E194 exists;
+research exact mode2 parallel admission, index and incoming/tail semantics
+before changing the classifier.
 
-- PC `0x0200db62`, words `FF41/0100/FCF0`.
-- Instructions 116,554,906; virtual time 932,439,256 ns.
+- PC `0x020086c4`, words `F194/1152 +6004`.
+- Instructions 116,554,950; virtual time 932,439,608 ns.
 - IRQ11 entries/returns 101/101;
   IRQ63 entries/returns 5105/5105.
 - ALNK completions 106, acknowledgments 101,
@@ -535,9 +545,42 @@ independent reference behavior before changing the shared CPU paths.
 - LCD visible=True, busy=True; guard debug message
   `0x0`, watchdog expirations 0.
   Audio and timer service return successfully; synthesis and home remain incomplete.
-- QEMU SHA-256: `5427e3efda2ef0895131d1723576eeb759aceb94ecdff2cdbcfb781ed866dcfb`.
-- Generic replay: `after-parallel-signed-divide-generic`.
-- Durable evidence: main repo `.deps/qemu-parallel-signed-divide-2026-10-08/`.
+- QEMU SHA-256: `4bad6b1402e418c4756f5ef15263336af894d1fe9ed4144318897fe44ab24a07`.
+- Generic replay: `after-long-register-ne-branch-generic`.
+- Durable evidence: main repo `.deps/qemu-long-register-ne-branch-2026-10-08/`.
+
+### Resolved FF41 long register-inequality branch
+
+Exact canonical FF41 now compares the full 32-bit GPRs in operand bits12:15
+and 8:11, preserves all registers/PSR/RETS and branches by twice the signed 16-bit displacement
+in its third word, relative to PC+6. Its primary constructor explicitly requires a zero low byte.
+Exact scanner sizing is six bytes. A dedicated internal family guard rejects a
+final selected THEN with ELSE before retirement/branch effects; existing FF0C,
+CALL and common predicate helpers and all classifiers remain unchanged.
+
+Pinned primary and vendor fields agree. Separate research retained 328 probes,
+305 expected full-state completions, scanner/conditional disagreements and all
+nine reference-valid nonzero low bytes. The reviewed focused gate passes 73
+reference positives, 13 independently expected six-byte model positives, one
+default-loader replay and 22 modeled faults. Full ISA, 98 profiles, IRQ, boot,
+long signed-literal and signed-register-LE regressions pass.
+
+The independent executable scans FF41 as four bytes in conditional arms,
+executing a skipped zero displacement as an extra NOP or faulting on third word 4.
+Primary six-byte expectations check markers, counts and following IF separately,
+with raw contradictions retained. A guarded final THEN exit faults at FF41
+before count; other taken exits preserve the inherited following-IF fault after
+branch retirement. Retained predicates can block IRQ admission by inspection;
+no IRQ validation of those exits is claimed. Canonical low-byte and neighboring
+FF40/42/43/48/49 rejection are model admission/deferred policies despite valid
+reference completions. True 32-bit PC-wrap execution, hardware conditional and
+fault behavior remain unverified. No persisted capture schema changes.
+
+Unchanged boot advances 44 instructions to F194 at `0x020086c4` in btn_hold.
+HOME=1 and ui_frames=1, but stage=1 and the LCD remains busy; drawing has not
+completed. Audio/timer entries and returns remain 101/101 and 5,105/5,105, with
+zero nonzero samples. Renamed generic captured state and all sample/LCD bytes
+match, without whole-SRAM comparison across initialization modes.
 
 ### Resolved F1F4 parallel signed division
 
@@ -1069,13 +1112,13 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached FF41/0100/FCF0 long register-inequality branch to the CPU worker.
-   Verify pinned primary/vendor fields and exact six-byte sizing, displacement
-   base, aliases, forward/backward and taken/untaken behavior with independent
-   reference. Cover skipped widths, balanced predicate completion and next IF,
-   malformed/deferred fields, branch/PC guard faults and wrap arithmetic where
-   executable evidence permits. Preserve existing branch families, helpers,
-   predicate policies and parallel classification; review before implementation.
+2. Assign reached F194/1152 +6004 parallel indexed-bit AND to the CPU worker.
+   Establish pinned primary/scalar facts and independent index/field/alias probes,
+   including 32-plus indices, incoming values when a tail overwrites sources,
+   head and extended-tail roles, flags, conditional sizing and precheck/access
+   faults. Keep exact reached mode2 as the initial scope; qualify deferred modes
+   and destination conflicts. Preserve scalar bit semantics, helpers and common
+   bundle machinery. Review before implementation.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
@@ -1162,6 +1205,36 @@ scans/debounce, baseline snapshots and resulting UI/audio changes:
 
 Verify note-on activity reaches actual nonzero ALNK samples. Release can
 have an ADSR tail; do not require instantaneous silence.
+
+### Reviewed physical input ownership before implementation
+
+Read-only design and independent Sol 6.1 Extra high review are retained in
+main `.deps/qemu-physical-input-design-2026-10-08/`. Implement after verified
+HOME through one private DeviceState child and QEMU's standard KEY handler,
+shared by Cocoa and headless input-send-event. Keep all queue state under BQL;
+at most one async CPU drain applies physical levels between guest instructions.
+Own host closures separately and OR them with existing fixture/display closures.
+Release-all clears only the child's contribution.
+
+Pause/reset invalidates pending presses, requests release-all outside the
+64-entry FIFO and quarantines held bindings. A later keyup rearms; a press/release
+cycle only rearms if the prior release was lost while paused. Check runstate in
+the drain. Overflow flushes stale work, releases owned closures and latches a
+host error invalidating acceptance. Handler deactivate does not disable ingress.
+
+Unrealize must run on the main/I/O thread before CPU teardown: mark inactive,
+invalidate events, unregister input/runstate handlers, then synchronously
+run_on_cpu to fence queued work and release closures before clearing storage.
+Calling that fence on the target CPU provides no queue barrier. Timer-driven
+teardown must first marshal to the main AioContext. Verify callback lifetimes,
+duplicate/autorepeat suppression, simultaneous keys, pause/lost releases,
+repeated reset, overflow and queued-work teardown; preserve fixture closures.
+
+Optional virtual timers emit standard qemu_input_event_send plus sync through
+the same handler. Keep firmware identities, HOME/bootguard observations and
+scan-cadence calibration in test support. Preserve existing state/SRAM/ALNK
+capture schemas; no guest-variable writes, custom QMP or upstream Cocoa changes.
+Then complete the note/release, octave and encoder acceptance described above.
 
 ### Compare reference and expose the running viewer
 

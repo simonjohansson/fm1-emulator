@@ -130,6 +130,16 @@ void HELPER(pi32v2_signed_branch_end)(CPUPi32v2State *env, uint32_t next)
     }
 }
 
+/* FF41 has independent six-byte evidence, but the separate reference scans
+ * it as four bytes inside IF arms. Preserve the scoped final-THEN/ELSE
+ * rejection before retirement or branch effects; hardware remains unverified. */
+void HELPER(pi32v2_long_register_ne_end)(CPUPi32v2State *env, uint32_t next)
+{
+    if (env->predicate_from && next == env->predicate_end) {
+        pi32v2_fail(env, "final THEN FF41 register branch with ELSE is unsupported");
+    }
+}
+
 /* Fresh implementation of the four observed condition bits. No Rust code
  * is linked or copied. The probe validates values, not all flag semantics. */
 uint32_t HELPER(pi32v2_alu)(CPUPi32v2State *env, uint32_t a, uint32_t b,
