@@ -914,6 +914,10 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
         uint16_t x = fetch(d, here + 2);
         return x & 15 ? -1 : 1u << (x >> 12);
     }
+    if (op == 0xe1f4) {
+        uint16_t x = fetch(d, here + 2);
+        return (x & 15) == 1 ? 1u << (x >> 12) : -1;
+    }
     if (op == 0xe430) {
         uint16_t x = fetch(d, here + 2);
         return x & 255 ? -1 : 1u << (x >> 12);

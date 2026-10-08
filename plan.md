@@ -372,6 +372,15 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   and fatal-state/source-review limits remain explicit. Evidence:
   `.deps/qemu-adc-2026-10-08/`. Home/synthesis still open.
 
+- 2026-10-08: Stage 3 exact F1F4 parallel signed division complete, independently
+  reviewed. Four classifier lines preserve scalar/helpers/common bundle paths.
+  Research 450 probes / 424 full-state completions; focused 134 reference,
+  one generic and 35 modeled faults pass, plus full/adjacent CPU gates.
+  Unchanged boot advances 54 instructions to FF41 at `0x0200db62`; renamed
+  captured state/sample/LCD match. Tail fault phases and reference-valid deferred
+  mode0/conflicts remain qualified model policies. Evidence:
+  `.deps/qemu-parallel-signed-divide-2026-10-08/`. HOME/synthesis still open.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -498,7 +507,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is parallel signed division F1F4, recorded below.
+  latest firmware blocker is FF41 long register-inequality branch, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -508,16 +517,16 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: parallel signed division F1F4
+## Current firmware blocker: FF41 long register-inequality branch
 
-Latest unchanged boot: `.cache/felucca-validation/after-adc/`.
-Vendor `r0 = r1 / r0 (s)` is paired with `[sp+44] = incoming r1` in the
-foreground master-input smoothing path. Scalar signed division already works;
-research exact parallel admission, incoming snapshots, modes, flags and fault
-phases before changing the shared classifier. Preserve existing helpers.
+Latest unchanged boot: `.cache/felucca-validation/after-parallel-signed-divide/`.
+Vendor `if (r0 != r1) goto -1568` targets `0x0200d548`.
+The current scanner reports a four-byte access for this six-byte instruction.
+Establish exact primary fields, displacement base, predicate boundaries and
+independent reference behavior before changing the shared CPU paths.
 
-- PC `0x0200e2fc`, words `F1F4/0011 +2B81`.
-- Instructions 116,554,852; virtual time 932,438,824 ns.
+- PC `0x0200db62`, words `FF41/0100/FCF0`.
+- Instructions 116,554,906; virtual time 932,439,256 ns.
 - IRQ11 entries/returns 101/101;
   IRQ63 entries/returns 5105/5105.
 - ALNK completions 106, acknowledgments 101,
@@ -526,9 +535,39 @@ phases before changing the shared classifier. Preserve existing helpers.
 - LCD visible=True, busy=True; guard debug message
   `0x0`, watchdog expirations 0.
   Audio and timer service return successfully; synthesis and home remain incomplete.
-- QEMU SHA-256: `440a52cf7b1d837d609603d10f265db4bad92e89e8fe0b731c6ecbc9fbc9ce54`.
-- Generic replay: `after-adc-generic`.
-- Durable evidence: main repo `.deps/qemu-adc-2026-10-08/`.
+- QEMU SHA-256: `5427e3efda2ef0895131d1723576eeb759aceb94ecdff2cdbcfb781ed866dcfb`.
+- Generic replay: `after-parallel-signed-divide-generic`.
+- Durable evidence: main repo `.deps/qemu-parallel-signed-divide-2026-10-08/`.
+
+### Resolved F1F4 parallel signed division
+
+The sole production change is an exact E1F4 signed-mode1 destination mask in
+parallel classification. Scalar division, helpers, incoming GPR snapshots,
+tail-first bundle execution, instruction sizing and all other classifiers remain
+unchanged. The same rule admits signed division as an extended eight-byte tail.
+Pinned primary constructor and vendor operands establish B numerator / C
+denominator; the nearby primary prose reverses B/C and that discrepancy is retained.
+
+Separate standalone research passed 424 full-state completions in 450 probes,
+covering all numerator/denominator fields, aliases and signed boundaries. The
+reviewed focused gate passes 134 reference positives, one default-loader replay
+and 35 modeled faults, including balanced six/eight-byte conditional arms followed
+by a new IF, the reached stack-store/square/shift sequence and both extended-tail
+roles. Full ISA, 98 profiles, IRQ, boot, parallel ABS and signed minimum pass.
+
+Prechecks reject unsupported modes and conflicting destinations before tail
+effects. Tail access faults precede division. Zero/overflow in a division head
+retains successful tail stores/GPR/PSR effects without a quotient or retirement;
+a faulting division tail prevents head effects and retirement. Reference fatal
+exits expose no CPU snapshot, so this fault ordering remains model policy.
+Unsigned parallel mode0 and overlapping destinations are reference-valid but
+remain deferred; malformed modes2..15 failed the reference without establishing
+hardware invalidity. Generic replay uses configured observers and compares
+captured state/sample/LCD bytes rather than whole SRAM.
+
+Unchanged boot advances 54 instructions to FF41 at `0x0200db62`, with audio
+entries/returns 101/101 and timer 5,105/5,105. HOME frames and nonzero samples
+remain absent; no firmware patch or hardware compatibility claim is made.
 
 ### Resolved SAR ADC and canonical analog ownership
 
@@ -1030,14 +1069,13 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached F1F4/0011 +2B81 parallel signed division to the CPU worker.
-   Establish exact primary/scalar facts and independent full-reference probes.
-   Check aliases, divisor/result boundaries, incoming snapshots, compact/extended
-   tails, conditional completion, conflicts and malformed-mode prechecks before
-   tail effects. Distinguish tail faults from divide-zero/overflow helper faults
-   after a successful tail; do not claim rollback or hardware fault ordering.
-   Preserve scalar division, helpers and other parallel families. Keep unsigned
-   parallel mode deferred unless separately scoped and evidenced.
+2. Assign reached FF41/0100/FCF0 long register-inequality branch to the CPU worker.
+   Verify pinned primary/vendor fields and exact six-byte sizing, displacement
+   base, aliases, forward/backward and taken/untaken behavior with independent
+   reference. Cover skipped widths, balanced predicate completion and next IF,
+   malformed/deferred fields, branch/PC guard faults and wrap arithmetic where
+   executable evidence permits. Preserve existing branch families, helpers,
+   predicate policies and parallel classification; review before implementation.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.

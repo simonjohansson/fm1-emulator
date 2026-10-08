@@ -1321,7 +1321,7 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_memory_left_shift.py
 ```
 
-### SAR ADC and canonical analog ownership and latest checkpoint
+### SAR ADC and canonical analog ownership checkpoint
 
 A private resettable SysBus SAR controller now owns CON/RES at `0x13100`;
 a separate analog component canonically owns WLA_CON0 at `0x11900`. Board
@@ -1360,7 +1360,7 @@ captured state except profile and all captured sample/LCD bytes match; whole SRA
 is not compared across initialization modes. Samples remain zero and home
 remains unverified. No hardware calibration or all-firmware claim is made.
 
-Latest stop: F1F4/0011 +2B81 at `0x0200e2fc`, 116,554,852
+At this milestone: F1F4/0011 +2B81 at `0x0200e2fc`, 116,554,852
 instructions and 932,438,824 ns. Vendor `r0 = r1 / r0 (s)` is paired with `[sp+44] = incoming r1` in the
 foreground master-input smoothing path. Scalar signed division already works;
 research exact parallel admission, incoming snapshots, modes, flags and fault
@@ -1371,6 +1371,49 @@ Audio IRQ11 entries/returns 101/101; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_adc.py
+```
+
+### F1F4 parallel signed division and latest checkpoint
+
+The sole production change is an exact E1F4 signed-mode1 destination mask in
+parallel classification. Scalar division, helpers, incoming GPR snapshots,
+tail-first bundle execution, instruction sizing and all other classifiers remain
+unchanged. The same rule admits signed division as an extended eight-byte tail.
+Pinned primary constructor and vendor operands establish B numerator / C
+denominator; the nearby primary prose reverses B/C and that discrepancy is retained.
+
+Separate standalone research passed 424 full-state completions in 450 probes,
+covering all numerator/denominator fields, aliases and signed boundaries. The
+reviewed focused gate passes 134 reference positives, one default-loader replay
+and 35 modeled faults, including balanced six/eight-byte conditional arms followed
+by a new IF, the reached stack-store/square/shift sequence and both extended-tail
+roles. Full ISA, 98 profiles, IRQ, boot, parallel ABS and signed minimum pass.
+
+Prechecks reject unsupported modes and conflicting destinations before tail
+effects. Tail access faults precede division. Zero/overflow in a division head
+retains successful tail stores/GPR/PSR effects without a quotient or retirement;
+a faulting division tail prevents head effects and retirement. Reference fatal
+exits expose no CPU snapshot, so this fault ordering remains model policy.
+Unsigned parallel mode0 and overlapping destinations are reference-valid but
+remain deferred; malformed modes2..15 failed the reference without establishing
+hardware invalidity. Generic replay uses configured observers and compares
+captured state/sample/LCD bytes rather than whole SRAM.
+
+Unchanged boot advances 54 instructions to FF41 at `0x0200db62`, with audio
+entries/returns 101/101 and timer 5,105/5,105. HOME frames and nonzero samples
+remain absent; no firmware patch or hardware compatibility claim is made.
+
+Latest stop: FF41/0100/FCF0 at `0x0200db62`, 116,554,906
+instructions and 932,439,256 ns. Vendor `if (r0 != r1) goto -1568` targets `0x0200d548`.
+The current scanner reports a four-byte access for this six-byte instruction.
+Establish exact primary fields, displacement base, predicate boundaries and
+independent reference behavior before changing the shared CPU paths.
+Caches use `after-parallel-signed-divide` and its `-generic` label; main repo
+`.deps/qemu-parallel-signed-divide-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 101/101; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_parallel_signed_divide.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
