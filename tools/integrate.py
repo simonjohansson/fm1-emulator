@@ -141,6 +141,23 @@ def main():
         if content.count(load) != 1:
             raise SystemExit("pinned TCG lockless load hook anchor differs")
         content = content.replace(load, lockless)
+    # Read simple lockless regions without the generic dispatch layers
+    # (fm1-mmio-read.h); other regions keep memory_region_dispatch_read.
+    for before, after in [
+        ("static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,",
+         '#include "fm1-mmio-read.h"\n\n'
+         "static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,"),
+        ("        r = memory_region_dispatch_read(mr, mr_offset, &val,\n"
+         "                                        this_mop, full->attrs);\n",
+         "        if (!fm1_mmio_read(mr, mr_offset, this_size, full->attrs, &val, &r)) {\n"
+         "            r = memory_region_dispatch_read(mr, mr_offset, &val,\n"
+         "                                            this_mop, full->attrs);\n"
+         "        }\n"),
+    ]:
+        if after not in content:
+            if content.count(before) != 1:
+                raise SystemExit("pinned TCG MMIO read hook anchor differs")
+            content = content.replace(before, after)
     write_changed(cputlb, content)
     # Every icount deadline notifies each AioContext of the virtual clock,
     # waking the main loop (and contending for the BQL) ten thousand times
