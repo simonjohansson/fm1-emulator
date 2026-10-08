@@ -12,6 +12,7 @@
 #include "exec/translation-block.h"
 #include "fm1-nor.h"
 #include "fm1-image.h"
+#include "fm1-sfr.h"
 
 #define SPI0_BASE 0x11c00u
 #define SFC_BASE 0x40200u
@@ -434,13 +435,12 @@ void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
     nor->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, transfer_complete, nor);
     nor->write_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, write_complete, nor);
     memory_region_init_io(&nor->spi_mmio, owner, &spi_ops, nor, "fm1.spi0", 20);
-    memory_region_add_subregion(get_system_memory(), SPI0_BASE, &nor->spi_mmio);
+    fm1_sfr_map(SPI0_BASE, &nor->spi_mmio);
     memory_region_init_io(&nor->sfc_mmio, owner, &sfc_ops, nor, "fm1.sfc", 4);
-    memory_region_add_subregion(get_system_memory(), SFC_BASE, &nor->sfc_mmio);
+    fm1_sfr_map(SFC_BASE, &nor->sfc_mmio);
     memory_region_init_io(&nor->encryption_mmio, owner, &encryption_ops, nor,
                           "fm1.sfcenc", 16);
-    memory_region_add_subregion(get_system_memory(), ENCRYPTION_BASE,
-                                &nor->encryption_mmio);
+    fm1_sfr_map(ENCRYPTION_BASE, &nor->encryption_mmio);
     /* Read-only to CPU stores (fill_tlb); completed SPI writes update the
      * device storage directly. ROMD mode follows the SFC routing. */
     memory_region_init_rom_device(&nor->xip, NULL, &xip_ops, nor, "fm1.diag-xip",

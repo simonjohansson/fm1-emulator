@@ -6,6 +6,7 @@
 #include "system/system.h"
 #include "qapi/error.h"
 #include "fm1-usb.h"
+#include "fm1-sfr.h"
 
 #define USB_BASE 0x11800u
 #define USB_PADS_BASE 0x51000u
@@ -362,7 +363,7 @@ void fm1_usb_init(FM1PocUSB *usb, Object *owner, Pi32v2CPU *cpu)
                   qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000000);
     }
     memory_region_init_io(&usb->mmio, owner, &usb_ops, usb, "fm1.usb0-cold", 0x40);
-    memory_region_add_subregion(get_system_memory(), USB_BASE, &usb->mmio);
+    fm1_sfr_map(USB_BASE, &usb->mmio);
     memory_region_init_io(&usb->pads_mmio, owner, &pads_ops, usb, "fm1.usb-pads", 4);
-    memory_region_add_subregion(get_system_memory(), USB_PADS_BASE, &usb->pads_mmio);
+    fm1_sfr_map(USB_PADS_BASE, &usb->pads_mmio);
 }

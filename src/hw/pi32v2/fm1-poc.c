@@ -19,6 +19,7 @@
 #include "fm1-alnk.h"
 
 #include "fm1-poc.h"
+#include "fm1-sfr.h"
 
 /* Guards: translated code checks stores and SP writes against CPU mirrors
  * kept by the system controller; fetches are decided at translation. */
@@ -394,42 +395,39 @@ static void machine_init(MachineState *ms)
         t->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, fm1_timer_expired, t);
         memory_region_init_io(&t->mmio, OBJECT(m), &timer_ops, t,
                               i ? "fm1.timer5" : "fm1.timer4", 12);
-        memory_region_add_subregion(get_system_memory(), 0x10800 + i * 0x100, &t->mmio);
+        fm1_sfr_map(0x10800 + i * 0x100, &t->mmio);
     }
     memory_region_init_io(&m->gpio_mmio, OBJECT(m), &gpio_ops, m, "fm1.gpio", 0x1e0);
-    memory_region_add_subregion(get_system_memory(), 0x50000, &m->gpio_mmio);
+    fm1_sfr_map(0x50000, &m->gpio_mmio);
     memory_region_init_io(&m->irq_mmio, OBJECT(m), &irq_ops, m, "fm1.irq", 0xac);
-    memory_region_add_subregion(get_system_memory(), 0x01eef100, &m->irq_mmio);
+    fm1_sfr_map(0x01eef100, &m->irq_mmio);
     m->irq = qdev_get_gpio_in(DEVICE(m->cpu), 0);
     fm1_system_init(&m->system, OBJECT(m), m->cpu);
     fm1_syscon_init(&m->syscon, OBJECT(m), m->cpu);
-    memory_region_add_subregion(get_system_memory(), 0x10010,
-                               &m->syscon.mmio[FM1_SYSCON_CLK_CON1]);
-    memory_region_add_subregion(get_system_memory(), 0x10014,
-                               &m->syscon.mmio[FM1_SYSCON_CLK_CON2]);
-    memory_region_add_subregion(get_system_memory(), 0x51030,
-                               &m->syscon.mmio[FM1_SYSCON_IOMAP_CON5]);
+    fm1_sfr_map(0x10010, &m->syscon.mmio[FM1_SYSCON_CLK_CON1]);
+    fm1_sfr_map(0x10014, &m->syscon.mmio[FM1_SYSCON_CLK_CON2]);
+    fm1_sfr_map(0x51030, &m->syscon.mmio[FM1_SYSCON_IOMAP_CON5]);
     m->alnk_irq = qemu_allocate_irq(alnk_irq_input, m, 11);
     object_initialize_child(OBJECT(m), "alnk0", &m->alnk, TYPE_FM1_ALNK);
     fm1_alnk_bind(&m->alnk, m->cpu, &m->syscon);
     sysbus_realize(SYS_BUS_DEVICE(&m->alnk), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(&m->alnk), 0, 0x12e00);
+    fm1_sfr_map(0x12e00, sysbus_mmio_get_region(SYS_BUS_DEVICE(&m->alnk), 0));
     sysbus_connect_irq(SYS_BUS_DEVICE(&m->alnk), 0, m->alnk_irq);
     /* Zero is the board's functional application handoff choice, not an
      * established analog-block reset value. Optional test seeds are separate. */
     fm1_analog_init(&m->analog, OBJECT(m), m->cpu, m->analog_initial_wla_con0);
-    memory_region_add_subregion(get_system_memory(), 0x11900, &m->analog.mmio);
+    fm1_sfr_map(0x11900, &m->analog.mmio);
     object_initialize_child(OBJECT(m), "sar-adc", &m->adc, TYPE_FM1_ADC);
     fm1_adc_bind(&m->adc, m->cpu, &m->analog, (1u << 3) | (1u << 4),
                  board_adc_raw, m);
     sysbus_realize(SYS_BUS_DEVICE(&m->adc), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(&m->adc), 0, 0x13100);
+    fm1_sfr_map(0x13100, sysbus_mmio_get_region(SYS_BUS_DEVICE(&m->adc), 0));
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
     fm1_uart_init(&m->uart, OBJECT(m), m->cpu);
-    memory_region_add_subregion(get_system_memory(), 0x12100, &m->uart.mmio);
+    fm1_sfr_map(0x12100, &m->uart.mmio);
     fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
     memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 16);
-    memory_region_add_subregion(get_system_memory(), 0x5101c, &m->iomap_mmio);
+    fm1_sfr_map(0x5101c, &m->iomap_mmio);
     fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
     object_initialize_child(OBJECT(m), "board-input", &m->input, TYPE_FM1_INPUT);
     fm1_input_bind(&m->input, m->cpu);

@@ -9,6 +9,7 @@
  */
 #include "qemu/osdep.h"
 #include "fm1-lcd.h"
+#include "fm1-sfr.h"
 #include "system/address-spaces.h"
 #include "ui/console.h"
 
@@ -291,7 +292,7 @@ void fm1_lcd_init(FM1PocLCD *lcd, Object *owner, Pi32v2CPU *cpu)
     panel_reset(lcd);
     lcd->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, transfer_complete, lcd);
     memory_region_init_io(&lcd->spi_mmio, owner, &spi_ops, lcd, "fm1.spi1", 20);
-    memory_region_add_subregion(get_system_memory(), SPI1_BASE, &lcd->spi_mmio);
+    fm1_sfr_map(SPI1_BASE, &lcd->spi_mmio);
     /* This private panel is machine state rather than a qdev device. */
     lcd->console = qemu_graphic_console_create(NULL, 0, &lcd_graphic_ops, lcd);
     qemu_console_resize(lcd->console, FM1_LCD_WIDTH, FM1_LCD_HEIGHT);

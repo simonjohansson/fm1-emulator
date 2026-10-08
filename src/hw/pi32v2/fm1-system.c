@@ -8,6 +8,7 @@
 #include "qemu/osdep.h"
 #include "system/address-spaces.h"
 #include "fm1-system.h"
+#include "fm1-sfr.h"
 
 #define P33_CS 1u
 #define P33_BUSY 2u
@@ -324,7 +325,7 @@ void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
     s->watchdog_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, watchdog_expired, s);
 #define MAP(region, ops, label, address, length) \
     memory_region_init_io(&s->region, owner, &ops, s, label, length); \
-    memory_region_add_subregion(get_system_memory(), address, &s->region)
+    fm1_sfr_map(address, &s->region)
     MAP(p33_mmio, p33_ops, "fm1.p33", 0x13e08, 8);
     MAP(reset_mmio, reset_ops, "fm1.reset-source", 0x100c0, 4);
     MAP(cache_mmio, cache_ops, "fm1.cache-idle", 0x01eee008, 4);
