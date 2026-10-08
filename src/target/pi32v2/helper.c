@@ -72,23 +72,10 @@ void pi32v2_guard_fault(CPUPi32v2State *env, unsigned kind,
     pi32v2_fail(env, "guard fault without a machine guard interface");
 }
 
-void pi32v2_note_branch(CPUPi32v2State *env)
-{
-    Pi32v2CPU *cpu = env_archcpu(env);
-    if (cpu->ops && cpu->ops->note_branch) {
-        cpu->ops->note_branch(env);
-    }
-}
-
 void HELPER(pi32v2_guard_fault)(CPUPi32v2State *env, uint32_t kind,
                                  uint32_t address, uint32_t size)
 {
     pi32v2_guard_fault(env, kind, address, size);
-}
-
-void HELPER(pi32v2_branch)(CPUPi32v2State *env)
-{
-    pi32v2_note_branch(env);
 }
 
 void HELPER(pi32v2_flush)(CPUPi32v2State *env, uint32_t address)

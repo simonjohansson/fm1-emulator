@@ -21,20 +21,19 @@ typedef struct FM1PocSystem {
     uint32_t debug_message, debug_enable, write_enable;
     uint32_t write_low[3], write_high[3], pc_low[2], pc_high[2];
     uint32_t emu_control, emu_message, stack_low[2], stack_high[2];
-    uint32_t etm_control, branch_pc[4];
+    uint32_t etm_control;
     uint64_t p33_transfers, p33_transactions, watchdog_feeds;
-    uint64_t watchdog_arms, watchdog_expirations, guard_checks, branches;
+    uint64_t watchdog_arms, watchdog_expirations, guard_checks;
     int64_t watchdog_deadline;
 } FM1PocSystem;
 
 void fm1_system_init(FM1PocSystem *system, Object *owner, Pi32v2CPU *cpu);
-/* Copy the stack and write-window guards into the CPU's mirrors. */
+/* Copy the stack and write-window guards and ETM enable into the CPU. */
 void fm1_system_sync_guards(FM1PocSystem *system);
 /* PC windows only; no side effects (translation asks before executing). */
 bool fm1_system_fetch_allowed(FM1PocSystem *system, uint32_t address, unsigned size);
 void fm1_system_check_stack(FM1PocSystem *system);
 /* Record the guest-visible message bit and stop: PI32V2_GUARD_STACK, _WRITE, _PC. */
 G_NORETURN void fm1_system_guard_fault(FM1PocSystem *system, unsigned kind);
-void fm1_system_note_branch(FM1PocSystem *system, uint32_t from);
 
 #endif

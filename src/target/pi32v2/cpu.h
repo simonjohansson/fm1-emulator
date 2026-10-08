@@ -32,6 +32,10 @@ typedef struct CPUArchState {
     uint32_t write_low[3], write_high[3];
     uint32_t fetch_epoch;
     bool xip_fetch;
+    /* Branch trace written by translated code while the machine's ETM is
+     * enabled: the PCs of the last four taken branches, newest first. */
+    uint32_t etm_on, branch_pc[4];
+    uint64_t branches;
 } CPUPi32v2State;
 
 /* Hardware and optional validation interfaces supplied by the machine.
@@ -46,7 +50,6 @@ typedef struct Pi32v2MachineOps {
     G_NORETURN void (*guard_fault)(CPUPi32v2State *env, unsigned kind,
                                    uint32_t address, unsigned size);
     void (*check_stack)(CPUPi32v2State *env);
-    void (*note_branch)(CPUPi32v2State *env);
 } Pi32v2MachineOps;
 
 typedef struct Pi32v2ObserverOps {
@@ -79,6 +82,5 @@ void pi32v2_translate_code(CPUState *, TranslationBlock *, int *, vaddr, void *)
 void pi32v2_check_stack(CPUPi32v2State *env);
 G_NORETURN void pi32v2_guard_fault(CPUPi32v2State *env, unsigned kind,
                                    uint32_t address, unsigned size);
-void pi32v2_note_branch(CPUPi32v2State *env);
 G_NORETURN void pi32v2_fail(CPUPi32v2State *env, const char *reason);
 #endif

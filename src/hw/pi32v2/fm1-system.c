@@ -293,7 +293,7 @@ static uint64_t etm_read(void *opaque, hwaddr offset, unsigned size)
 {
     FM1PocSystem *s = opaque;
     if (!offset) { return s->etm_control; }
-    if (offset >= 4 && offset < 20) { return s->branch_pc[(offset - 4) / 4]; }
+    if (offset >= 4 && offset < 20) { return s->cpu->env.branch_pc[(offset - 4) / 4]; }
     system_fail(s, "unsupported ETM register read");
 }
 
@@ -302,6 +302,7 @@ static void etm_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     FM1PocSystem *s = opaque;
     if (offset || value & ~1ull) { system_fail(s, "unsupported ETM register write"); }
     s->etm_control = value;
+    s->cpu->env.etm_on = value & 1;     /* translated branches record the trace */
 }
 
 #define SYSTEM_OPS(name) \
@@ -349,6 +350,7 @@ void fm1_system_sync_guards(FM1PocSystem *s)
         env->stack_low[irq] = on ? s->stack_low[window] : 0;
         env->stack_high[irq] = on ? s->stack_high[window] : UINT32_MAX;
     }
+    env->etm_on = s->etm_control & 1;
     for (unsigned i = 0; i < 3; i++) {
         bool on = (s->write_enable & (1u << i)) && s->write_low[i] <= s->write_high[i];
         env->write_low[i] = on ? s->write_low[i] : UINT32_MAX;
@@ -399,14 +401,5 @@ void fm1_system_guard_fault(FM1PocSystem *s, unsigned kind)
         system_fail(s, "guest PC lies outside both configured guard windows");
     default:
         system_fail(s, "unknown system guard fault");
-    }
-}
-
-void fm1_system_note_branch(FM1PocSystem *s, uint32_t from)
-{
-    if (s->etm_control & 1) {
-        for (unsigned i = 3; i > 0; i--) { s->branch_pc[i] = s->branch_pc[i - 1]; }
-        s->branch_pc[0] = from;
-        s->branches++;
     }
 }

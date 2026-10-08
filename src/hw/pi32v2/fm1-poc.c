@@ -66,12 +66,6 @@ static void fm1_poc_reset_state(CPUPi32v2State *e)
     e->xip_fetch = m->nor.cpu && fm1_nor_xip_enabled(&m->nor);
 }
 
-static void fm1_poc_note_branch(CPUPi32v2State *e)
-{
-    FM1PocState *m = env_archcpu(e)->machine;
-    fm1_system_note_branch(&m->system, e->pc);
-}
-
 static unsigned divider(FM1TimerState *t) { return t->control & 16 ? 4 : 1; }
 static uint64_t period_ticks(FM1TimerState *t)
 {
@@ -356,7 +350,7 @@ static const MemoryRegionOps irq_ops = {
 static const Pi32v2MachineOps machine_ops = {
     .reset_state = fm1_poc_reset_state, .select_irq = fm1_poc_select_irq,
     .fetch_fault = fm1_poc_fetch_fault, .guard_fault = fm1_poc_guard_fault,
-    .check_stack = fm1_poc_check_stack, .note_branch = fm1_poc_note_branch,
+    .check_stack = fm1_poc_check_stack,
 };
 
 static bool board_adc_raw(void *opaque, unsigned channel, uint32_t *raw)

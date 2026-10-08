@@ -288,7 +288,7 @@ void fm1_poc_finish(CPUPi32v2State *e)
                ",\"branches\":%" PRIu64 ",\"emu_control\":%u,\"debug_enable\":%u,"
                "\"write_enable\":%u",
                s->p33_transfers, s->p33_transactions, s->watchdog_arms, s->watchdog_feeds,
-               s->watchdog_expirations, s->guard_checks, s->branches, s->emu_control,
+               s->watchdog_expirations, s->guard_checks, m->cpu->env.branches, s->emu_control,
                s->debug_enable, s->write_enable);
         printf(",\"loop_visits\":%" PRIu64 ",\"milliseconds\":%u,\"lcd_timeouts\":%u,"
                "\"p33_timeouts\":%u,\"usb_up\":%u,\"usb_timeouts\":%u,\"usb_retries\":%u",

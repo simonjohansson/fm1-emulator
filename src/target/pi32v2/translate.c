@@ -114,6 +114,40 @@ static int fetch_refused(CPUState *cs, uint32_t address, unsigned size)
     }
     return cpu->ops->fetch_fault(cpu_env(cs), address, size);
 }
+/* ADD (mode 0) and SUB (mode 1) set PSR V, C, Z and N inline; ADC and SBC
+ * (modes 2 and 3) read the incoming carry in the helper. */
+static void gen_alu(TCGv_i32 dest, TCGv_i32 a, TCGv_i32 b, unsigned mode)
+{
+    if (mode > 1) {
+        gen_helper_pi32v2_alu(dest, tcg_env, a, b, tcg_constant_i32(mode));
+        return;
+    }
+    TCGv_i32 r = tcg_temp_new_i32(), flags = tcg_temp_new_i32();
+    TCGv_i32 bit = tcg_temp_new_i32(), ov = tcg_temp_new_i32();
+    if (mode) {
+        tcg_gen_sub_i32(r, a, b);
+        tcg_gen_setcond_i32(TCG_COND_GEU, flags, a, b);      /* C: no borrow */
+        tcg_gen_xor_i32(ov, a, b);
+    } else {
+        tcg_gen_add_i32(r, a, b);
+        tcg_gen_setcond_i32(TCG_COND_LTU, flags, r, a);      /* C: carry out */
+        tcg_gen_eqv_i32(ov, a, b);
+    }
+    tcg_gen_xor_i32(bit, a, r);
+    tcg_gen_and_i32(ov, ov, bit);
+    tcg_gen_shri_i32(ov, ov, 31);                            /* V */
+    tcg_gen_shli_i32(flags, flags, 1);
+    tcg_gen_or_i32(flags, flags, ov);
+    tcg_gen_setcondi_i32(TCG_COND_EQ, bit, r, 0);            /* Z */
+    tcg_gen_shli_i32(bit, bit, 2);
+    tcg_gen_or_i32(flags, flags, bit);
+    tcg_gen_shri_i32(bit, r, 31);                            /* N */
+    tcg_gen_shli_i32(bit, bit, 3);
+    tcg_gen_or_i32(flags, flags, bit);
+    tcg_gen_andi_i32(spr[PSR], spr[PSR], ~15u);
+    tcg_gen_or_i32(spr[PSR], spr[PSR], flags);
+    tcg_gen_mov_i32(dest, r);
+}
 static void load(PiDisasContext *d, TCGv_i32 value, TCGv_i32 addr, MemOp op)
 {
     tcg_gen_qemu_ld_i32(value, addr, 0, op);
@@ -123,9 +157,23 @@ static void store(PiDisasContext *d, TCGv_i32 value, TCGv_i32 addr, MemOp op)
     check_write(addr, memop_size(op));
     tcg_gen_qemu_st_i32(value, addr, 0, op);
 }
+/* A taken branch enters the ETM ring when the trace is enabled. */
 static void record_branch(PiDisasContext *d)
 {
-    gen_helper_pi32v2_branch(tcg_env);
+    TCGLabel *off = gen_new_label();
+    TCGv_i32 value = tcg_temp_new_i32();
+    TCGv_i64 count = tcg_temp_new_i64();
+    tcg_gen_ld_i32(value, tcg_env, offsetof(CPUPi32v2State, etm_on));
+    tcg_gen_brcondi_i32(TCG_COND_EQ, value, 0, off);
+    for (unsigned i = 3; i > 0; i--) {
+        tcg_gen_ld_i32(value, tcg_env, offsetof(CPUPi32v2State, branch_pc[i - 1]));
+        tcg_gen_st_i32(value, tcg_env, offsetof(CPUPi32v2State, branch_pc[i]));
+    }
+    tcg_gen_st_i32(pc, tcg_env, offsetof(CPUPi32v2State, branch_pc[0]));
+    tcg_gen_ld_i64(count, tcg_env, offsetof(CPUPi32v2State, branches));
+    tcg_gen_addi_i64(count, count, 1);
+    tcg_gen_st_i64(count, tcg_env, offsetof(CPUPi32v2State, branches));
+    gen_set_label(off);
 }
 static TCGv_i32 bit_operand(TCGv_i32 index, uint16_t op)
 {
@@ -289,8 +337,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             tcg_gen_andi_i32(gpr[a], read_gpr(d, b), kind ? 0xffff : 0xff);
         }
     } else if ((op & 0xff00) == 0x1800) {
-        gen_helper_pi32v2_alu(gpr[op & 15], tcg_env, read_gpr(d, op & 15),
-                              read_gpr(d, (op >> 4) & 15), tcg_constant_i32(0));
+        gen_alu(gpr[op & 15], read_gpr(d, op & 15), read_gpr(d, (op >> 4) & 15), 0);
     } else if ((op & 0xff88) == 0x1a00 || (op & 0xff88) == 0x1a80) {
         TCGv_i32 amount = read_gpr(d, b), result = tcg_temp_new_i32();
         TCGLabel *large = gen_new_label(), *end = gen_new_label();
@@ -311,12 +358,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_mul_i32(gpr[op & 15], read_gpr(d, op & 15), read_gpr(d, (op >> 4) & 15));
     } else if ((op & 0xfe00) == 0x1c00 || (op & 0xfe00) == 0x1e00) {
         unsigned c = ((op >> 7) & 3) * 2 + ((op >> 3) & 1);
-        gen_helper_pi32v2_alu(gpr[a], tcg_env, read_gpr(d, b), read_gpr(d, c), tcg_constant_i32((op & 0x200) != 0));
+        gen_alu(gpr[a], read_gpr(d, b), read_gpr(d, c), (op & 0x200) != 0);
     } else if ((op & 0xe0c0) == 0x20c0) {
         int imm = sext(((op >> 8) & 31) | (((op >> 3) & 7) << 5), 8);
-        gen_helper_pi32v2_alu(gpr[a], tcg_env, read_gpr(d, a), tcg_constant_i32(imm), tcg_constant_i32(0));
+        gen_alu(gpr[a], read_gpr(d, a), tcg_constant_i32(imm), 0);
     } else if ((op & 0xe088) == 0x8008) {
-        gen_helper_pi32v2_alu(gpr[a], tcg_env, read_gpr(d, b), tcg_constant_i32((op >> 8) & 31), tcg_constant_i32(0));
+        gen_alu(gpr[a], read_gpr(d, b), tcg_constant_i32((op >> 8) & 31), 0);
     } else if ((op & 0xe098) == 0x8088) {
         unsigned imm = (((op >> 5) & 3) << 5) | ((op >> 8) & 31);
         tcg_gen_addi_i32(gpr[a], spr[SP], imm);
@@ -355,29 +402,24 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0xe0b4) {
         uint16_t x = fetch(d, here + 2);
         if ((x & 15) != 0 && (x & 15) != 2) { goto illegal; }
-        gen_helper_pi32v2_alu(gpr[x >> 12], tcg_env, read_gpr(d, (x >> 4) & 15),
-                              read_gpr(d, (x >> 8) & 15), tcg_constant_i32((x & 15) == 2));
+        gen_alu(gpr[x >> 12], read_gpr(d, (x >> 4) & 15), read_gpr(d, (x >> 8) & 15), (x & 15) == 2);
         next = here + 4;
     } else if (op == 0xe0b8) {
         uint16_t x = fetch(d, here + 2);
         if ((x & 15) != 0 && (x & 15) != 2) { goto illegal; }
-        gen_helper_pi32v2_alu(gpr[x >> 12], tcg_env, read_gpr(d, (x >> 4) & 15),
-                              read_gpr(d, (x >> 8) & 15), tcg_constant_i32((x & 15) == 2 ? 3 : 2));
+        gen_alu(gpr[x >> 12], read_gpr(d, (x >> 4) & 15), read_gpr(d, (x >> 8) & 15), (x & 15) == 2 ? 3 : 2);
         next = here + 4;
     } else if ((op & 0xfff0) == 0xe0a0) {
         uint16_t x = fetch(d, here + 2);
-        gen_helper_pi32v2_alu(gpr[op & 15], tcg_env, tcg_constant_i32(packed_mask(x)),
-                              read_gpr(d, x >> 12), tcg_constant_i32(1));
+        gen_alu(gpr[op & 15], tcg_constant_i32(packed_mask(x)), read_gpr(d, x >> 12), 1);
         next = here + 4;
     } else if ((op & 0xfff0) == 0xe0e0) {
         uint16_t x = fetch(d, here + 2);
-        gen_helper_pi32v2_alu(gpr[op & 15], tcg_env, read_gpr(d, x >> 12),
-                              tcg_constant_i32(packed_mask(x)), tcg_constant_i32(0));
+        gen_alu(gpr[op & 15], read_gpr(d, x >> 12), tcg_constant_i32(packed_mask(x)), 0);
         next = here + 4;
     } else if ((op & 0xfff0) == 0xe0f0) {
         uint16_t x = fetch(d, here + 2);
-        gen_helper_pi32v2_alu(gpr[op & 15], tcg_env, read_gpr(d, x >> 12),
-                              tcg_constant_i32(packed_mask(x)), tcg_constant_i32(1));
+        gen_alu(gpr[op & 15], read_gpr(d, x >> 12), tcg_constant_i32(packed_mask(x)), 1);
         next = here + 4;
     } else if ((op & 0xfff0) == 0xe1e0) {
         uint16_t x = fetch(d, here + 2);
@@ -980,8 +1022,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         int32_t imm = x & 4095;
         if (op & 32) { imm += sext((op >> 4) & 3, 2) * 4096; }
         else if (op & 16) { imm += 4096; }
-        gen_helper_pi32v2_alu(gpr[op & 15], tcg_env, read_gpr(d, x >> 12),
-                              tcg_constant_i32(imm), tcg_constant_i32(0));
+        gen_alu(gpr[op & 15], read_gpr(d, x >> 12), tcg_constant_i32(imm), 0);
         next = here + 4;
     } else if (op == 0xe9d8) {
         uint16_t x = fetch(d, here + 2);
