@@ -621,6 +621,70 @@ parent builds. Retain independent review before committing a milestone.
 Existing agent identities may not survive a new session; recreate the roles
 with the required explicit settings if needed.
 
+## Grouped instruction implementation from the reviewed inventory
+
+- [x] **Inventory saved known-source artifacts.** The reviewed union has 37
+  ELF/disassembly paths, 35 ELF hashes and 21 distinct executable byte/VMA
+  payloads. Count executable identity for coverage: 120,836 confirmed sites,
+  117,088 statically admitted and 3,748 rejected (3,747 form gaps plus one
+  destination-conflict policy site). Whole-image/runtime identity is separate.
+  The union has 75 missing forms: 68 scalar plus seven additional placements
+  of scalar-admitted operations, retained as 81 role rows/68 behavior groups.
+  The core contributes 61 forms; unchanged Felucca uses 60 at 516 static sites.
+  The 14 supplemental-only forms are carry/borrow, SP addition, FF48 branch,
+  EC30/nonzero IF, wide register left shift, IDLE, testset/flag-EQ branch,
+  two repeat forms and two qualified floating branches.
+
+Keep 71 opaque E53F regions/12 complete raw patterns outside confirmed counts.
+They require decoding research, not inferred ISA forms. SDK-only ELFs without
+matching disassembly and unknown-source stock raw are outside this inventory;
+the instrumented profile is a static input, excluded from unchanged acceptance.
+Admission validates no new runtime/flags/memory/predicate/IRQ/device semantics.
+All 720 context/496 executable-payload size gaps are rejected six-byte branches
+currently scanned as four bytes; they are occurrences of the forms in batch B.
+See [the detailed inventory](qemu-poc/OPCODE_COVERAGE.md) and frozen batch mapping.
+
+Use these reviewed groups, beginning with A and the current REV8 head:
+
+| Batch | Forms | Scope |
+| --- | ---: | --- |
+| A | 13 | Compact RETS push; packed SUB/compact ASR; all seven scalar-admitted parallel placements, including halfword-store tail; carry/borrow and special SP add. |
+| B | 15 | Six-byte branches, including FF48, and exact decoder/scanner widths. |
+| C | 11 | Nine IF forms, register-mask branch and TBB. |
+| D | 18 | Four plain-memory, eleven update-memory, two word RMW and one bitmap-store forms, including the observed halfword-load tail role. |
+| E | 8 | Wide register-pair arithmetic, including distinct signed/unsigned multiply and register left shift. |
+| F | 4 | Extended special-register push, SSYNC, trigger and IDLE. |
+| G | 4 | Byte testset, flag-EQ branch, and register/immediate repeat. |
+| H | 2 | Qualified floating branches; opaque-region research remains separate. |
+
+Grouping does not approve guessed semantics. A's primary carry/borrow bodies
+omit carry; exact stack/SP constructors have gaps. E has primary/vendor shift
+and signedness contradictions. G's testset body is TODO and repeat context is
+incomplete. H lacks exact primary/general-field/NaN/flag evidence. Require
+independent semantic evidence before implementation; retain explicit faults for
+deferred privileged/fatal/cache/control behavior rather than no-op admission.
+Subdivide D where alias/update/fault-order disagreement needs separate review.
+
+Main agent: Astra high; subagents: Sol 6.1 Extra high. Assign workers private
+patch/test ownership and nonoverlapping forms; the parent integrates shared
+files. Approve one finite primary/copied-reference matrix per batch before
+probes; retain raw disagreements and named canonical/model-policy limits.
+Freeze combined source and per-form focused validators for independent final
+review, preserving unaffected helpers, predicate/IRQ behavior and public
+boundaries. Scanner changes are confined to their evidenced width scope.
+Perform one serialized accepted build/regression/firmware cycle per batch:
+per-form focused gates, full required ISA/profile/IRQ/boot and regressions,
+then unchanged bounded Felucca and renamed generic replay. Correct failed
+checks before release and record actual stop/budget and comparison scope.
+Refresh the offline inventory from the accepted production decoder after each
+batch; pin source/image hashes and publish admission/runtime evidence separately.
+No firmware name, hash or PC may select production CPU behavior.
+
+Continue to complete HOME, 30 guest seconds, verified physical inputs and a
+native window left executing, then broader unchanged firmware and macOS host
+acceptance through the CPU, SoC/board and host layers. This inventory authorizes
+no firmware patch/rebuild, Rust change, public-schema change or hardware flash.
+
 ## Pinned inputs and provenance
 
 Use existing `/Users/simonjohansson/src/Felucca/build/` artifacts:
@@ -686,7 +750,7 @@ Recent signed commits, all signatures verified:
 ## Current firmware blocker: F070 byte-reversal parallel head
 
 Latest unchanged boot: `.cache/felucca-validation/after-signed-register-le-if/`.
-The unchanged MAX 200,000,000 capture advances 5,993 instructions beyond EE94 to F070/4600 + 6247 at the current unsupported bundle stop. Vendor disassembly describes r4=rev8(r6) in the extended head with r7=[r4+8] in a compact word-load tail; exact primary/role classification belongs to the ongoing offline inventory. Stage 5/home 1/frame 1 and visible idle LCD do not prove completed HOME. Renamed captured JSON state except profile and exact PPM/latest ALNK data agree; whole SRAM is excluded and all 57,344 captured sample words are zero.
+The unchanged MAX 200,000,000 capture advances 5,993 instructions beyond EE94 to F070/4600 + 6247 at the current unsupported bundle stop. Vendor disassembly describes r4=rev8(r6) in the extended head with r7=[r4+8] in a compact word-load tail; the reviewed offline inventory confirms scalar admission for REV8 and the load tail, with only the REV8 parallel-head classification missing. Stage 5/home 1/frame 1 and visible idle LCD do not prove completed HOME. Renamed captured JSON state except profile and exact PPM/latest ALNK data agree; whole SRAM is excluded and all 57,344 captured sample words are zero.
 
 - PC `0x0200a2d0`, words `F070/4600 + 6247`.
 - Instructions 120,323,432; virtual time 962,587,464 ns.
@@ -737,8 +801,8 @@ Renamed captured JSON except profile and exact PPM/latest ALNK data agree;
 whole SRAM is excluded. All 57,344 captured sample words are zero. Completed
 HOME, 30 guest seconds, physical input, synthesis and native running stay open.
 
-Next work inventories all known source firmware encodings/counts offline and
-groups generic implementation candidates into independently reviewed batches.
+Next work prepares batch A from the completed static inventory, with one
+combined primary/reference matrix and focused validation for its generic forms.
 Full model-policy and host artifact-recording qualifications remain in evidence.
 
 ### Resolved unsigned SP-relative byte load
@@ -1757,18 +1821,22 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Build a read-only instruction inventory across all known source firmware
-   artifacts, with encoding/family counts, supported/unsupported/uncertain
-   classifications and scalar/parallel roles. Reconcile current F070/4600 +
-   6247 with exact primary constructors and the generic CPU coverage inventory.
-   Use the counts and role evidence to plan grouped generic implementation
-   batches. Review each batch's primary/reference evidence, scope, source and
-   focused/regression/unchanged-firmware acceptance before implementation,
-   preserving helpers, scanner, predicate/IRQ and stable public boundaries.
-3. Obtain independent review for each proposed generic batch; build and run
-   focused/regression ISA/profile/IRQ gates, then repeat unchanged bounded
-   firmware acceptance and renamed generic replay. Commit only validated
-   batch changes and update the inventory with verified coverage/results.
+2. Use the completed reviewed known-source inventory and its 75-form batch
+   queue, beginning with batch A and the current REV8 parallel head. Preserve
+   executable-payload deduplication, exact scalar/head/tail membership and
+   explicit uncertain/policy deferrals. Approve each batch's pinned primary
+   and copied-reference matrix, private source and per-form focused validators
+   through one combined independent review. Resolve semantic evidence gaps
+   before implementation; preserve unaffected helpers, predicate/IRQ behavior
+   and stable public boundaries.
+3. Integrate each frozen reviewed batch through the parent, then perform one
+   serialized accepted build, per-form focused gates, full required broad
+   ISA/profile/IRQ/boot and regressions, followed by unchanged bounded Felucca
+   and renamed generic replay. Commit only accepted results. Refresh the
+   offline inventory from the actual production decoder and record static
+   admission separately from tested runtime behavior. Continue through complete
+   HOME, 30 guest seconds, physical input and a native viewer left executing,
+   then broaden unchanged-firmware and macOS acceptance.
 4. Continue controller lifecycle extraction when reached behavior needs it,
    preserving canonical shared words, register-driven configurations and
    unaffected controllers. Whole-machine reset requires all components.
