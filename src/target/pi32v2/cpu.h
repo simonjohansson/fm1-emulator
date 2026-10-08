@@ -8,7 +8,12 @@
 
 /* Register numbering: Apache-2.0 Quarkslab pi32v2.slaspec. */
 enum { RETI = 0, RETS = 3, PSR = 5, ICFG = 11, USP = 12, SSP = 13, SP = 14 };
-enum { PI32V2_TB_REPEAT = 2 };
+/* TB flags: bit 0 in_irq, bit 1 an active REP block, bit 2 XIP fetch enabled.
+ * cs_base carries the machine's fetch-guard generation. */
+enum { PI32V2_TB_IRQ = 1, PI32V2_TB_REPEAT = 2, PI32V2_TB_XIP = 4 };
+/* Guard kinds reported through Pi32v2MachineOps.guard_fault. */
+enum { PI32V2_GUARD_STACK, PI32V2_GUARD_WRITE, PI32V2_GUARD_PC,
+       PI32V2_GUARD_XIP_DISABLED, PI32V2_GUARD_XIP_BOUNDS };
 typedef struct CPUArchState {
     uint32_t gpr[16], spr[16], pc;
     uint32_t irq_config, priority_mask;
@@ -19,14 +24,28 @@ typedef struct CPUArchState {
     uint64_t irq11_entries, irq11_rti_count, irq63_entries, irq63_rti_count;
     uint32_t last_irq_source;
     uint32_t last_irq_pc, last_irq_handler, entry_icfg, return_icfg;
+    /* Machine-maintained guard mirrors read by translated code; not
+     * architectural state. Stack windows are indexed by in_irq and pass
+     * every SP when the guard is off. An inactive write window has
+     * low > high and never matches. */
+    uint32_t stack_low[2], stack_high[2];
+    uint32_t write_low[3], write_high[3];
+    uint32_t fetch_epoch;
+    bool xip_fetch;
 } CPUPi32v2State;
 
-/* Hardware and optional validation interfaces supplied by the machine. */
+/* Hardware and optional validation interfaces supplied by the machine.
+ * fetch_fault returns the guard kind that refuses an instruction fetch of
+ * size bytes at address, or -1. It has no side effects: translation calls it,
+ * and a refused fetch faults when executed. The machine bumps fetch_epoch and
+ * exits the CPU loop whenever its answer may change. */
 typedef struct Pi32v2MachineOps {
     void (*reset_state)(CPUPi32v2State *env);
     bool (*select_irq)(CPUPi32v2State *env, unsigned *number, unsigned *priority);
-    void (*check_access)(CPUPi32v2State *env, uint32_t address,
-                         unsigned size, unsigned flags);
+    int (*fetch_fault)(CPUPi32v2State *env, uint32_t address, unsigned size);
+    G_NORETURN void (*guard_fault)(CPUPi32v2State *env, unsigned kind,
+                                   uint32_t address, unsigned size);
+    void (*check_stack)(CPUPi32v2State *env);
     void (*note_branch)(CPUPi32v2State *env);
 } Pi32v2MachineOps;
 
@@ -57,8 +76,9 @@ struct Pi32v2CPUClass {
 #define CPU_RESOLVING_TYPE TYPE_PI32V2_CPU
 void pi32v2_translate_init(void);
 void pi32v2_translate_code(CPUState *, TranslationBlock *, int *, vaddr, void *);
-void pi32v2_check_access(CPUPi32v2State *env, uint32_t address,
-                         unsigned size, unsigned flags);
+void pi32v2_check_stack(CPUPi32v2State *env);
+G_NORETURN void pi32v2_guard_fault(CPUPi32v2State *env, unsigned kind,
+                                   uint32_t address, unsigned size);
 void pi32v2_note_branch(CPUPi32v2State *env);
 G_NORETURN void pi32v2_fail(CPUPi32v2State *env, const char *reason);
 #endif

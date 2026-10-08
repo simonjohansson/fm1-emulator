@@ -20,17 +20,49 @@
 
 #include "fm1-poc.h"
 
-static void fm1_poc_check_access(CPUPi32v2State *e, uint32_t address, unsigned size, unsigned flags)
+/* Guards: translated code checks stores and SP writes against CPU mirrors
+ * kept by the system controller; fetches are decided at translation. */
+static int fm1_poc_fetch_fault(CPUPi32v2State *e, uint32_t address, unsigned size)
 {
     FM1PocState *m = env_archcpu(e)->machine;
+    if (!fm1_system_fetch_allowed(&m->system, address, size)) {
+        return PI32V2_GUARD_PC;
+    }
+    return fm1_nor_fetch_fault(&m->nor, address, size);
+}
+
+static G_NORETURN void fm1_poc_guard_fault(CPUPi32v2State *e, unsigned kind,
+                                           uint32_t address, unsigned size)
+{
+    FM1PocState *m = env_archcpu(e)->machine;
+    /* The access that fired, as the capture's last_access: flags 1 write,
+     * 2 instruction fetch, 4 stack pointer. */
     m->last_access_address = address;
     m->last_access_size = size;
-    m->last_access_flags = flags;
-    fm1_system_check_stack(&m->system);
-    if (!(flags & 4)) {
-        fm1_system_check_access(&m->system, address, size, flags & 1, flags & 2);
-        fm1_nor_check_access(&m->nor, address, size, flags & 1);
+    m->last_access_flags = kind == PI32V2_GUARD_WRITE ? 1 :
+                           kind == PI32V2_GUARD_STACK ? 4 :
+                           kind == PI32V2_GUARD_PC || address == e->pc ? 2 : 0;
+    if (kind == PI32V2_GUARD_XIP_DISABLED || kind == PI32V2_GUARD_XIP_BOUNDS) {
+        fm1_nor_guard_fault(&m->nor, kind);
     }
+    fm1_system_guard_fault(&m->system, kind);
+}
+
+static void fm1_poc_check_stack(CPUPi32v2State *e)
+{
+    FM1PocState *m = env_archcpu(e)->machine;
+    fm1_system_check_stack(&m->system);
+}
+
+/* Resets clear the CPU state, including the machine's guard mirrors. */
+static void fm1_poc_reset_state(CPUPi32v2State *e)
+{
+    FM1PocState *m = env_archcpu(e)->machine;
+    fm1_test_reset_state(e);
+    if (m->system.cpu) {
+        fm1_system_sync_guards(&m->system);
+    }
+    e->xip_fetch = m->nor.cpu && fm1_nor_xip_enabled(&m->nor);
 }
 
 static void fm1_poc_note_branch(CPUPi32v2State *e)
@@ -321,8 +353,9 @@ static const MemoryRegionOps irq_ops = {
 };
 
 static const Pi32v2MachineOps machine_ops = {
-    .reset_state = fm1_test_reset_state, .select_irq = fm1_poc_select_irq,
-    .check_access = fm1_poc_check_access, .note_branch = fm1_poc_note_branch,
+    .reset_state = fm1_poc_reset_state, .select_irq = fm1_poc_select_irq,
+    .fetch_fault = fm1_poc_fetch_fault, .guard_fault = fm1_poc_guard_fault,
+    .check_stack = fm1_poc_check_stack, .note_branch = fm1_poc_note_branch,
 };
 
 static bool board_adc_raw(void *opaque, unsigned channel, uint32_t *raw)

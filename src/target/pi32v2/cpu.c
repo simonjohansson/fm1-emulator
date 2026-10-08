@@ -21,8 +21,10 @@ static bool has_work(CPUState *cs) { return cpu_test_interrupt(cs, CPU_INTERRUPT
 static TCGTBCPUState get_tb_state(CPUState *cs)
 {
     CPUPi32v2State *env = cpu_env(cs);
-    return (TCGTBCPUState){ .pc = env->pc, .flags = env->in_irq |
-                           (env->repeat_end ? PI32V2_TB_REPEAT : 0) };
+    return (TCGTBCPUState){ .pc = env->pc, .cs_base = env->fetch_epoch,
+                           .flags = (env->in_irq ? PI32V2_TB_IRQ : 0) |
+                           (env->repeat_end ? PI32V2_TB_REPEAT : 0) |
+                           (env->xip_fetch ? PI32V2_TB_XIP : 0) };
 }
 
 static void synchronize(CPUState *cs, const TranslationBlock *tb)
@@ -41,7 +43,7 @@ static bool fill_tlb(CPUState *cs, vaddr addr, int size, MMUAccessType access,
     if (addr >= 0x02000000 && addr < 0x02100000) {
         if (access == MMU_DATA_STORE) {
             if (probe) { return false; }
-            pi32v2_fail(cpu_env(cs), "write to read-only XIP");
+            pi32v2_fail(cpu_env(cs), "write to read-only XIP (NOR)");
         }
         prot &= ~PAGE_WRITE;
     }
@@ -53,6 +55,10 @@ static void transaction_failed(CPUState *cs, hwaddr phys, vaddr addr,
                                unsigned size, MMUAccessType access, int index,
                                MemTxAttrs attrs, MemTxResult result, uintptr_t ra)
 {
+    /* The XIP window extends past its mapped storage. */
+    if (addr >= 0x02000000 && addr < 0x02100000) {
+        pi32v2_guard_fault(cpu_env(cs), PI32V2_GUARD_XIP_BOUNDS, addr, size);
+    }
     g_autofree char *s = g_strdup_printf("unmapped access at 0x%08" PRIx64, (uint64_t)addr);
     pi32v2_fail(cpu_env(cs), s);
 }
@@ -84,10 +90,9 @@ static bool interrupt(CPUState *cs, int request)
         pi32v2_fail(e, "unsupported selected IRQ source or priority");
     }
     uint32_t vector = 0x01c7fe00 + number * 4;
-    pi32v2_check_access(e, vector, 4, 0);
     uint32_t handler = cpu_ldl_data(e, vector);
     /* A missing/unmapped vector fails through QEMU's memory access path. */
-    /* The normal per-instruction fetch gate validates the selected handler. */
+    /* Translation of the handler's code applies the fetch guards. */
     e->last_irq_pc = e->pc;
     e->last_irq_handler = handler;
     e->spr[RETI] = e->pc;
@@ -102,6 +107,8 @@ static bool interrupt(CPUState *cs, int request)
     e->last_irq_source = number;
     if (number == 11) { e->irq11_entries++; }
     else { e->irq63_entries++; }
+    /* The handler starts on the interrupt stack and its guard window. */
+    pi32v2_check_stack(e);
     return true;
 }
 

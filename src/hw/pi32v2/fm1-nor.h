@@ -37,9 +37,9 @@ void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
 void fm1_nor_set_pins(FM1PocNOR *nor, uint32_t pd_out,
                       uint32_t iomap_con0);
 bool fm1_nor_xip_enabled(const FM1PocNOR *nor);
-/* The CPU must use this at execution time as well as for data accesses:
- * cached TCG blocks otherwise avoid a new ROM fetch when SFC is disabled. */
-void fm1_nor_check_access(FM1PocNOR *nor, uint32_t address,
-                          unsigned size, bool write);
+/* Instruction fetches only: the guard kind refusing size bytes at address, or
+ * -1. Data reads fault through the XIP device while SFC is disabled. */
+int fm1_nor_fetch_fault(FM1PocNOR *nor, uint32_t address, unsigned size);
+G_NORETURN void fm1_nor_guard_fault(FM1PocNOR *nor, unsigned kind);
 
 #endif

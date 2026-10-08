@@ -227,14 +227,28 @@ static void debug_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
         s->debug_enable = value; return;
     case 0x348:
         if (value & ~7ull) { system_fail(s, "unsupported write guard window mask"); }
-        s->write_enable = value; return;
+        s->write_enable = value;
+        fm1_system_sync_guards(s);
+        return;
     }
-    if (offset >= 0x280 && offset < 0x28c) { s->write_high[(offset - 0x280) / 4] = value; return; }
-    if (offset >= 0x2c0 && offset < 0x2cc) { s->write_low[(offset - 0x2c0) / 4] = value; return; }
+    if (offset >= 0x280 && offset < 0x28c) {
+        s->write_high[(offset - 0x280) / 4] = value;
+        fm1_system_sync_guards(s);
+        return;
+    }
+    if (offset >= 0x2c0 && offset < 0x2cc) {
+        s->write_low[(offset - 0x2c0) / 4] = value;
+        fm1_system_sync_guards(s);
+        return;
+    }
     if (offset >= 0x380 && offset < 0x390) {
         unsigned window = (offset - 0x380) / 8;
         if (offset & 4) { s->pc_low[window] = value; }
         else { s->pc_high[window] = value; }
+        /* Translated code was checked against the old windows: retire it
+         * and leave the current TB chain before the next instruction. */
+        s->cpu->env.fetch_epoch++;
+        cpu_exit(CPU(s->cpu));
         return;
     }
     system_fail(s, "unsupported debug/guard register write");
@@ -258,6 +272,8 @@ static void emu_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     if (offset == 0) {
         if (value & ~12ull) { system_fail(s, "unsupported EMU control bits"); }
         s->emu_control = value;
+        fm1_system_sync_guards(s);
+        fm1_system_check_stack(s);      /* enabling it checks the current SP */
         return;
     }
     if (offset == 4) { s->emu_message &= ~(uint32_t)value; return; }
@@ -265,6 +281,8 @@ static void emu_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         unsigned window = (offset - 8) / 8;
         if (offset & 4) { s->stack_low[window] = value; }
         else { s->stack_high[window] = value; }
+        fm1_system_sync_guards(s);
+        fm1_system_check_stack(s);
         return;
     }
     system_fail(s, "unsupported EMU register write");
@@ -314,51 +332,72 @@ void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
     MAP(emu_mmio, emu_ops, "fm1.emu-guards", 0x01eef0d0, 24);
     MAP(etm_mmio, etm_ops, "fm1.branch-trace", 0x01eef1c0, 20);
 #undef MAP
+    fm1_system_sync_guards(s);
 }
 
-void fm1_system_check_access(FM1PocSystem *s, uint32_t address,
-                             unsigned size, bool write, bool fetch)
+/* Translated code checks stores and SP writes against these CPU mirrors.
+ * Register indexes differ: EMU window 0 is the interrupt stack, while the
+ * CPU mirror is indexed by in_irq. */
+void fm1_system_sync_guards(FM1PocSystem *s)
 {
-    if (!size || (uint64_t)address + size > 1ull << 32) {
-        system_fail(s, "invalid guarded address range");
+    CPUPi32v2State *env = &s->cpu->env;
+    for (unsigned irq = 0; irq < 2; irq++) {
+        unsigned window = irq ? 0 : 1;
+        bool on = s->emu_control & 8;
+        /* A reversed enabled window keeps low > high and refuses every SP. */
+        env->stack_low[irq] = on ? s->stack_low[window] : 0;
+        env->stack_high[irq] = on ? s->stack_high[window] : UINT32_MAX;
     }
-    s->guard_checks++;
-    uint64_t last = (uint64_t)address + size - 1;
-    if (write) {
-        for (unsigned i = 0; i < 3; i++) {
-            if ((s->write_enable & (1u << i)) &&
-                s->write_low[i] <= s->write_high[i] &&
-                address <= s->write_high[i] && last >= s->write_low[i]) {
-                s->debug_message |= 1u << 13;
-                system_fail(s, "CPU write intersects an enabled guest guard window");
-            }
-        }
-    }
-    if (fetch) {
-        bool configured = false, allowed = false;
-        for (unsigned i = 0; i < 2; i++) {
-            if ((s->pc_low[i] || s->pc_high[i]) && s->pc_low[i] <= s->pc_high[i]) {
-                configured = true;
-                allowed |= address >= s->pc_low[i] && last <= s->pc_high[i];
-            }
-        }
-        if (configured && !allowed) {
-            s->debug_message |= 1u << 12;
-            system_fail(s, "guest PC lies outside both configured guard windows");
-        }
+    for (unsigned i = 0; i < 3; i++) {
+        bool on = (s->write_enable & (1u << i)) && s->write_low[i] <= s->write_high[i];
+        env->write_low[i] = on ? s->write_low[i] : UINT32_MAX;
+        env->write_high[i] = on ? s->write_high[i] : 0;
     }
 }
 
+bool fm1_system_fetch_allowed(FM1PocSystem *s, uint32_t address, unsigned size)
+{
+    uint64_t last = (uint64_t)address + size - 1;
+    bool configured = false, allowed = false;
+    s->guard_checks++;
+    for (unsigned i = 0; i < 2; i++) {
+        if ((s->pc_low[i] || s->pc_high[i]) && s->pc_low[i] <= s->pc_high[i]) {
+            configured = true;
+            allowed |= address >= s->pc_low[i] && last <= s->pc_high[i];
+        }
+    }
+    return !configured || allowed;
+}
+
+/* Out-of-line stack check for SP or window changes outside translated code:
+ * interrupt entry and return, and EMU guard register writes. */
 void fm1_system_check_stack(FM1PocSystem *s)
 {
+    s->guard_checks++;
     if (s->emu_control & 8) {
         unsigned window = s->cpu->env.in_irq ? 0 : 1;
         uint32_t sp = s->cpu->env.spr[SP];
         if (s->stack_low[window] > s->stack_high[window] ||
             sp < s->stack_low[window] || sp > s->stack_high[window]) {
-            s->emu_message |= 8;
-            system_fail(s, "guest stack pointer lies outside its configured guard window");
+            fm1_system_guard_fault(s, PI32V2_GUARD_STACK);
         }
+    }
+}
+
+void fm1_system_guard_fault(FM1PocSystem *s, unsigned kind)
+{
+    switch (kind) {
+    case PI32V2_GUARD_STACK:
+        s->emu_message |= 8;
+        system_fail(s, "guest stack pointer lies outside its configured guard window");
+    case PI32V2_GUARD_WRITE:
+        s->debug_message |= 1u << 13;
+        system_fail(s, "CPU write intersects an enabled guest guard window");
+    case PI32V2_GUARD_PC:
+        s->debug_message |= 1u << 12;
+        system_fail(s, "guest PC lies outside both configured guard windows");
+    default:
+        system_fail(s, "unknown system guard fault");
     }
 }
 

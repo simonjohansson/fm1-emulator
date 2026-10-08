@@ -13,7 +13,7 @@ typedef struct PiDisasContext {
     DisasContextBase base;
     CPUPi32v2State *env;
     uint32_t stop;
-    bool count_enabled, repeating;
+    bool count_enabled, repeating, in_irq;
     TCGv_i32 inputs[16];
 } PiDisasContext;
 static TCGv_i32 gpr[16], spr[16], pc;
@@ -70,18 +70,57 @@ static TCGv_i32 read_gpr(PiDisasContext *d, unsigned reg)
 {
     return d->inputs[reg] ? d->inputs[reg] : gpr[reg];
 }
-static void check_memory_access(PiDisasContext *d, TCGv_i32 addr, MemOp op, bool write)
+/* Guard checks read the machine's mirrors in env. Loads need none: XIP
+ * reads fault through the memory map while SFC is disabled. */
+static void guard_fault(unsigned kind, TCGv_i32 addr, unsigned size)
 {
-    gen_helper_pi32v2_access(tcg_env, addr, tcg_constant_i32(memop_size(op)), tcg_constant_i32(write));
+    gen_helper_pi32v2_guard_fault(tcg_env, tcg_constant_i32(kind), addr,
+                                  tcg_constant_i32(size));
+}
+/* A store must not intersect an enabled write window (before the store). */
+static void check_write(TCGv_i32 addr, unsigned size)
+{
+    TCGv_i32 last = tcg_temp_new_i32(), bound = tcg_temp_new_i32();
+    tcg_gen_addi_i32(last, addr, size - 1);
+    for (unsigned i = 0; i < 3; i++) {
+        TCGLabel *clear = gen_new_label();
+        tcg_gen_ld_i32(bound, tcg_env, offsetof(CPUPi32v2State, write_high[i]));
+        tcg_gen_brcond_i32(TCG_COND_GTU, addr, bound, clear);
+        tcg_gen_ld_i32(bound, tcg_env, offsetof(CPUPi32v2State, write_low[i]));
+        tcg_gen_brcond_i32(TCG_COND_LTU, last, bound, clear);
+        guard_fault(PI32V2_GUARD_WRITE, addr, size);
+        gen_set_label(clear);
+    }
+}
+/* After every SP write: SP must lie in the current context's stack window. */
+static void check_stack(PiDisasContext *d)
+{
+    unsigned w = d->in_irq;
+    TCGLabel *bad = gen_new_label(), *ok = gen_new_label();
+    TCGv_i32 bound = tcg_temp_new_i32();
+    tcg_gen_ld_i32(bound, tcg_env, offsetof(CPUPi32v2State, stack_low[w]));
+    tcg_gen_brcond_i32(TCG_COND_LTU, spr[SP], bound, bad);
+    tcg_gen_ld_i32(bound, tcg_env, offsetof(CPUPi32v2State, stack_high[w]));
+    tcg_gen_brcond_i32(TCG_COND_LEU, spr[SP], bound, ok);
+    gen_set_label(bad);
+    guard_fault(PI32V2_GUARD_STACK, spr[SP], 0);
+    gen_set_label(ok);
+}
+static int fetch_refused(CPUState *cs, uint32_t address, unsigned size)
+{
+    Pi32v2CPU *cpu = PI32V2_CPU(cs);
+    if (!cpu->ops || !cpu->ops->fetch_fault) {
+        return -1;
+    }
+    return cpu->ops->fetch_fault(cpu_env(cs), address, size);
 }
 static void load(PiDisasContext *d, TCGv_i32 value, TCGv_i32 addr, MemOp op)
 {
-    check_memory_access(d, addr, op, false);
     tcg_gen_qemu_ld_i32(value, addr, 0, op);
 }
 static void store(PiDisasContext *d, TCGv_i32 value, TCGv_i32 addr, MemOp op)
 {
-    check_memory_access(d, addr, op, true);
+    check_write(addr, memop_size(op));
     tcg_gen_qemu_st_i32(value, addr, 0, op);
 }
 static void record_branch(PiDisasContext *d)
@@ -101,13 +140,14 @@ static TCGv_i32 bit_operand(TCGv_i32 index, uint16_t op)
 static void push(PiDisasContext *d, TCGv_i32 value)
 {
     tcg_gen_subi_i32(spr[SP], spr[SP], 4);
+    check_stack(d);
     store(d, value, spr[SP], MO_LEUL | MO_ALIGN);
 }
 static void pop(PiDisasContext *d, TCGv_i32 value)
 {
     load(d, value, spr[SP], MO_LEUL | MO_ALIGN);
     tcg_gen_addi_i32(spr[SP], spr[SP], 4);
-    gen_helper_pi32v2_access(tcg_env, spr[SP], tcg_constant_i32(0), tcg_constant_i32(4));
+    check_stack(d);
 }
 static void jump(uint32_t dest)
 {
@@ -167,6 +207,7 @@ static void init_disas(DisasContextBase *db, CPUState *cs)
     d->stop = PI32V2_CPU(cs)->stop_pc;
     d->count_enabled = true;
     d->repeating = d->env->repeat_end != 0;
+    d->in_irq = d->env->in_irq;          /* part of the TB flags */
 }
 static void tb_start(DisasContextBase *db, CPUState *cs) {}
 static void insn_start(DisasContextBase *db, CPUState *cs)
@@ -186,6 +227,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             goto illegal;
         }
         tcg_gen_movi_i32((op & 0x20) ? spr[reg] : gpr[reg], value);
+        if ((op & 0x20) && reg == SP) { check_stack(d); }
         next = here + 6;
     } else if (op == 0xe040 || (op & 0xfff0) == 0xe040) {
         /* Vendor disassembly (E04A FFFF -> r10 = -1) and the external
@@ -202,6 +244,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (special == 15 || ((x & 255) != 0 && (x & 255) != 128)) { goto illegal; }
         tcg_gen_mov_i32((x & 128) ? spr[special] : gpr[reg],
                        (x & 128) ? read_gpr(d, reg) : spr[special]);
+        if ((x & 128) && special == SP) { check_stack(d); }
         next = here + 4;
         /* Writing ICFG can make an already asserted IRQ deliverable. */
         if (special == ICFG && (x & 128)) { db->is_jmp = DISAS_EXIT; }
@@ -277,7 +320,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xe01f) == 0x8002) {
         int32_t imm = sext((op >> 5) & 7, 3) * 128 + ((op >> 8) & 31) * 4;
         tcg_gen_addi_i32(spr[SP], spr[SP], imm);
-        gen_helper_pi32v2_access(tcg_env, spr[SP], tcg_constant_i32(0), tcg_constant_i32(4));
+        check_stack(d);
     } else if ((op & 0xfff0) == 0xe160 || (op & 0xfff0) == 0xe170) {
         uint16_t x = fetch(d, here + 2);
         unsigned mode = (x >> 10) & 3;
@@ -984,7 +1027,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
          * signed 13-bit adjustment in whole words; other fields deferred. */
         if (x & 0xe003) { goto illegal; }
         tcg_gen_addi_i32(spr[SP], spr[SP], sext(x, 13));
-        gen_helper_pi32v2_access(tcg_env, spr[SP], tcg_constant_i32(0), tcg_constant_i32(4));
+        check_stack(d);
         next = here + 4;
     } else if (op == 0xe8f8) {
         uint16_t x = fetch(d, here + 2);
@@ -1425,11 +1468,23 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         translator_io_start(db);
         gen_helper_pi32v2_loop(tcg_env);
     }
-    op = fetch(d, here);
+    /* Fetch guards are decided at translation: the TB key carries the XIP
+     * state and the guard generation. A refused fetch faults when executed
+     * and never reads the refused bytes. */
+    unsigned span = 2;
+    int refused = fetch_refused(cs, here, span);
+    if (refused < 0) {
+        op = fetch(d, here);
+        span = instruction_end(d, here) - here;
+        refused = fetch_refused(cs, here, span);
+    }
+    if (refused >= 0) {
+        guard_fault(refused, tcg_constant_i32(here), span);
+        db->is_jmp = DISAS_NORETURN;
+        db->pc_next = next;
+        return;
+    }
     bool parallel = op >> 13 == 6 || (op & 0xf800) == 0xf000;
-    unsigned span = instruction_end(d, here) - here;
-    gen_helper_pi32v2_access(tcg_env, tcg_constant_i32(here),
-                             tcg_constant_i32(span), tcg_constant_i32(2));
     if (parallel) {
         /* Either half may touch MMIO. Ending the TB here lets QEMU enable
          * I/O before both effects, so replay cannot repeat a register update. */

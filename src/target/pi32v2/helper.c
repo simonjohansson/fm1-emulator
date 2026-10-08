@@ -54,13 +54,22 @@ void HELPER(pi32v2_budget)(CPUPi32v2State *env)
     pi32v2_fail(env, "instruction limit reached");
 }
 
-void pi32v2_check_access(CPUPi32v2State *env, uint32_t address,
-                         unsigned size, unsigned flags)
+void pi32v2_check_stack(CPUPi32v2State *env)
 {
     Pi32v2CPU *cpu = env_archcpu(env);
-    if (cpu->ops && cpu->ops->check_access) {
-        cpu->ops->check_access(env, address, size, flags);
+    if (cpu->ops && cpu->ops->check_stack) {
+        cpu->ops->check_stack(env);
     }
+}
+
+void pi32v2_guard_fault(CPUPi32v2State *env, unsigned kind,
+                        uint32_t address, unsigned size)
+{
+    Pi32v2CPU *cpu = env_archcpu(env);
+    if (cpu->ops && cpu->ops->guard_fault) {
+        cpu->ops->guard_fault(env, kind, address, size);
+    }
+    pi32v2_fail(env, "guard fault without a machine guard interface");
 }
 
 void pi32v2_note_branch(CPUPi32v2State *env)
@@ -71,9 +80,10 @@ void pi32v2_note_branch(CPUPi32v2State *env)
     }
 }
 
-void HELPER(pi32v2_access)(CPUPi32v2State *env, uint32_t address, uint32_t size, uint32_t flags)
+void HELPER(pi32v2_guard_fault)(CPUPi32v2State *env, uint32_t kind,
+                                 uint32_t address, uint32_t size)
 {
-    pi32v2_check_access(env, address, size, flags);
+    pi32v2_guard_fault(env, kind, address, size);
 }
 
 void HELPER(pi32v2_branch)(CPUPi32v2State *env)
@@ -244,6 +254,7 @@ void HELPER(pi32v2_rti)(CPUPi32v2State *env)
     env->spr[SSP] = env->spr[SP];
     env->spr[SP] = env->spr[USP];
     env->in_irq = false;
+    pi32v2_check_stack(env);
     env->spr[ICFG] = (env->spr[ICFG] & ~255u) | 0x600;
     env->return_icfg = env->spr[ICFG];
     env->rti_count++;

@@ -9,6 +9,7 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "system/address-spaces.h"
+#include "exec/translation-block.h"
 #include "fm1-nor.h"
 #include "fm1-image.h"
 
@@ -34,21 +35,55 @@ bool fm1_nor_xip_enabled(const FM1PocNOR *nor)
     return nor->sfc_control != 0 && (nor->iomap_con0 & SFC_ROUTE);
 }
 
-void fm1_nor_check_access(FM1PocNOR *nor, uint32_t address,
-                          unsigned size, bool write)
+int fm1_nor_fetch_fault(FM1PocNOR *nor, uint32_t address, unsigned size)
 {
     if (address < FM1_NOR_XIP_BASE || address >= 0x02100000u) {
+        return -1;
+    }
+    if ((uint64_t)address + size > FM1_NOR_XIP_BASE + FM1_NOR_XIP_SIZE) {
+        return PI32V2_GUARD_XIP_BOUNDS;
+    }
+    return nor->cpu->env.xip_fetch ? -1 : PI32V2_GUARD_XIP_DISABLED;
+}
+
+void fm1_nor_guard_fault(FM1PocNOR *nor, unsigned kind)
+{
+    nor_fail(nor, kind == PI32V2_GUARD_XIP_BOUNDS ?
+             "XIP access exceeds mapped NOR storage" :
+             "XIP access while SFC is disabled or unrouted");
+}
+
+/* XIP reads are direct ROM reads while SFC is routed (ROMD mode); otherwise
+ * they reach xip_read and fault. Translated code is keyed by the CPU's
+ * xip_fetch flag, so leave the TB chain before the next instruction. */
+static void update_xip(FM1PocNOR *nor)
+{
+    bool on = fm1_nor_xip_enabled(nor);
+    if (on == nor->cpu->env.xip_fetch) {
         return;
     }
-    if (write) { nor_fail(nor, "write to read-only XIP (NOR)"); }
-    if (!size || (uint64_t)address + size >
-                 FM1_NOR_XIP_BASE + FM1_NOR_XIP_SIZE) {
-        nor_fail(nor, "XIP access exceeds mapped NOR storage");
-    }
-    if (!fm1_nor_xip_enabled(nor)) {
-        nor_fail(nor, "XIP access while SFC is disabled or unrouted");
-    }
+    memory_region_rom_device_set_romd(&nor->xip, on);
+    nor->cpu->env.xip_fetch = on;
+    cpu_exit(CPU(nor->cpu));
 }
+
+static uint64_t xip_read(void *opaque, hwaddr offset, unsigned size)
+{
+    FM1PocNOR *nor = opaque;
+    pi32v2_guard_fault(&nor->cpu->env, PI32V2_GUARD_XIP_DISABLED,
+                       FM1_NOR_XIP_BASE + offset, size);
+}
+
+static void xip_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    nor_fail(opaque, "write to read-only XIP (NOR)");
+}
+
+static const MemoryRegionOps xip_ops = {
+    .read = xip_read, .write = xip_write, .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {.min_access_size = 1, .max_access_size = 4},
+    .impl = {.min_access_size = 1, .max_access_size = 4},
+};
 
 static void command_start(FM1PocNOR *nor, uint8_t command)
 {
@@ -139,15 +174,19 @@ static void write_complete(void *opaque)
     } else {
         memset(nor->bytes + start, 0xff, length);
     }
-    /* Publish through QEMU's ROM-write path, which marks modified RAM and
-     * invalidates translated code. SPI reads and XIP then see the same bytes. */
+    /* Publish to the XIP ROM device's storage and invalidate translated
+     * code. This also holds while SFC is disabled (MMIO mode), where the
+     * address-space ROM-write path would skip the device. */
     uint32_t mapped = MAX(start, FM1_NOR_XIP_OFFSET);
-    if (mapped < start + length &&
-        address_space_write_rom(&address_space_memory,
-            FM1_NOR_XIP_BASE + mapped - FM1_NOR_XIP_OFFSET,
-            MEMTXATTRS_UNSPECIFIED, nor->bytes + mapped,
-            start + length - mapped) != MEMTX_OK) {
-        nor_fail(nor, "cannot publish NOR write to XIP");
+    if (mapped < start + length) {
+        hwaddr offset = mapped - FM1_NOR_XIP_OFFSET;
+        hwaddr bytes = start + length - mapped;
+        ram_addr_t ram = memory_region_get_ram_addr(&nor->xip) + offset;
+        memcpy((uint8_t *)memory_region_get_ram_ptr(&nor->xip) + offset,
+               nor->bytes + mapped, bytes);
+        /* As memory_region_flush_rom_device, which requires ROMD mode. */
+        tb_invalidate_phys_range(NULL, ram, ram + bytes - 1);
+        memory_region_set_dirty(&nor->xip, offset, bytes);
     }
     nor->write_busy = nor->write_enabled = false;
 }
@@ -266,6 +305,7 @@ static void sfc_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         nor->sfc_restores++;
     }
     nor->sfc_control = value;
+    update_xip(nor);
 }
 
 static uint64_t encryption_read(void *opaque, hwaddr offset, unsigned size)
@@ -341,6 +381,9 @@ void fm1_nor_set_pins(FM1PocNOR *nor, uint32_t pd_out, uint32_t iomap_con0)
     nor->selected = selected;
     nor->pd_out = pd_out;
     nor->iomap_con0 = iomap_con0;
+    if (nor->cpu) {
+        update_xip(nor);
+    }
 }
 
 void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
@@ -398,11 +441,13 @@ void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
                           "fm1.sfcenc", 16);
     memory_region_add_subregion(get_system_memory(), ENCRYPTION_BASE,
                                 &nor->encryption_mmio);
-    /* Read-only to CPU stores; completed SPI writes update this ROM region
-     * through QEMU's coherent ROM-write API. */
-    memory_region_init_rom(&nor->xip, NULL, "fm1.diag-xip", FM1_NOR_XIP_SIZE,
-                           &error_fatal);
+    /* Read-only to CPU stores (fill_tlb); completed SPI writes update the
+     * device storage directly. ROMD mode follows the SFC routing. */
+    memory_region_init_rom_device(&nor->xip, NULL, &xip_ops, nor, "fm1.diag-xip",
+                                  FM1_NOR_XIP_SIZE, &error_fatal);
     memcpy(memory_region_get_ram_ptr(&nor->xip), nor->bytes + FM1_NOR_XIP_OFFSET,
             FM1_NOR_XIP_SIZE);
     memory_region_add_subregion(get_system_memory(), FM1_NOR_XIP_BASE, &nor->xip);
+    nor->cpu->env.xip_fetch = true;     /* ROMD is the device's initial mode */
+    update_xip(nor);
 }
