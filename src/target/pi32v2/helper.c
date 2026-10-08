@@ -184,6 +184,22 @@ uint32_t HELPER(pi32v2_divs)(CPUPi32v2State *env, uint32_t numerator, uint32_t d
     return (int32_t)numerator / (int32_t)denominator;
 }
 
+/* E1F6: a register pair divided by a register, the quotient into a pair */
+uint64_t HELPER(pi32v2_ldiv)(CPUPi32v2State *env, uint64_t numerator, uint32_t denominator)
+{
+    if (!denominator) { pi32v2_fail(env, "divide-by-zero behavior is unsupported"); }
+    return numerator / denominator;
+}
+
+uint64_t HELPER(pi32v2_ldivs)(CPUPi32v2State *env, uint64_t numerator, uint32_t denominator)
+{
+    if (!denominator) { pi32v2_fail(env, "divide-by-zero behavior is unsupported"); }
+    if (numerator == 0x8000000000000000ull && denominator == 0xffffffffu) {
+        pi32v2_fail(env, "signed-division-overflow behavior is unsupported");
+    }
+    return (int64_t)numerator / (int32_t)denominator;
+}
+
 void HELPER(pi32v2_rti)(CPUPi32v2State *env)
 {
     if (!env->in_irq) {

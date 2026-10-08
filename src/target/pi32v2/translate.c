@@ -352,6 +352,21 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         else if (op == 0xe435 && mode == 1) { tcg_gen_smin_i32(gpr[x >> 12], left, right); }
         else { tcg_gen_umin_i32(gpr[x >> 12], left, right); }
         next = here + 4;
+    } else if (op == 0xe1f6) {
+        uint16_t x = fetch(d, here + 2);
+        /* Vendor objdump of every E1F6 xxxx: a divide exactly when x & 0x1f
+         * == 0. x >> 12 is the quotient pair with its low bit selecting signed,
+         * (x >> 4) & 15 the dividend pair, (x >> 8) & 15 the divisor: E1F6 1200
+         * is r1_r0 = r1_r0 / r2 (s), the compiler's long long / int; E1F6 E0E0
+         * r15_r14 = r15_r14 / r0 (u). */
+        if (x & 0x1f) { goto illegal; }
+        unsigned dest = (x >> 12) & 14, source = (x >> 4) & 15;
+        TCGv_i64 value = tcg_temp_new_i64();
+        tcg_gen_concat_i32_i64(value, read_gpr(d, source), read_gpr(d, source + 1));
+        if ((x >> 12) & 1) { gen_helper_pi32v2_ldivs(value, tcg_env, value, read_gpr(d, (x >> 8) & 15)); }
+        else { gen_helper_pi32v2_ldiv(value, tcg_env, value, read_gpr(d, (x >> 8) & 15)); }
+        tcg_gen_extr_i64_i32(gpr[dest], gpr[dest + 1], value);
+        next = here + 4;
     } else if (op == 0xe1c0) {
         uint16_t x = fetch(d, here + 2);
         unsigned mode = (x >> 10) & 3, shift = (x & 15) | ((x >> 8) & 3) * 16;
@@ -411,7 +426,9 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                (op & 0xfff0) == 0xec30 ||
                (op & 0xfff0) == 0xec90 || (op & 0xfff0) == 0xeca0 ||
                (op & 0xfff0) == 0xed20 || (op & 0xfff0) == 0xee30 ||
-               (op & 0xfff0) == 0xe8a0) {
+               (op & 0xfff0) == 0xe8a0 ||
+               (op & 0xfff0) == 0xe9a0 || (op & 0xfff0) == 0xec20 || (op & 0xfff0) == 0xeea0 ||
+               (op & 0xfff0) == 0xed90 || (op & 0xfff0) == 0xee10) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = (op >> 4) & 255;
         TCGv_i32 left = read_gpr(d, op & 15), right, result = tcg_temp_new_i32();
@@ -426,6 +443,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             tcg_gen_andi_i32(masked, left, packed_mask(x));
             left = masked; right = tcg_constant_i32(0);
             cond = kind == 0xa2 ? TCG_COND_EQ : TCG_COND_NE;
+        } else if (kind == 0x9a || kind == 0xc2 || kind == 0xea) {
+            /* Vendor disassembly: E9A3 0B80 is if (r3 < 65536) {, EC23 0BA0
+             * if (r3 > 81920) {, EEA6 0B80 ifs (r6 <= 65536) {, EEA3 0FFF
+             * ifs (r3 <= 510) {: packed constants, unsigned below / above and
+             * signed at most (Felucca's DRUM voices and PHYS use the last two). */
+            right = tcg_constant_i32(packed_mask(x));
+            cond = kind == 0x9a ? TCG_COND_LTU : kind == 0xc2 ? TCG_COND_GTU : TCG_COND_LE;
         } else if (kind == 0x92 || kind == 0xca || kind == 0xd2) {
             /* E920/ED20 have pinned packed constructors. Saved vendor
              * ECA1/0980 and complete-state oracle cases establish packed LE.
@@ -459,6 +483,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         } else if (kind == 0xe9) {
             if (x & 255) { goto illegal; }
             right = read_gpr(d, (x >> 8) & 15); cond = TCG_COND_LE;
+        } else if (kind == 0xd9 || kind == 0xe1) {
+            /* Vendor ED97 0F00 is ifs (r7 < r15) {, EE17 0F00 ifs (r7 > r15) {
+             * (Felucca 1.1 cv_rrect): the signed LT / GT register IFs. */
+            if (x & 255) { goto illegal; }
+            right = read_gpr(d, (x >> 8) & 15); cond = kind == 0xd9 ? TCG_COND_LT : TCG_COND_GT;
         } else if (kind == 0xcb) {
             /* Vendor-backed unsigned literals disagree with SLEIGH's packed
              * label (ECB0 0208 means 520). Keep all twelve literal bits. */
@@ -527,7 +556,9 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                 operand = bit_operand(operand, op);
             }
             if (kind == 0) { tcg_gen_or_i32(value, value, operand); }
-            else if (kind == 1 && op == 0xe866) { tcg_gen_xor_i32(value, value, operand); }
+            /* Vendor E864 E401 is [r14+0] ^= r4 (Felucca 1.0 fm1_timer5_irq, a
+             * held note's LED): XOR takes the plain register as E866 its bit. */
+            else if (kind == 1) { tcg_gen_xor_i32(value, value, operand); }
             else if (kind == 2) { tcg_gen_and_i32(value, value, operand); }
             else if (kind == 3) { tcg_gen_andc_i32(value, value, operand); }
             else { goto illegal; }
@@ -594,69 +625,59 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_addi_i32(addr, read_gpr(d, b), sext((op >> 8) & 31, 5));
         if (op & 128) { store(d, read_gpr(d, a), addr, MO_UB); }
         else { load(d, gpr[a], addr, MO_UB); }
-    } else if ((op & 0xff80) == 0x0500 || (op & 0xff80) == 0x0580) {
-        if (op & 8) { goto illegal; }
+    } else if ((op & 0xff00) == 0x0500 || (op & 0xff00) == 0x0600 || (op & 0xff00) == 0x0700) {
+        /* Vendor 16-bit post-increments (JieLi clang 4.0.1 -target pi32v2):
+         * 0500 / 0600 / 0700 word / halfword / byte, 0x80 a store, 0x08 a step
+         * back, base in bits 6:4, data in 2:0. 0568 is r0 = [r6++=-4], 06E8
+         * h[r6++=-2] = r0 (Felucca 1.1 cv_alpha_hc), 07E8 b[r6++=-1] = r0.
+         * Loads are unsigned; a load into its own base is deferred. */
+        unsigned size = (op & 0xff00) == 0x0500 ? 4 : (op & 0xff00) == 0x0600 ? 2 : 1;
+        MemOp memop = size == 4 ? MO_LEUL | MO_ALIGN : size == 2 ? MO_LEUW | MO_ALIGN : MO_UB;
         if (!(op & 128) && a == b) { goto illegal; }
-        if (op & 128) { store(d, read_gpr(d, a), read_gpr(d, b), MO_LEUL | MO_ALIGN); }
-        else { load(d, gpr[a], read_gpr(d, b), MO_LEUL | MO_ALIGN); }
-        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 4);
-    } else if ((op & 0xff88) == 0x0600) {
-        if (a == b) { goto illegal; }
-        load(d, gpr[a], read_gpr(d, b), MO_LEUW | MO_ALIGN);
-        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 2);
-    } else if ((op & 0xff88) == 0x0708) {
-        if (a == b) { goto illegal; }
-        load(d, gpr[a], read_gpr(d, b), MO_UB);
-        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), -1);
-    } else if ((op & 0xff88) == 0x0700) {
-        if (a == b) { goto illegal; }
-        load(d, gpr[a], read_gpr(d, b), MO_UB);
-        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 1);
-    } else if ((op & 0xff88) == 0x0780) {
-        store(d, read_gpr(d, a), read_gpr(d, b), MO_UB);
-        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 1);
-    } else if ((op & 0xff88) == 0x0680) {
-        store(d, read_gpr(d, a), read_gpr(d, b), MO_LEUW | MO_ALIGN);
-        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 2);
+        if (op & 128) { store(d, read_gpr(d, a), read_gpr(d, b), memop); }
+        else { load(d, gpr[a], read_gpr(d, b), memop); }
+        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), op & 8 ? -(int32_t)size : (int32_t)size);
     } else if ((op & 0xfff0) == 0xee50) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = op & 15;
-        if (kind != 0 && kind != 1 && kind != 2 && kind != 3 && kind != 4 && kind != 8 && kind != 10) { goto illegal; }
+        /* Vendor disassembly of EE50..EE5F: kind & 1 is offset bit 8 (negative),
+         * & 2 store, & 4 signed load, & 8 pre-increment; there is no signed
+         * store. EE5C 0B61 is r0 = b[++r6=177] (s), EE5D 0F6F r0 = b[++r6=-1] (s),
+         * EE59 1F00 r1 = b[++r0=-16] (u). */
+        if ((kind & 6) == 6) { goto illegal; }
         unsigned base = (x >> 4) & 15, reg = x >> 12;
-        if ((kind == 8 || kind == 10) && base == reg) { goto illegal; }
+        if ((kind & 8) && base == reg) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
         int32_t offset = (x & 15) | ((x >> 8) & 15) * 16;
         /* EE53 stores a byte at base + (imm8 - 256), without writeback.
          * Saved EE53 8F0F encodes b[r0-1] = r8, including high GPRs. */
-        if (kind == 1 || kind == 3) { offset -= 256; }
+        if (kind & 1) { offset -= 256; }
         tcg_gen_addi_i32(addr, read_gpr(d, base), offset);
-        if (kind == 2 || kind == 3 || kind == 10) { store(d, read_gpr(d, x >> 12), addr, MO_UB); }
-        else { load(d, gpr[x >> 12], addr, kind == 4 ? MO_SB : MO_UB); }
-        if (kind == 8 || kind == 10) { tcg_gen_mov_i32(gpr[base], addr); }
+        if (kind & 2) { store(d, read_gpr(d, x >> 12), addr, MO_UB); }
+        else { load(d, gpr[x >> 12], addr, kind & 4 ? MO_SB : MO_UB); }
+        if (kind & 8) { tcg_gen_mov_i32(gpr[base], addr); }
         next = here + 4;
-    } else if (op == 0xeed0) {
+    } else if (op == 0xeed0 || op == 0xeed1 || op == 0xeed4 || op == 0xeed5) {
         uint16_t x = fetch(d, here + 2);
         unsigned base = (x >> 4) & 15, dest = x >> 12;
+        /* The step is signed nine bits, op bit 0 its sign: vendor EED1 3FBF
+         * is r3 = b[r11++=-1] (u), EED1 30B0 steps -256, EED5 3FBF loads
+         * signed and steps -1 (JieLi clang 4.0.1 -target pi32v2). */
+        int32_t stride = sext((op & 1) << 8 | (x & 15) | ((x >> 8) & 15) * 16, 9);
         if (base == dest) { goto illegal; }
-        load(d, gpr[dest], read_gpr(d, base), MO_UB);
-        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 15) | ((x >> 8) & 15) * 16);
-        next = here + 4;
-    } else if (op == 0xeed2) {
-        uint16_t x = fetch(d, here + 2);
-        unsigned base = (x >> 4) & 15, source = x >> 12;
-        unsigned stride = (x & 15) | ((x >> 8) & 15) * 16;
-        /* Vendor EED2 2510 stores b[r1++=80] = r2. Store the incoming
-         * low byte at the old base, including source==base, then advance
-         * by the unsigned byte stride. A failed store leaves base intact. */
-        store(d, read_gpr(d, source), read_gpr(d, base), MO_UB);
+        load(d, gpr[dest], read_gpr(d, base), op & 4 ? MO_SB : MO_UB);
         tcg_gen_addi_i32(gpr[base], read_gpr(d, base), stride);
         next = here + 4;
-    } else if (op == 0xeed4) {
+    } else if (op == 0xeed2 || op == 0xeed3) {
         uint16_t x = fetch(d, here + 2);
-        unsigned base = (x >> 4) & 15, dest = x >> 12;
-        if (base == dest) { goto illegal; }
-        load(d, gpr[dest], read_gpr(d, base), MO_SB);
-        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 15) | ((x >> 8) & 15) * 16);
+        unsigned base = (x >> 4) & 15, source = x >> 12;
+        int32_t stride = sext((op & 1) << 8 | (x & 15) | ((x >> 8) & 15) * 16, 9);
+        /* Vendor EED2 2510 stores b[r1++=80] = r2. Store the incoming
+         * low byte at the old base, including source==base, then advance
+         * by the signed byte stride (vendor EED3 3FBF: b[r11++=-1] = r3,
+         * EED3 30B0: -256). A failed store leaves base intact. */
+        store(d, read_gpr(d, source), read_gpr(d, base), MO_UB);
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), stride);
         next = here + 4;
     } else if (op == 0xeed8) {
         uint16_t x = fetch(d, here + 2);
@@ -714,6 +735,38 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_mov_i32(gpr[base], addr);
         load(d, gpr[dest], addr, MO_LEUL | MO_ALIGN);
         next = here + 4;
+    } else if (((op & 0xfff8) == 0xec50 && (fetch(d, here + 2) & 2)) ||
+               ((op & 0xfff8) == 0xec58 && !(fetch(d, here + 2) & 2))) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, pair = x >> 12;
+        bool pre = (op & 0xfff8) == 0xec50;
+        /* Vendor disassembly: EC50 2213 is d[++r1=32] = r3_r2, EC57 2A03
+         * d[++r0=-96] = r3_r2, EC50 421A r5_r4 = d[++r1=40] (pre-increment,
+         * x & 3 = 3 / 2); EC58 2009 d[r0++=8] = r3_r2, EC5F 6F00 r7_r6 =
+         * d[r0++=-16] (post-increment, x & 3 = 1 / 0). The pair is even; a
+         * base inside the pair is deferred. */
+        int32_t offset = sext(op & 7, 3) * 256 + ((x >> 8) & 15) * 16 + ((x >> 2) & 3) * 4;
+        bool write = x & 1;
+        if ((pair & 1) || base == pair || base == pair + 1) { goto illegal; }
+        TCGv_i32 addr = tcg_temp_new_i32();
+        if (pre) { tcg_gen_addi_i32(addr, read_gpr(d, base), offset); }
+        else { tcg_gen_mov_i32(addr, read_gpr(d, base)); }
+        if (write) { translator_io_start(db); }
+        if (pre) {
+            /* Preserve the modeled pre-index writeback-before-access order. */
+            tcg_gen_mov_i32(gpr[base], addr);
+        }
+        TCGv_i32 high = tcg_temp_new_i32();
+        tcg_gen_addi_i32(high, addr, 4);
+        if (write) {
+            store(d, read_gpr(d, pair), addr, MO_LEUL | MO_ALIGN);
+            store(d, read_gpr(d, pair + 1), high, MO_LEUL | MO_ALIGN);
+        } else {
+            load(d, gpr[pair], addr, MO_LEUL | MO_ALIGN);
+            load(d, gpr[pair + 1], high, MO_LEUL | MO_ALIGN);
+        }
+        if (!pre) { tcg_gen_addi_i32(gpr[base], read_gpr(d, base), offset); }
+        next = here + 4;
     } else if ((op & 0xfff8) == 0xecd0 || (op & 0xfff8) == 0xec50) {
         uint16_t x = fetch(d, here + 2);
         if (x & 2) { goto illegal; }
@@ -730,14 +783,32 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             else { load(d, gpr[reg + 1], addr, MO_LEUL | MO_ALIGN); }
         }
         next = here + 4;
+    } else if ((op & 0xfff8) == 0xecd8 && (fetch(d, here + 2) & 3) <= 1) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, reg = x >> 12;
+        /* imm11m4: the step is signed eleven bits, op bits 2:0 its bits
+         * 10:8. Vendor ECDB 3FBC is r3 = [r11++=1020], ECDF 3FBD
+         * [r11++=-4] = r3, ECDC 30B0 r3 = [r11++=-1024], ECDA 5020
+         * r5 = [r2++=512]; Felucca 1.1.5 stores with ECD8 B005 at boot.
+         * ECDC with x & 3 = 2 / 3 is the register pre-increment below. */
+        int32_t stride = sext((op & 7) << 8 | (x & 12) | ((x >> 8) & 15) * 16, 11);
+        if (x & 1) {
+            /* Store the incoming register at the old base, then advance, as
+             * the byte and halfword post-increment stores; alias deferred. */
+            if (base == reg) { goto illegal; }
+            translator_io_start(db);
+            store(d, read_gpr(d, reg), read_gpr(d, base), MO_LEUL | MO_ALIGN);
+        } else {
+            if (base == reg) { goto illegal; }
+            load(d, gpr[reg], read_gpr(d, base), MO_LEUL | MO_ALIGN);
+        }
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), stride);
+        next = here + 4;
     } else if (op == 0xecd8) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 15;
         if ((x & 3) == 0) {
-            unsigned base = (x >> 4) & 15, dest = x >> 12;
-            if (base == dest) { goto illegal; }
-            load(d, gpr[dest], read_gpr(d, base), MO_LEUL | MO_ALIGN);
-            tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 12) | ((x >> 8) & 15) * 16);
+            goto illegal;                               /* (the post-increment load, above) */
         } else {
             if (kind != 2 && kind != 3 && kind != 10 && kind != 11) { goto illegal; }
             TCGv_i32 addr = tcg_temp_new_i32();
@@ -766,43 +837,56 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         next = here + 4;
     } else if (op == 0xeddc) {
         uint16_t x = fetch(d, here + 2);
-        if ((x & 15) != 2) { goto illegal; }
-        unsigned base = (x >> 4) & 15;
+        unsigned kind = x & 15, base = (x >> 4) & 15, reg = x >> 12;
+        if (kind > 2) { goto illegal; }
+        /* Vendor EDDC 0B21 is h[++r2=r11] = r0 (Felucca gfx.c ramp, 1.0 on);
+         * EDDC 3B20 / 3B22 load r3 = h[++r2=r11] unsigned / signed. A store
+         * of the base itself, or an unsigned load into it, is deferred. */
+        if (kind != 2 && base == reg) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
         /* Vendor EDDC 3312 and separate executable probes establish the
          * unscaled incoming sum, including destination/base/index aliases. */
         tcg_gen_add_i32(addr, read_gpr(d, base), read_gpr(d, (x >> 8) & 15));
+        if (kind == 1) { translator_io_start(db); }
         /* Preserve the modeled pre-index writeback-before-access order. */
         tcg_gen_mov_i32(gpr[base], addr);
-        load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN);
+        if (kind == 1) { store(d, read_gpr(d, reg), addr, MO_LEUW | MO_ALIGN); }
+        else { load(d, gpr[reg], addr, kind == 2 ? MO_LESW | MO_ALIGN : MO_LEUW | MO_ALIGN); }
         next = here + 4;
-    } else if (op == 0xedd4) {
+    } else if ((op & 0xfffc) == 0xedd4) {
         uint16_t x = fetch(d, here + 2);
         unsigned base = (x >> 4) & 15, dest = x >> 12;
+        /* The step is signed ten bits, op bits 1:0 its bits 9:8 (vendor
+         * EDD7 3FBE: r3 = h[r11++=-2] (s); EDD5 30B0: +256). No signed store. */
+        int32_t stride = sext((op & 3) << 8 | (x & 14) | ((x >> 8) & 15) * 16, 10);
         if ((x & 1) || base == dest) { goto illegal; }
         /* Vendor EDD4 C032 and finite independent probes agree on the
          * old-base read/postupdate. The primary display agrees, but its
          * body uses an offset read without writeback; retain that caveat. */
         load(d, gpr[dest], read_gpr(d, base), MO_LESW | MO_ALIGN);
-        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 14) | ((x >> 8) & 15) * 16);
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), stride);
         next = here + 4;
-    } else if (op == 0xedd0 && (fetch(d, here + 2) & 1)) {
+    } else if ((op & 0xfffc) == 0xedd0 && (fetch(d, here + 2) & 1)) {
         uint16_t x = fetch(d, here + 2);
         unsigned base = (x >> 4) & 15, source = x >> 12;
+        int32_t stride = sext((op & 3) << 8 | (x & 14) | ((x >> 8) & 15) * 16, 10);
         /* Vendor EDD0/10F3 and independent probes establish an old-base
-         * low-halfword store followed by an unsigned even byte stride. */
+         * low-halfword store followed by the even byte stride; vendor EDD1
+         * 3FBF steps +510, EDD3 3FBF -2, EDD2 30B1 -512. */
         translator_io_start(db);
         store(d, read_gpr(d, source), read_gpr(d, base), MO_LEUW | MO_ALIGN);
-        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 14) | ((x >> 8) & 15) * 16);
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), stride);
         next = here + 4;
-    } else if (op == 0xedd0) {
+    } else if ((op & 0xfffc) == 0xedd0) {
         uint16_t x = fetch(d, here + 2);
         unsigned base = (x >> 4) & 15, dest = x >> 12;
+        int32_t stride = sext((op & 3) << 8 | (x & 14) | ((x >> 8) & 15) * 16, 10);
         if ((x & 1) || base == dest) { goto illegal; }
         /* Vendor EDD0 2104 at Felucca 0x0200d258 walks GP defaults:
-         * load the old base, then advance by the unsigned even byte stride. */
+         * load the old base, then advance by the even byte stride
+         * (vendor EDD3 3FBE: r3 = h[r11++=-2] (u)). */
         load(d, gpr[dest], read_gpr(d, base), MO_LEUW | MO_ALIGN);
-        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), (x & 14) | ((x >> 8) & 15) * 16);
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), stride);
         next = here + 4;
     } else if (op == 0xedd8) {
         uint16_t x = fetch(d, here + 2);
@@ -853,25 +937,20 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_mov_i32(gpr[base], addr);
         load(d, gpr[dest], addr, MO_LESW | MO_ALIGN);
         next = here + 4;
-    } else if ((op & 0xfffe) == 0xed50) {
+    } else if ((op & 0xfff8) == 0xed50) {
         uint16_t x = fetch(d, here + 2);
-        unsigned offset = (op & 1) * 256 + ((x >> 8) & 15) * 16 + (x & 14);
+        /* A halfword at a signed ten-bit offset, no writeback: op bits 1:0 are
+         * offset bits 9:8, op bit 2 a signed load, operand bit 0 a store (the
+         * unsigned forms only). Vendor ED54/63BC and ED55/52FC load signed at
+         * 60 and 300; ED57 7FBC is r7 = h[r11+-4] (s) (Felucca 1.1 ui_input),
+         * ED56 70B0 h[r11+-512] (s), ED53 7FBC h[r11+-4] (u), ED53 70B1
+         * h[r11+-256] = r7. A signed store is not an instruction. */
+        if ((op & 4) && (x & 1)) { goto illegal; }
+        int32_t offset = sext((op & 3) << 8 | ((x >> 8) & 15) * 16 | (x & 14), 10);
         TCGv_i32 addr = tcg_temp_new_i32();
-        /* ED50/ED51 use operand bit 0 to select stores of the low halfword. */
         tcg_gen_addi_i32(addr, read_gpr(d, (x >> 4) & 15), offset);
         if (x & 1) { store(d, read_gpr(d, x >> 12), addr, MO_LEUW | MO_ALIGN); }
-        else { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
-        next = here + 4;
-    } else if ((op & 0xfffe) == 0xed54) {
-        uint16_t x = fetch(d, here + 2);
-        if (x & 1) { goto illegal; }
-        unsigned offset = (op & 1) * 256 + ((x >> 8) & 15) * 16 + (x & 14);
-        TCGv_i32 addr = tcg_temp_new_i32();
-        /* Vendor ED54/63BC and ED55/52FC load signed halfwords at byte
-         * offsets 60 and 300, with no base writeback. Odd operands and
-         * ED56/57 remain unverified and explicitly unsupported. */
-        tcg_gen_addi_i32(addr, read_gpr(d, (x >> 4) & 15), offset);
-        load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN);
+        else { load(d, gpr[x >> 12], addr, op & 4 ? MO_LESW | MO_ALIGN : MO_LEUW | MO_ALIGN); }
         next = here + 4;
     } else if ((op & 0xffc0) == 0xe100) {
         uint16_t x = fetch(d, here + 2);
@@ -945,9 +1024,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xfff0) == 0xeb00) {
         uint16_t mask = fetch(d, here + 2);
         unsigned base = op & 15;
-        if (!mask || (mask & (1u << base))) { goto illegal; }
+        if (!mask) { goto illegal; }
         /* EB04 0104 reads r2 then r8 from consecutive words. SLEIGH's
-         * cursor and Felucca's later r4-relative accesses leave r4 intact. */
+         * cursor and Felucca's later r4-relative accesses leave r4 intact.
+         * The base may be in the list: the vendor compiler emits EB02 0006,
+         * {r2, r1} = [r2+] (Felucca 1.0.3.1 at 0x0200cb52), which only works
+         * if every word is read from the incoming base: r1 = [r2], r2 = [r2+4]. */
         TCGv_i32 addr = tcg_temp_new_i32();
         tcg_gen_mov_i32(addr, read_gpr(d, base));
         for (unsigned i = 0; i < 16; i++) {
@@ -988,6 +1070,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             pop(d, dest);
             count(d); dynamic_jump(d, dest);
         }
+    } else if (op == 0x04c8) {
+        /* Vendor 04C8 is [--sp] = {rets}, 0488 {rets} = [sp++] (Felucca 1.0
+         * uac_ep4_reset's tail call: the return address alone, then GOTO). */
+        push(d, spr[RETS]);
+    } else if (op == 0x0488) {
+        pop(d, spr[RETS]);
     } else if (op == 0x04e9) {
         push(d, spr[PSR]); push(d, spr[RETS]); push(d, spr[RETI]);
     } else if (op == 0x04a9) {
@@ -1066,7 +1154,8 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         count(d); compare_branch(d, next + (int16_t)displacement * 2, next, cond,
                                  read_gpr(d, x >> 12), tcg_constant_i32(packed_mask(x)));
     } else if (op == 0xff0b || op == 0xff0d || op == 0xff40 ||
-               op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff4a) {
+               op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff4a ||
+               op == 0xff49 || op == 0xff4b || op == 0xff4c || op == 0xff4d) {
         uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
         TCGCond cond;
         TCGv_i32 right;
@@ -1082,6 +1171,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             case 0xff42: cond = TCG_COND_GEU; break;
             case 0xff43: cond = TCG_COND_LTU; break;
             case 0xff48: cond = TCG_COND_GTU; break;
+            /* Vendor FF49 3500 0300 is if (r3 <= r5) goto (Felucca 1.1
+             * fm1_timer5_irq), FF4B ifs (r3 < r5), FF4C ifs (r3 > r5), FF4D
+             * ifs (r3 <= r5): the register forms of FF09 / FF0B..FF0D. */
+            case 0xff49: cond = TCG_COND_LEU; break;
+            case 0xff4b: cond = TCG_COND_LT; break;
+            case 0xff4c: cond = TCG_COND_GT; break;
+            case 0xff4d: cond = TCG_COND_LE; break;
             default: cond = TCG_COND_GE; break; /* Exact FF4A. */
             }
             /* Vendor FF4A uses C bits8:11; the primary B field is contradicted. */
@@ -1203,20 +1299,10 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
 {
     if ((op & 0xff88) == 0x1a00 || (op & 0xff88) == 0x1a80) { return 1u << (op & 7); }
     if ((op & 0xe008) == 0x4008) { return op & 128 ? 0 : 1u << (op & 7); }
-    if ((op & 0xff80) == 0x0500 || (op & 0xff80) == 0x0580) {
-        if (op & 8) { return -1; }
-        return (1u << ((op >> 4) & 7)) | (op & 128 ? 0 : 1u << (op & 7));
-    }
-    if ((op & 0xff88) == 0x0600) {
+    if ((op & 0xff00) == 0x0500 || (op & 0xff00) == 0x0600 || (op & 0xff00) == 0x0700) {
+        if (op & 128) { return 1u << ((op >> 4) & 7); }
         if ((op & 7) == ((op >> 4) & 7)) { return -1; }
         return (1u << ((op >> 4) & 7)) | (1u << (op & 7));
-    }
-    if ((op & 0xff88) == 0x0700) {
-        if ((op & 7) == ((op >> 4) & 7)) { return -1; }
-        return (1u << ((op >> 4) & 7)) | (1u << (op & 7));
-    }
-    if ((op & 0xff88) == 0x0780 || (op & 0xff88) == 0x0680) {
-        return 1u << ((op >> 4) & 7);
     }
     if ((op & 0xe008) == 0x6000) { return op & 128 ? 0 : 1u << (op & 7); }
     if ((op & 0xe088) == 0x6008) { return 1u << (op & 7); }
@@ -1234,7 +1320,10 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
         (op & 0xfff0) == 0xe1a0 || (op & 0xfff0) == 0xe1b0 ||
         (op & 0xfff0) == 0xe0a0 || (op & 0xfff0) == 0xe0e0 ||
         (op & 0xfff0) == 0xe0f0 || (op & 0xfff0) == 0xe150 ||
-        (op & 0xfff0) == 0xe1e0) {
+        (op & 0xfff0) == 0xe1e0 ||
+        /* Vendor F140 00F0 + 604E is r0 = r0 | 0xF0 # r6 = h[r4+0] (u)
+         * (Felucca 1.1 draw_head): OR, like XOR, writes only its destination. */
+        (op & 0xfff0) == 0xe140) {
         return 1u << (op & 15);
     }
     if ((op & 0xff00) == 0x1700) { return 1u << (op & 7); }
@@ -1274,13 +1363,10 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
 }
 static unsigned operation_size(uint16_t op)
 {
-    if ((op & 0xffc0) == 0xffc0 || (op & 0xfff0) == 0xffe0 || op == 0xff80 ||
-        op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09 || op == 0xff0c ||
-        op == 0xff0b || op == 0xff0d ||
-        op == 0xff20 || op == 0xff21 || op == 0xff23 || op == 0xff28 || op == 0xff29 ||
-        op == 0xff2a || op == 0xff2b || op == 0xff2d ||
-        op == 0xff40 || op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff4a ||
-        op == 0xff41 || op == 0xff60 || op == 0xff61) { return 6; }
+    /* Vendor disassembly gives every valid encoding from FF00 up six bytes
+     * (FF4C ifs (r0 > r0) goto N, FFA0 r0 = [npc + N] included): a false
+     * block must skip all of such a body, not stop two bytes short. */
+    if (op >= 0xff00) { return 6; }
     return op >> 13 == 7 ? 4 : 2;
 }
 static uint32_t instruction_end(PiDisasContext *d, uint32_t here)
