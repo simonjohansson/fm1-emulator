@@ -2067,7 +2067,7 @@ Audio IRQ11 entries/returns 107/107; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_sp_relative_byte_load.py
 ```
 
-### signed register <= IF and latest checkpoint
+### signed register <= IF checkpoint
 
 Exact EE90/FFF0 compares ordinary GPRs with signed <=. Head low four bits
 select left; extension bits 8..11 select right, with primary low byte zero.
@@ -2106,7 +2106,7 @@ Next work inventories all known source firmware encodings/counts offline and
 groups generic implementation candidates into independently reviewed batches.
 Full model-policy and host artifact-recording qualifications remain in evidence.
 
-Latest stop: F070/4600 + 6247 at `0x0200a2d0`, 120,323,432
+At this milestone: F070/4600 + 6247 at `0x0200a2d0`, 120,323,432
 instructions and 962,587,464 ns. The unchanged MAX 200,000,000 capture advances 5,993 instructions beyond EE94 to F070/4600 + 6247 at the current unsupported bundle stop. Vendor disassembly describes r4=rev8(r6) in the extended head with r7=[r4+8] in a compact word-load tail; exact primary/role classification belongs to the ongoing offline inventory. Stage 5/home 1/frame 1 and visible idle LCD do not prove completed HOME. Renamed captured JSON state except profile and exact PPM/latest ALNK data agree; whole SRAM is excluded and all 57,344 captured sample words are zero.
 Caches use `after-signed-register-le-if` and its `-generic` label; main repo
 `.deps/qemu-signed-register-le-if-2026-10-08/` retains primary/reference evidence and acceptance.
@@ -2115,6 +2115,68 @@ Audio IRQ11 entries/returns 107/107; home remains unverified.
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_signed_register_le_if.py
 ```
+
+### Grouped Batch A and latest checkpoint
+
+Batch A admits 12 of its 13 reviewed forms: five scalar forms (packed
+SUB, compact register ASR, ADC, SBC and special SP ADD), plus seven missing
+parallel placements. The E0F0 scalar form also admits its reviewed parallel
+roles. REV8 now executes in the reached F070/4600 + 6247 bundle. All paths are
+generic; no firmware name, hash or PC selects CPU behavior.
+
+Exact compact RETS push 04C8 stays an explicit fault. It lacks an exact primary
+constructor, and the separate CLI rejects all 27 executed cases; six skipped
+completions do not validate it. Retain this research gap rather than infer
+semantics from the neighboring 0410 encoding.
+
+Pinned primary evidence and 916 serialized copied-reference research calls
+(including five SP low-bit discriminators) qualify the admissions. Carry
+bodies in the primary omit carry; the reference supports widened ADC/SBC
+result/flags. ASR counts at least 32 sign-fill. E8F0 admits x & E003 == 0,
+adds signed13 bytes and preserves the existing configured EMU stack-window
+check after updating SP. This is not mapped-memory or alignment SP validation.
+Inherited disputed packed repeats and fatal-reference limits remain explicit.
+
+Independent Sol 6.1 High source/test review precedes one production build.
+483 scalar cases plus five generic replays and 439 parallel cases pass,
+including complete CPU/inspection expectations, aliases, flags, predicates,
+one-retirement bundles and model faults. One additional QEMU call exposed a
+test capture naming error; its reviewed transport repair reused the same
+binary. No CPU repair or second build was needed. Ten required/affected gates
+pass: ISA, CPU profiles, Felucca IRQ, boot, parallel signed divide/minimum,
+maximum, scalar signed minimum, signed register <= IF and parallel packed ADD.
+Only obsolete newly admitted negative expectations were replaced by positives.
+
+Fresh exact production-C admission over the original 21 executable payloads
+has 117,441 admitted / 3,395 rejected sites, 353 new admissions and no
+regressions. There are 64 remaining forms / 69 role rows. The original 75/81
+baseline accidentally merged one unsigned maximum placement into signed
+maximum: instrumented F434/0100 + 2E01 at 0x0200DBA4. Correct baseline is
+76/82; 12 forms / 13 role rows are resolved. Signed maximum is fully admitted;
+unsigned parallel mode0 remains deferred. Keep frozen evidence intact.
+All 496 rejected width gaps and 71 opaque E53F regions / 12 raw patterns
+remain; no admitted width mismatch occurs. Static admission is not runtime
+reachability, frequency, throughput or all-firmware correctness.
+
+Unchanged MAX 200,000,000 boot advances 11 instructions to E99C/8D00 at
+0x0200a2fa: 120,323,443 instructions and 962,587,552 ns. Vendor disassembly
+describes if (r12 < r13); this belongs to conditional batch C. Debug
+stage 5/home 1/frame 1 and visible idle LCD do not establish completed HOME.
+IRQ11 entries/returns are 107/107, IRQ63 5362/5362. All 57,344 captured sample
+words are zero; bootguard remains pending, with no guard/watchdog failure.
+Renamed default-loader replay matches captured JSON except profile, exact
+PPM and latest ALNK bytes. Whole SRAM is excluded. HOME, 30 guest seconds,
+physical input, synthesis and native execution remain open.
+
+Durable source/review/research/build/gate/firmware evidence is in main repo
+.deps/qemu-batch-a-2026-10-08/. Hash-identical copied reference CLIs and
+standalone focused validators are retained outside temporary directories.
+QEMU SHA-256:
+02e0815bc737e49b47ad15441462e6118475237a4e7d149bf86e208b70e7a56c.
+
+Focused validators reuse the pinned cached reference records; they do not
+rebuild the Rust implementation. Their matrix/evidence inputs and exact
+reproduction commands are in main repo `.deps/qemu-batch-a-2026-10-08/README.md`.
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package
 boot. Foundation and the bare display fixture explicitly target emulator

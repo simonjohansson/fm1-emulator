@@ -145,10 +145,26 @@ void HELPER(pi32v2_long_register_ne_end)(CPUPi32v2State *env, uint32_t next)
 uint32_t HELPER(pi32v2_alu)(CPUPi32v2State *env, uint32_t a, uint32_t b,
                           uint32_t sub)
 {
-    uint32_t r = sub ? a - b : a + b;
-    uint32_t carry = sub ? a >= b : r < a;
-    uint32_t ov = sub ? ((a ^ b) & (a ^ r)) : (~(a ^ b) & (a ^ r));
-    uint32_t flags = (ov >> 31) | (carry << 1) | ((r == 0) << 2) | ((r >> 31) << 3);
+    if (sub <= 1) {
+        uint32_t r = sub ? a - b : a + b;
+        uint32_t carry = sub ? a >= b : r < a;
+        uint32_t ov = sub ? ((a ^ b) & (a ^ r)) : (~(a ^ b) & (a ^ r));
+        uint32_t flags = (ov >> 31) | (carry << 1) | ((r == 0) << 2) | ((r >> 31) << 3);
+        env->spr[PSR] = (env->spr[PSR] & ~15u) | flags;
+        return r;
+    }
+    /* Internal modes 2/3 are ADC/SBC. Preserve the incoming carry before
+     * replacing flags; widen both sums to avoid intermediate wrap/overflow. */
+    uint32_t cin = (env->spr[PSR] >> 1) & 1;
+    uint32_t extra = sub == 3 ? !cin : cin;
+    uint64_t right = (uint64_t)b + extra;
+    uint64_t total = sub == 3 ? (uint64_t)a - right : (uint64_t)a + right;
+    int64_t signed_total = sub == 3 ? (int64_t)(int32_t)a - (int32_t)b - extra
+                                  : (int64_t)(int32_t)a + (int32_t)b + extra;
+    uint32_t r = total;
+    uint32_t carry = sub == 3 ? (uint64_t)a >= right : total > UINT32_MAX;
+    uint32_t overflow = signed_total < INT32_MIN || signed_total > INT32_MAX;
+    uint32_t flags = overflow | (carry << 1) | ((r == 0) << 2) | ((r >> 31) << 3);
     env->spr[PSR] = (env->spr[PSR] & ~15u) | flags;
     return r;
 }

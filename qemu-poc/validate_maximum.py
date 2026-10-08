@@ -9,7 +9,7 @@ Authority for this admission is direct vendor witnesses plus a separate
 executable oracle. Independent sign boundaries and incoming aliases distinguish
 signed from unsigned maximum; PSR/RETS and retirement are checked explicitly.
 Shared multiply/divide/min semantics, helpers and classifiers stay fixed.
-F434 bundles remain model unsupported, as does F435 in its existing gate.
+Batch A admits signed F434 bundles; unsigned F434 remains model unsupported.
 Reference rejects sampled modes2..15 without exposing fault snapshots. These
 canonical admission and fault-state checks do not establish hardware validity
 or fault behavior. The actual preceding ABS pair and scalar maximum are also
@@ -87,7 +87,7 @@ def check_success(name, state, expected, pc, count, psr=PSR):
 
 
 def success_case(name, dest=0, leftreg=3, rightreg=0, left=0xFFFFFFFF, right=32767,
-                 mode=1, psr=PSR, condition=None):
+                 mode=1, psr=PSR, condition=None, parallel=False):
     incoming = {leftreg: left, rightreg: right}
     if condition is not None:
         incoming[4] = condition
@@ -97,7 +97,7 @@ def success_case(name, dest=0, leftreg=3, rightreg=0, left=0xFFFFFFFF, right=327
     if condition is not None:
         guest.emit(0xEA24, 1)
     word = (dest << 12) | (leftreg << 4) | (rightreg << 8) | mode
-    guest.emit(0xE434, word)
+    guest.emit(0xF434 if parallel else 0xE434, word, *([0] if parallel else []))
     if condition is not None:
         guest.emit(0xEA2C, 1)  # The first selected/skipped scalar arm must close.
         guest.emit(0xE04D, 0x7777)
@@ -242,20 +242,22 @@ def main():
     generic_replay(*actual_absolute_sequence())
     for mode in range(2, 16):
         fault_case(f"unsupported-mode-{mode}", mode=mode)
+    success_case("signed-parallel-control", dest=8, leftreg=15, rightreg=14,
+                 left=0x80000000, right=0x7FFFFFFF, parallel=True)
+    fault_case("deferred-parallel-mode0", mode=0, parallel=True)
     for mode in (0, 1):
-        fault_case(f"deferred-parallel-mode{mode}", mode=mode, parallel=True)
         fault_case(f"pc-guard-mode{mode}", mode=mode, guard=True)
     summary = {"passed": True, "instruction": "exact E434 scalar unsigned/signed maximum",
-               "reference_compared_cases": len(cases) + 1, "actual_absolute_sequence_cases": 1,
-               "generic_replays": 1, "total_model_faults": 18,
-               "unsupported_modes": 14, "deferred_parallel_faults": 2, "pc_guard_faults": 2,
+               "reference_compared_cases": len(cases) + 2, "actual_absolute_sequence_cases": 1,
+               "generic_replays": 1, "total_model_faults": 17,
+               "unsupported_modes": 14, "deferred_parallel_faults": 1, "pc_guard_faults": 2,
                "exact_primary_constructor_available": False,
                "encoding_authority": "direct vendor witnesses and separate executable reference",
                "analogous_primary_minimum_blob": "19b640bc036b14df78ee32ac45595d759b502317",
                "qemu_sha256": hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
                "hardware_validation": False, "hardware_fault_state_validation": False}
     (CACHE / "validation.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print(f"PASS E434: {len(cases) + 1} reference comparisons, generic replay and 18 model faults")
+    print(f"PASS E434: {len(cases) + 2} reference comparisons, generic replay and 17 model faults")
 
 
 if __name__ == "__main__":

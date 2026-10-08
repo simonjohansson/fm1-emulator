@@ -1,5 +1,35 @@
 # FM-1 QEMU known-firmware instruction gaps
 
+## Current production after Batch A (2026-10-08)
+
+**64 missing forms / 69 role rows remain.** Batch A admits 12 forms / 13
+role rows; exact compact RETS push 04C8 remains deferred. One unsigned maximum
+parallel placement was wrongly merged into the original signed-maximum form:
+instrumented F434/0100 + 2E01 at 0x0200DBA4. Correct baseline is 76 forms / 82
+role rows. Signed maximum is admitted; unsigned mode0 remains an explicit
+parallel fault. The published 75/81 baseline below remains frozen history.
+
+| Same 21 executable payloads / 120,836 confirmed sites | Admitted | Rejected |
+| --- | ---: | ---: |
+| Frozen baseline | 117,088 | 3,748 |
+| Accepted Batch A decoder | 117,441 | 3,395 |
+
+353 new sites are admitted, with zero regressions and no admitted width
+mismatch. Unchanged Felucca has 414 remaining rejected static sites (was 516).
+All 496 rejected width gaps and the 71 opaque E53F regions / 12 complete raw
+patterns remain. Static coverage establishes no runtime reachability,
+frequency, performance or universal compatibility.
+
+Production translator SHA-256:
+`81e7caef8f6d1e2bb9e20d792e7f1d581ea66fb2f33d578d8e40b4e6dd8147d5`.
+Fresh exact-C extraction, 20 sanity checks, original-input replays and
+independent correction review: main repo `.deps/qemu-batch-a-2026-10-08/`.
+Focused/full regression acceptance and unchanged/default-loader boot are
+separate runtime evidence. Latest stop is E99C/8D00 at 0x0200a2fa; HOME and
+nonzero audio remain unverified.
+
+## Frozen pre-batch inventory
+
 Reviewed offline on 2026-10-08 against signed CPU commit `f9f80c0842a9a972f9ecd76c1b6ebc8ea66d9e24` (QEMU 11.1.2).
 
 The saved-artifact corpus has **75 identified missing encoding/placement forms**: **68 scalar forms** and **7 additional parallel placements** of operations already admitted in scalar form. The core firmware set accounts for 61 forms; the supplemental builds add 14. Unchanged Felucca uses 60 of the missing forms at 516 static sites.

@@ -5,12 +5,12 @@
 Pinned Apache arithops:374-380 and vendor F435/2621 +2603 at0x0200998a
 establish signed minimum of incoming B=x4:7 and C=x8:11 into A=x12:15.
 The reached bundle writes r2=min(oldr2,oldr6) and loads r3=[specialSP+24].
-Only mode1 is admitted to the classifier; scalar signed/unsigned minimum,
+Batch A admits modes0/1 to the classifier; scalar signed/unsigned minimum,
 helpers, incoming capture, tail-first execution, sizing and predicates stay
 fixed. Both head and extended-tail roles are checked. Minimum does not write
 PSR; flags written by a disjoint tail survive. All source aliases use actual
-initialized GPR values. Mode0 and destination conflicts are reference-valid
-but parallel model-deferred; modes2..15 reject before tail effects/count.
+initialized GPR values. Mode0 is admitted by Batch A; reference-valid
+destination conflicts remain model rejected. Modes2..15 reject before effects/count.
 Tail accesses fault before any minimum result or bundle retirement. Fatal
 reference calls expose no CPU fault snapshot; fault state/order are modeled
 policy, not hardware validity or rollback claims. Balanced selected/skipped
@@ -413,12 +413,16 @@ def main():
             for position in ("final", "nonfinal"):
                 for condition in (0, 1):
                     conditional_case(width, arm, position, condition)
-    for mode in (0, *range(2, 16)):
+    success_case("unsigned-parallel-mode0-control", dest=8, left=15, right=14,
+                 left_value=0xFFFFFFFF, right_value=1, mode=0)
+    for mode in range(2, 16):
         fault_case(f"deferred-or-malformed-head-mode-{mode}", mode=mode)
     fault_case("conflicting-load-destination", tail=(0x2602,))
     fault_case("conflicting-literal-destination", tail=(0xE042, 7))
-    fault_case("deferred-unsigned-minimum-tail", tail=(0xE435, 0xF620))
-    fault_case("deferred-signed-maximum-tail", tail=(0xE434, 0xF621))
+    success_case("unsigned-minimum-tail-control", tail=(0xE435, 0xF620),
+                 updates={15: 12})
+    success_case("signed-maximum-tail-control", tail=(0xE434, 0xF621),
+                 updates={15: 240})
     for name, base, reason in [("unaligned", INSPECTION + 1, "unaligned access"),
                               ("unmapped", 0x18000000, "unmapped access at 0x18000000")]:
         fault_case(f"{name}-tail-read", tail=(0x6003,), registers={0: base},
@@ -435,20 +439,20 @@ def main():
         fault_case(f"pc-guard-{width}", tail=tail, pc_guard=True,
                    reason="guest PC lies outside both configured guard windows")
     summary = {"passed": True, "instruction": "exact E435 signed mode1 parallel classification",
-               "reference_compared_cases": len(cases) + 19, "ordinary_reference_cases": len(cases),
+               "reference_compared_cases": len(cases) + 22, "ordinary_reference_cases": len(cases),
                "actual_sequence_cases": 1, "extended_minimum_tail_cases": 2,
                "balanced_conditional_cases": 16, "generic_replays": 1,
-               "mode_precheck_faults": 15, "conflict_or_deferred_tail_faults": 4,
-               "tail_access_faults": 6, "pc_guard_faults": 2, "total_model_faults": 27,
-               "separate_reference_policy_completions": 5, "reference_pc_guard_completions": 2,
+               "mode_precheck_faults": 14, "conflict_or_deferred_tail_faults": 2,
+               "tail_access_faults": 6, "pc_guard_faults": 2, "total_model_faults": 24,
+               "separate_reference_policy_completions": 2, "reference_pc_guard_completions": 2,
                "reference_fatal_categories_without_fault_snapshot": 20,
                "primary_arithmetic_blob": "19b640bc036b14df78ee32ac45595d759b502317",
-               "unsigned_parallel_mode0_deferred": True, "conflicts_reference_valid_model_rejected": True,
+               "unsigned_parallel_mode0_deferred": False, "conflicts_reference_valid_model_rejected": True,
                "qemu_sha256": hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
                "hardware_validation": False, "hardware_fault_state_validation": False,
                "reference_fault_state_available": False}
     (CACHE / "validation.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print(f"PASS signed minimum: {len(cases) + 19} reference comparisons, generic replay and 27 model faults")
+    print(f"PASS signed minimum: {len(cases) + 22} reference comparisons, generic replay and 24 model faults")
 
 
 if __name__ == "__main__":

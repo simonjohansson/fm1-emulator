@@ -137,6 +137,10 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
 
 ### Current work ledger
 
+- 2026-10-08: grouped Batch A accepted with Sol 6.1 High coordinator/workers.
+  Twelve forms admitted in one build; 04C8 deferred. Fresh corrected inventory
+  has 64 missing forms. Unchanged/default-loader boot reaches E99C/8D00 at
+  0x0200a2fa; HOME and synthesis remain unverified. Evidence below.
 - 2026-10-07: architecture reviewed with Sol 6.1 Extra high CPU, hardware and
   macOS reviewers. User authorized implementation. Updating the plan and
   establishing Stage 1 evidence precede the first Stage 2 extraction.
@@ -644,7 +648,15 @@ All 720 context/496 executable-payload size gaps are rejected six-byte branches
 currently scanned as four bytes; they are occurrences of the forms in batch B.
 See [the detailed inventory](qemu-poc/OPCODE_COVERAGE.md) and frozen batch mapping.
 
-Use these reviewed groups, beginning with A and the current REV8 head:
+Batch A now admits 12 of its 13 requested forms; compact RETS push 04C8 is
+deferred. The corrected baseline has 76 forms / 82 role rows, including an
+unsigned maximum placement originally mislabeled signed maximum. Current
+production has 64 forms / 69 role rows remaining and 3,395 rejected code sites.
+Preserve the original frozen membership below and retain unsigned parallel
+maximum mode0 as a separate carry-over research item. Both it and 04C8 stay
+explicit faults until a reviewed subsequent admission.
+
+Continue the reviewed groups B and C; the reached E99C/8D00 is in C:
 
 | Batch | Forms | Scope |
 | --- | ---: | --- |
@@ -747,24 +759,81 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: F070 byte-reversal parallel head
+## Current firmware blocker: E99C register less-than IF
 
-Latest unchanged boot: `.cache/felucca-validation/after-signed-register-le-if/`.
-The unchanged MAX 200,000,000 capture advances 5,993 instructions beyond EE94 to F070/4600 + 6247 at the current unsupported bundle stop. Vendor disassembly describes r4=rev8(r6) in the extended head with r7=[r4+8] in a compact word-load tail; the reviewed offline inventory confirms scalar admission for REV8 and the load tail, with only the REV8 parallel-head classification missing. Stage 5/home 1/frame 1 and visible idle LCD do not prove completed HOME. Renamed captured JSON state except profile and exact PPM/latest ALNK data agree; whole SRAM is excluded and all 57,344 captured sample words are zero.
+Latest unchanged boot: `.cache/felucca-validation/batch-a/`.
+Vendor disassembly describes `if (r12 < r13)`; exact words E99C/8D00 at
+`0x0200a2fa` belong to conditional batch C. The reviewed Batch A REV8 bundle
+now executes; continue grouped implementation rather than one-opcode boots.
 
-- PC `0x0200a2d0`, words `F070/4600 + 6247`.
-- Instructions 120,323,432; virtual time 962,587,464 ns.
-- IRQ11 entries/returns 107/107;
-  IRQ63 entries/returns 5362/5362.
-- ALNK completions 112, acknowledgments 107,
-  coalesced 5, pending `0x0`;
-  57,344 captured sample words, 0 nonzero.
-- LCD visible=True, busy=False; guard debug message
-  `0x0`, watchdog expirations 0.
-  Audio/timer entries and returns are 107/107 and 5,362/5,362; bootguard failed=0, pending=1. Completed HOME and synthesis remain unverified despite the visible idle LCD.
-- QEMU SHA-256: `2a05c3ae0571a81b59745dc8d15adefa60a1b88c83750deda60785e6026fc817`.
-- Generic replay: `after-signed-register-le-if-generic`.
-- Durable evidence: main repo `.deps/qemu-signed-register-le-if-2026-10-08/`.
+- Instructions 120,323,443; virtual time 962,587,552 ns.
+- IRQ11 entries/returns 107/107; IRQ63 5362/5362.
+- ALNK completions 112, acknowledgments 107, coalesced 5, pending 0;
+  57,344 captured sample words, all zero.
+- Stage 5/home 1/frame 1, visible idle LCD, bootguard pending 1/failed 0,
+  no guard message or watchdog expiration. Completed HOME remains unverified.
+- QEMU SHA-256: `02e0815bc737e49b47ad15441462e6118475237a4e7d149bf86e208b70e7a56c`.
+- Generic replay `batch-a-generic`: captured JSON except profile and exact
+  PPM/latest ALNK agree; whole SRAM excluded.
+- Durable evidence: main repo `.deps/qemu-batch-a-2026-10-08/`.
+
+### Resolved grouped Batch A admissions
+
+Batch A admits 12 of its 13 reviewed forms: five scalar forms (packed
+SUB, compact register ASR, ADC, SBC and special SP ADD), plus seven missing
+parallel placements. The E0F0 scalar form also admits its reviewed parallel
+roles. REV8 now executes in the reached F070/4600 + 6247 bundle. All paths are
+generic; no firmware name, hash or PC selects CPU behavior.
+
+Exact compact RETS push 04C8 stays an explicit fault. It lacks an exact primary
+constructor, and the separate CLI rejects all 27 executed cases; six skipped
+completions do not validate it. Retain this research gap rather than infer
+semantics from the neighboring 0410 encoding.
+
+Pinned primary evidence and 916 serialized copied-reference research calls
+(including five SP low-bit discriminators) qualify the admissions. Carry
+bodies in the primary omit carry; the reference supports widened ADC/SBC
+result/flags. ASR counts at least 32 sign-fill. E8F0 admits x & E003 == 0,
+adds signed13 bytes and preserves the existing configured EMU stack-window
+check after updating SP. This is not mapped-memory or alignment SP validation.
+Inherited disputed packed repeats and fatal-reference limits remain explicit.
+
+Independent Sol 6.1 High source/test review precedes one production build.
+483 scalar cases plus five generic replays and 439 parallel cases pass,
+including complete CPU/inspection expectations, aliases, flags, predicates,
+one-retirement bundles and model faults. One additional QEMU call exposed a
+test capture naming error; its reviewed transport repair reused the same
+binary. No CPU repair or second build was needed. Ten required/affected gates
+pass: ISA, CPU profiles, Felucca IRQ, boot, parallel signed divide/minimum,
+maximum, scalar signed minimum, signed register <= IF and parallel packed ADD.
+Only obsolete newly admitted negative expectations were replaced by positives.
+
+Fresh exact production-C admission over the original 21 executable payloads
+has 117,441 admitted / 3,395 rejected sites, 353 new admissions and no
+regressions. There are 64 remaining forms / 69 role rows. The original 75/81
+baseline accidentally merged one unsigned maximum placement into signed
+maximum: instrumented F434/0100 + 2E01 at 0x0200DBA4. Correct baseline is
+76/82; 12 forms / 13 role rows are resolved. Signed maximum is fully admitted;
+unsigned parallel mode0 remains deferred. Keep frozen evidence intact.
+All 496 rejected width gaps and 71 opaque E53F regions / 12 raw patterns
+remain; no admitted width mismatch occurs. Static admission is not runtime
+reachability, frequency, throughput or all-firmware correctness.
+
+Unchanged MAX 200,000,000 boot advances 11 instructions to E99C/8D00 at
+0x0200a2fa: 120,323,443 instructions and 962,587,552 ns. Vendor disassembly
+describes if (r12 < r13); this belongs to conditional batch C. Debug
+stage 5/home 1/frame 1 and visible idle LCD do not establish completed HOME.
+IRQ11 entries/returns are 107/107, IRQ63 5362/5362. All 57,344 captured sample
+words are zero; bootguard remains pending, with no guard/watchdog failure.
+Renamed default-loader replay matches captured JSON except profile, exact
+PPM and latest ALNK bytes. Whole SRAM is excluded. HOME, 30 guest seconds,
+physical input, synthesis and native execution remain open.
+
+Durable source/review/research/build/gate/firmware evidence is in main repo
+.deps/qemu-batch-a-2026-10-08/. Hash-identical copied reference CLIs and
+standalone focused validators are retained outside temporary directories.
+QEMU SHA-256:
+02e0815bc737e49b47ad15441462e6118475237a4e7d149bf86e208b70e7a56c.
 
 ### Resolved signed register <= IF
 
@@ -1821,14 +1890,14 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Use the completed reviewed known-source inventory and its 75-form batch
-   queue, beginning with batch A and the current REV8 parallel head. Preserve
-   executable-payload deduplication, exact scalar/head/tail membership and
-   explicit uncertain/policy deferrals. Approve each batch's pinned primary
-   and copied-reference matrix, private source and per-form focused validators
-   through one combined independent review. Resolve semantic evidence gaps
-   before implementation; preserve unaffected helpers, predicate/IRQ behavior
-   and stable public boundaries.
+2. Continue the grouped queue after accepted Batch A: B's 15 long branch
+   forms and exact scanner widths, then C's 11 conditional forms (including
+   reached E99C/8D00). Keep the two carry-over gaps, 04C8 and unsigned parallel
+   maximum mode0, explicit. Corrected inventory: 76 baseline / 64 remaining.
+   Use Sol 6.1 High subagents and private slices, approve a finite combined
+   primary/copied-reference matrix, and obtain independent combined source
+   and focused-test review. Preserve unaffected helpers, predicates, IRQs and
+   stable public boundaries; never infer semantics from admission counts.
 3. Integrate each frozen reviewed batch through the parent, then perform one
    serialized accepted build, per-form focused gates, full required broad
    ISA/profile/IRQ/boot and regressions, followed by unchanged bounded Felucca

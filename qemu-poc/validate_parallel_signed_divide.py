@@ -8,8 +8,8 @@ Its preceding signed prose reverses B/C; the executable constructor, vendor
 F1F4/0011 + 2B81 at 0x0200e2fc, and separate reference probes agree on B/C.
 The reached bundle divides incoming r1 by incoming r0 while storing incoming
 r1 at SP+44. Quotients truncate toward zero; division preserves PSR/RETS.
-Only signed mode1 is admitted to the existing classifier. Unsigned mode0 is
-reference-valid but parallel-deferred; the scalar mode0 path stays supported.
+Signed mode1 and unsigned mode0 are admitted to the classifier by Batch A.
+The existing scalar mode0 and mode1 paths stay supported.
 Incoming snapshots, tail-first execution, helpers and predicate machinery stay
 unchanged. Balanced final/nonfinal THEN/ELSE cases complete a following IF.
 Zero denominator and INT_MIN/-1 remain explicit unsupported helper behavior.
@@ -381,10 +381,10 @@ def main():
                     conditional_case(width, arm, position, condition)
     skipped_edge_case()
     skipped_edge_case(True)
-    # Mode0 is existing scalar/reference-valid unsigned division, but this
-    # reached classifier scope admits only signed mode1. Other low modes were
-    # rejected by the reference; hardware invalidity is not established.
-    for mode in (0, *range(2, 16)):
+    success_case("unsigned-parallel-mode0-control", dest=8, left=15, right=14,
+                 numerator=0x80000000, denominator=7, mode=0, tail=(0,))
+    # Other low modes remain rejected; hardware invalidity is not established.
+    for mode in range(2, 16):
         fault_case(f"deferred-or-malformed-head-mode-{mode}", mode=mode)
     fault_case("conflicting-load-destination", tail=(0x2B00,))
     fault_case("conflicting-literal-destination", tail=(0xE040, 7))
@@ -425,20 +425,20 @@ def main():
                    phase="divide-head-after-flagging-tail")
         extended_tail_fault_case(overflow)
     summary = {"passed": True, "instruction": "exact E1F4 signed mode1 parallel classification",
-               "reference_compared_cases": len(cases) + 21, "ordinary_reference_cases": len(cases),
+               "reference_compared_cases": len(cases) + 22, "ordinary_reference_cases": len(cases),
                "actual_sequence_cases": 1, "extended_divide_tail_cases": 2,
                "balanced_conditional_cases": 16, "skipped_exception_cases": 2,
-               "generic_replays": 1, "mode_precheck_faults": 15, "conflict_or_deferred_tail_faults": 3,
+               "generic_replays": 1, "mode_precheck_faults": 14, "conflict_or_deferred_tail_faults": 3,
                "tail_access_faults": 7, "pc_guard_faults": 2, "after_tail_head_helper_faults": 6,
-               "divide_tail_helper_faults": 2, "total_model_faults": 35,
+               "divide_tail_helper_faults": 2, "total_model_faults": 34,
                "primary_arithmetic_blob": "19b640bc036b14df78ee32ac45595d759b502317",
                "primary_prose_disagreement": "Signed comment reverses C/B; constructor/vendor/reference establish B/C.",
-               "unsigned_parallel_mode0_deferred": True, "conflicts_reference_valid_model_rejected": True,
+               "unsigned_parallel_mode0_deferred": False, "conflicts_reference_valid_model_rejected": True,
                "qemu_sha256": hashlib.sha256(validate.QEMU.read_bytes()).hexdigest(),
                "hardware_validation": False, "hardware_fault_state_validation": False,
                "reference_fault_state_available": False}
     (CACHE / "validation.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print(f"PASS signed divide: {len(cases) + 21} reference comparisons, generic replay and 35 model faults")
+    print(f"PASS signed divide: {len(cases) + 22} reference comparisons, generic replay and 34 model faults")
 
 
 if __name__ == "__main__":
