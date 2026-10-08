@@ -109,6 +109,19 @@ uint32_t HELPER(pi32v2_advance)(CPUPi32v2State *env, uint32_t next)
     return next;
 }
 
+/* A return or an unconditional GOTO that is the last instruction of the
+ * selected arm ends its block when it retires: control never reaches the
+ * arm's end, and an ELSE after it is not reached either. Felucca's storage
+ * code returns from inside a THEN (st_sector: if (r0 >= 5) { ...; rts });
+ * without this the stale end failed the next IF as nested. A transfer from
+ * the middle of an arm keeps the block, as before (hardware unverified). */
+void HELPER(pi32v2_block_exit)(CPUPi32v2State *env, uint32_t fallthrough)
+{
+    if (env->predicate_end && fallthrough == env->predicate_end) {
+        env->predicate_from = env->predicate_to = env->predicate_end = 0;
+    }
+}
+
 uint32_t HELPER(pi32v2_call_return)(CPUPi32v2State *env, uint32_t next)
 {
     /* Close a final selected CALL before its callee starts another block.

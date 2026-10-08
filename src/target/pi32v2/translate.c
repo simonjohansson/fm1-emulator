@@ -960,6 +960,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0x0400) {
         TCGv_i32 dest = tcg_temp_new_i32();
         pop(d, dest);
+        gen_helper_pi32v2_block_exit(tcg_env, tcg_constant_i32(next));
         count(d); dynamic_jump(d, dest);
     } else if (op == 0x0410) {
         push(d, spr[RETS]);
@@ -1014,9 +1015,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
         next = here + 4;
         /* The long GOTO shares CALL's displacement fields but preserves RETS. */
+        gen_helper_pi32v2_block_exit(tcg_env, tcg_constant_i32(next));
         count(d); record_branch(d); chain_jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe00c) == 0x8004) {
         int32_t delta = sext(((op & 3) << 10) | (((op >> 4) & 15) << 6) | (((op >> 8) & 31) << 1), 12);
+        gen_helper_pi32v2_block_exit(tcg_env, tcg_constant_i32(next));
         count(d); record_branch(d); chain_jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe08f) == 0x8001) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
@@ -1175,6 +1178,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         gen_helper_pi32v2_flush(tcg_env, read_gpr(d, op & 15));
         db->is_jmp = DISAS_EXIT;
     } else if (op == 0x0080) {
+        gen_helper_pi32v2_block_exit(tcg_env, tcg_constant_i32(next));
         count(d); dynamic_jump(d, spr[RETS]);
     } else if (op == 0x0081) {
         count(d); record_branch(d); gen_helper_pi32v2_rti(tcg_env); tcg_gen_exit_tb(NULL, 0);
