@@ -361,6 +361,26 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         else if (mode == 2) { tcg_gen_shri_i32(gpr[x >> 12], read_gpr(d, (x >> 4) & 15), shift); }
         else { tcg_gen_shli_i32(gpr[x >> 12], read_gpr(d, (x >> 4) & 15), shift); }
         next = here + 4;
+    } else if (op == 0xe1d8) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned pair = x >> 12;
+        /* Reached E1D8/0600 shifts r1:r0 left by r6. Independent finite
+         * probes establish identity at zero and zero for counts >= 64.
+         * Other directions and noncanonical fields remain deferred. */
+        if ((x & 255) || (pair & 1)) { goto illegal; }
+        TCGv_i32 shift = read_gpr(d, (x >> 8) & 15);
+        TCGv_i64 value = tcg_temp_new_i64(), wide_shift = tcg_temp_new_i64();
+        TCGLabel *large = gen_new_label(), *end = gen_new_label();
+        tcg_gen_concat_i32_i64(value, read_gpr(d, pair), read_gpr(d, pair + 1));
+        tcg_gen_brcondi_i32(TCG_COND_GEU, shift, 64, large);
+        tcg_gen_extu_i32_i64(wide_shift, shift);
+        tcg_gen_shl_i64(value, value, wide_shift);
+        tcg_gen_br(end);
+        gen_set_label(large);
+        tcg_gen_movi_i64(value, 0);
+        gen_set_label(end);
+        tcg_gen_extr_i64_i32(gpr[pair], gpr[pair + 1], value);
+        next = here + 4;
     } else if (op == 0xe1c8) {
         uint16_t x = fetch(d, here + 2);
         unsigned mode = x & 15;
@@ -436,11 +456,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             cond = kind == 0x92 ? TCG_COND_GEU :
                    kind == 0xca ? TCG_COND_LEU : TCG_COND_GE;
         } else if (kind == 0x8a) {
-            /* Vendor E8A3/9000 and complete-state zero-operand cases
-             * establish nonzero IF. Other operands select packed NE in the
-             * oracle; that separate operand form remains unsupported. */
-            if (x & 4095) { goto illegal; }
-            right = tcg_constant_i32(0); cond = TCG_COND_NE;
+            /* E8A6/0B00 compares against packed 0x00020000, not literal
+             * 0xB00 or zero. Separate executable discriminators agree;
+             * the existing zero operand is the same packed NE operation. */
+            right = tcg_constant_i32(packed_mask(x)); cond = TCG_COND_NE;
         } else if (kind == 0xdb) {
             /* Primary signed12 IF; vendor EDB5/0000 selects r5 < 0. */
             right = tcg_constant_i32(sext(x & 4095, 12));
@@ -837,12 +856,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0xedd8) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 15;
-        if (kind != 2 && kind != 8 && kind != 9 && kind != 10) { goto illegal; }
+        if (kind != 0 && kind != 2 && kind != 8 && kind != 9 && kind != 10) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
-        /* Felucca's palette loop EDD8 2108/2139 uses index << 1. */
-        tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), kind == 2 ? 0 : 1);
+        /* Operand bit 3 scales the index by two. Kind 0 is the unsigned
+         * unscaled halfword load, including destination/base aliases. */
+        tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), kind & 8 ? 1 : 0);
         tcg_gen_add_i32(addr, addr, read_gpr(d, (x >> 4) & 15));
-        if (kind == 8) { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
+        if (kind == 0 || kind == 8) { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
         else if (kind == 2 || kind == 10) { load(d, gpr[x >> 12], addr, MO_LESW | MO_ALIGN); }
         else { store(d, read_gpr(d, x >> 12), addr, MO_LEUW | MO_ALIGN); }
         next = here + 4;
@@ -1252,7 +1272,7 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
         if ((op & 7) == ((op >> 4) & 7)) { return -1; }
         return (1u << ((op >> 4) & 7)) | (1u << (op & 7));
     }
-    if ((op & 0xff88) == 0x0700) {
+    if ((op & 0xff88) == 0x0700 || (op & 0xff88) == 0x0708) {
         if ((op & 7) == ((op >> 4) & 7)) { return -1; }
         return (1u << ((op >> 4) & 7)) | (1u << (op & 7));
     }

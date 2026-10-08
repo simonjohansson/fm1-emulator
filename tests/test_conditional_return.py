@@ -109,6 +109,31 @@ class ConditionalReturnTests(unittest.TestCase):
                 self.assertEqual(state["pc"], guest.pc)
                 self.assertEqual(state["instructions"], 5)
 
+    def test_packed_not_equal_selects_then_or_else_without_changing_flags(self):
+        for operand, constant, left in ((0x0b00, 0x20000, 0x20000),
+                                        (0x0b00, 0x20000, 0x20001),
+                                        (0x0b00, 0x20000, 0x0b00),
+                                        (0x0b00, 0x20000, 0),
+                                        (0x01ab, 0x00ab00ab, 0x00ab00ab),
+                                        (0x01ab, 0x00ab00ab, 0xab),
+                                        (0, 0, 0), (0, 0, 1)):
+            with self.subTest(operand=operand, left=left):
+                guest = Guest()
+                guest.literal(7, 0x89abcde5)
+                guest.emit(0xe064, 0x7580)
+                guest.literal(6, left)
+                guest.emit(0xe8a6, 0x1000 | operand)
+                guest.literal(2, 1)
+                guest.literal(2, 2)
+                guest.literal(3, 0xabcdef01)
+                state = guest_state(self.directory, guest)
+                self.assertEqual(state["registers"][2], 1 if left != constant else 2)
+                self.assertEqual(state["registers"][3], 0xabcdef01)
+                self.assertEqual(state["registers"][6], left)
+                self.assertEqual(state["specials"][5], 0x89abcde5)
+                self.assertEqual(state["pc"], guest.pc)
+                self.assertEqual(state["instructions"], 6)
+
     def test_signed_literal_less_selects_then_or_else(self):
         for left, literal in ((-1, 0), (0, 0), (1, 0),
                               (-2147483648, 0), (2147483647, 0),
