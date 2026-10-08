@@ -321,8 +321,8 @@ bool fm1_image_decode_handoff(const uint8_t *data, size_t length, bool packaged,
             for (size_t previous = 0; previous < n; previous++) {
                 const uint8_t *other = headers + 64 + previous * 80;
                 if (word(other) == 0x32) {
-                    size_t begin = dword(other + 28), length = dword(other + 32);
-                    if (destination < begin + length && begin < destination + extent) {
+                    size_t begin = dword(other + 28), other_length = dword(other + 32);
+                    if (destination < begin + other_length && begin < destination + extent) {
                         return fail(error, error_length, "overlapping UFW NOR resources");
                     }
                 }
