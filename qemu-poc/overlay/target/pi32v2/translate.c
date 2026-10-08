@@ -559,6 +559,19 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_add_i32(gpr[base], read_gpr(d, base), read_gpr(d, (x >> 8) & 15));
         load(d, gpr[dest], gpr[base], MO_UB);
         next = here + 4;
+    } else if ((op & 0xfff8) == 0xecd0 && (fetch(d, here + 2) & 3) == 2) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, dest = x >> 12;
+        /* The primary loads last for this alias; the separate reference
+         * writes the address last. Reject the unresolved alias before effects. */
+        if (base == dest) { goto illegal; }
+        int32_t offset = sext(op & 7, 3) * 256 + ((x >> 8) & 15) * 16 + ((x >> 2) & 3) * 4;
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_addi_i32(addr, read_gpr(d, base), offset);
+        /* Preserve the modeled pre-index writeback-before-access order. */
+        tcg_gen_mov_i32(gpr[base], addr);
+        load(d, gpr[dest], addr, MO_LEUL | MO_ALIGN);
+        next = here + 4;
     } else if ((op & 0xfff8) == 0xecd0 || (op & 0xfff8) == 0xec50) {
         uint16_t x = fetch(d, here + 2);
         if (x & 2) { goto illegal; }

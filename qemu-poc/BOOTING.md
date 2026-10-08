@@ -1619,7 +1619,7 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 mise exec python@3.13.15 -- python qemu-poc/validate_sp_relative_halfword.py
 ```
 
-### EA13 register-bitwise-AND IF and latest checkpoint
+### EA13 register-bitwise-AND IF checkpoint
 
 The production change is limited to kind A1 register-bitwise-AND IF:
 accept canonical low bytes 00 and 80, compute the existing masked condition,
@@ -1662,7 +1662,7 @@ with the alnk-probe cold-zero profile. Only the QEMU fault memory
 expectation is corrected; failed evidence and reference initialization
 are retained. Production decoding and fault phase remain fixed.
 
-Latest stop: ECD0/684E at `0x0200996c`, 117,588,663
+At this milestone: ECD0/684E at `0x0200996c`, 117,588,663
 instructions and 940,709,312 ns. Vendor `r6 = [++r4=140]` is reached in `cv_rect` during HOME drawing.
 The preceding literal sets r4 to `0x01c116f0`. Establish exact primary
 constructor, byte displacement, direction, pre-update and alias semantics.
@@ -1674,6 +1674,60 @@ Audio IRQ11 entries/returns 103/103; home remains unverified.
 
 ```sh
 mise exec python@3.13.15 -- python qemu-poc/validate_register_and_if.py
+```
+
+### ECD0..7 signed immediate pre-indexed word load and latest checkpoint
+
+The dedicated scalar branch admits the single pinned addldw constructor:
+ECD0..7 with operand low two bits equal 2, signed eleven-bit aligned byte
+displacements from -1024 through +1020, and distinct destination/base.
+It captures incoming base plus displacement in a temporary address,
+updates the base, then loads one aligned little-endian word and advances
+four bytes. Existing shared immediate word/doubleword kinds0/1 and all
+pre-index stores remain unchanged, as do helpers/classification/predicates.
+
+Original standalone research retains 187 calls: 134 verified exploratory
+completions (127 new non-alias loads, four unchanged controls and three
+separate deferred-store probes), five fatal-access categories and 48 destination/base alias
+contradictions at offsets 0/+140/-4 across all sixteen GPRs. Primary
+loads last for an alias; the standalone reference writes the address last.
+All original mismatches remain explicit. The production branch rejects
+that unresolved alias before effects/access/count rather than choosing
+an unverified ordering. This is a model limit, not hardware invalidity.
+
+Base writeback before a failed data access is the existing pre-index
+model policy consistent with the primary constructor. The reference
+fatal records contain no CPU fault snapshot and establish only access
+category/address/width/direction. Hardware fault state remains unverified.
+Mapped small-offset wrapping success is unavailable on this board;
+wrap-to-zero/top unmapped failures do not prove a successful wrap.
+
+Separate checks of 48 saved alias snapshots characterize reference
+writeback-wins without additional oracle calls or relabeling originals.
+Eight supplemental calls add six full completions and two wrap-access
+fatal categories: 195 cumulative exploratory calls. Selected/skipped
+aliases and reference-valid PC-guard completions stay separate from
+accepted successful non-alias instruction behavior.
+
+One separate EC50 kind2 reference probe is explicitly unsupported,
+bringing exploratory calls to 196. Final private gate checking is
+separate: 109 calls with 81 positives, 21 policy completions, six fatal
+access categories and one unsupported EC50 outcome. Review strengthened
+only the six fatal category assertions; all saved outcomes agree,
+with fixtures/counts/source unchanged and original validator retained.
+
+Latest stop: ED00/101B at `0x02009986`, 117,588,670
+instructions and 940,709,368 ns. Vendor `ifs (r1 >= r0) goto 54` targets `0x020099c0` from
+`0x02009986` in cv_rect. Establish the exact signed comparison, operand
+fields and displacement relative to the four-byte instruction end.
+The successful new load advances seven instructions; HOME frame1/stage3
+still represents unfinished drawing.
+Caches use `after-preindexed-word-immediate` and its `-generic` label; main repo
+`.deps/qemu-preindexed-word-immediate-2026-10-08/` retains primary/reference evidence and acceptance.
+Audio IRQ11 entries/returns 103/103; home remains unverified.
+
+```sh
+mise exec python@3.13.15 -- python qemu-poc/validate_preindexed_word_immediate.py
 ```
 
 These are application-entry diagnostics, not a ROM/SPL or encrypted package

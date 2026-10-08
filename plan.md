@@ -434,6 +434,19 @@ but Linux/Windows, MTTCG, live migration and speculative extra CPUs are deferred
   Audio103/103 and timer5173/5173 return normally; HOME frame1/stage3
   remains unfinished. Evidence: `.deps/qemu-register-and-if-2026-10-08/`.
 
+- 2026-10-08: Stage 3 signed immediate pre-indexed word-load constructor
+  ECD0..7 kind2 complete for distinct destination/base, independently reviewed.
+  A dedicated 13-line branch preserves the old word/doubleword decoder.
+  Original 48 primary/reference alias conflicts are retained; ambiguous
+  aliases reject before effects. Focused 81 positives, one generic and 28
+  modeled faults pass, with full/adjacent gates. Six reference category
+  assertions were strengthened during review without changing fixtures.
+  Unchanged boot advances seven instructions to ED00/101B at `0x02009986`;
+  renamed state/LCD/latest samples match. Audio103/103 and timer5173/5173
+  remain balanced; HOME frame1/stage3 remains incomplete. Private sustained
+  capture checker is reviewed and rejects the saved incomplete checkpoints.
+  Evidence: `.deps/qemu-preindexed-word-immediate-2026-10-08/`.
+
 ### QEMU version upgrade
 
 The user explicitly authorized QEMU **11.1.2** on 2026-10-07. The inherited
@@ -560,7 +573,7 @@ public interfaces**. Never copy/link its implementation into QEMU.
 - Full ISA gate passed again on 2026-10-07 before and after the first
   architecture extraction. The IRQ, startup and splash gates also passed;
   the subsequent FF0C milestone also passes full ISA/profile/IRQ gates. The
-  latest firmware blocker is ECD0 immediate pre-indexed word load, recorded below.
+  latest firmware blocker is ED00 signed register greater-or-equal branch, recorded below.
 
 Recent signed commits, all signatures verified:
 
@@ -570,17 +583,17 @@ Recent signed commits, all signatures verified:
 - `d38ad8d`: compact halfword-store tail classification in parallel bundles.
 - `74f2ce6`: reached audio IRQ source selection and focused gates.
 
-## Current firmware blocker: ECD0 immediate pre-indexed word load
+## Current firmware blocker: ED00 signed register greater-or-equal branch
 
-Latest unchanged boot: `.cache/felucca-validation/after-register-and-if/`.
-Vendor `r6 = [++r4=140]` is reached in `cv_rect` during HOME drawing.
-The preceding literal sets r4 to `0x01c116f0`. Establish exact primary
-constructor, byte displacement, direction, pre-update and alias semantics.
-HOME frame1/stage3 and idle LCD are an intermediate draw snapshot,
-not a completed HOME endpoint.
+Latest unchanged boot: `.cache/felucca-validation/after-preindexed-word-immediate/`.
+Vendor `ifs (r1 >= r0) goto 54` targets `0x020099c0` from
+`0x02009986` in cv_rect. Establish the exact signed comparison, operand
+fields and displacement relative to the four-byte instruction end.
+The successful new load advances seven instructions; HOME frame1/stage3
+still represents unfinished drawing.
 
-- PC `0x0200996c`, words `ECD0/684E`.
-- Instructions 117,588,663; virtual time 940,709,312 ns.
+- PC `0x02009986`, words `ED00/101B`.
+- Instructions 117,588,670; virtual time 940,709,368 ns.
 - IRQ11 entries/returns 103/103;
   IRQ63 entries/returns 5173/5173.
 - ALNK completions 108, acknowledgments 103,
@@ -588,10 +601,50 @@ not a completed HOME endpoint.
   55,296 captured sample words, 0 nonzero.
 - LCD visible=True, busy=False; guard debug message
   `0x0`, watchdog expirations 0.
-  Audio and timer service return successfully. HOME flag/frame1/stage3 and idle LCD establish a later intermediate drawing snapshot, without completed HOME or synthesis.
-- QEMU SHA-256: `2f6b87f6f32bb36163e9b9363edebf4a8e726e7183439653708f78f63f153989`.
-- Generic replay: `after-register-and-if-generic`.
-- Durable evidence: main repo `.deps/qemu-register-and-if-2026-10-08/`.
+  Audio and timer service return successfully. HOME flag/frame1/stage3 and idle LCD still show an unfinished drawing snapshot, without completed HOME or synthesis.
+- QEMU SHA-256: `e3935181f8f37e989b2b7e7f87234655a8064c46951c0050ac967c07db2ba44c`.
+- Generic replay: `after-preindexed-word-immediate-generic`.
+- Durable evidence: main repo `.deps/qemu-preindexed-word-immediate-2026-10-08/`.
+
+### Resolved ECD0..7 signed immediate pre-indexed word load
+
+The dedicated scalar branch admits the single pinned addldw constructor:
+ECD0..7 with operand low two bits equal 2, signed eleven-bit aligned byte
+displacements from -1024 through +1020, and distinct destination/base.
+It captures incoming base plus displacement in a temporary address,
+updates the base, then loads one aligned little-endian word and advances
+four bytes. Existing shared immediate word/doubleword kinds0/1 and all
+pre-index stores remain unchanged, as do helpers/classification/predicates.
+
+Original standalone research retains 187 calls: 134 verified exploratory
+completions (127 new non-alias loads, four unchanged controls and three
+separate deferred-store probes), five fatal-access categories and 48 destination/base alias
+contradictions at offsets 0/+140/-4 across all sixteen GPRs. Primary
+loads last for an alias; the standalone reference writes the address last.
+All original mismatches remain explicit. The production branch rejects
+that unresolved alias before effects/access/count rather than choosing
+an unverified ordering. This is a model limit, not hardware invalidity.
+
+Base writeback before a failed data access is the existing pre-index
+model policy consistent with the primary constructor. The reference
+fatal records contain no CPU fault snapshot and establish only access
+category/address/width/direction. Hardware fault state remains unverified.
+Mapped small-offset wrapping success is unavailable on this board;
+wrap-to-zero/top unmapped failures do not prove a successful wrap.
+
+Separate checks of 48 saved alias snapshots characterize reference
+writeback-wins without additional oracle calls or relabeling originals.
+Eight supplemental calls add six full completions and two wrap-access
+fatal categories: 195 cumulative exploratory calls. Selected/skipped
+aliases and reference-valid PC-guard completions stay separate from
+accepted successful non-alias instruction behavior.
+
+One separate EC50 kind2 reference probe is explicitly unsupported,
+bringing exploratory calls to 196. Final private gate checking is
+separate: 109 calls with 81 positives, 21 policy completions, six fatal
+access categories and one unsupported EC50 outcome. Review strengthened
+only the six fatal category assertions; all saved outcomes agree,
+with fixtures/counts/source unchanged and original validator retained.
 
 ### Resolved EA13 register-bitwise-AND IF
 
@@ -1316,13 +1369,14 @@ Next implementation sequence:
 1. Preserve the QEMU 11.1.2 upgrade pin and generic boundaries while continuing
    reached instruction and device bring-up. Shared syscon ownership and local
    resettable ALNK are now complete; whole-machine reset remains open.
-2. Assign reached ECD0/684E immediate pre-indexed word load to the CPU worker.
-   Establish pinned primary/vendor operand fields, direction, signed displacement,
-   update and alias semantics. Probe fields, offset extremes, memory/count/full
-   state, selected/skipped predicate contexts and precise access/writeback
-   fault order. Prefer a narrow exact path; preserve neighboring decoders,
-   helper/scanner rules and existing conditional limitations. Review design
-   and validator before parent acceptance.
+2. Assign reached ED00/101B signed register greater-or-equal branch to
+   the CPU worker. Inspect the existing signed register LT/LE/GT gates and
+   decoder pattern first. Establish pinned primary/vendor fields, reserved
+   policy and signed displacement. Probe signed extremes, equality, every
+   operand field, forward/backward taken/untaken paths, full state/count/
+   memory and qualified inherited conditional/fault behavior. Prefer narrow
+   admission through existing branch machinery, without helper/scanner/IRQ
+   changes. Review source and validator before parent acceptance.
 3. Obtain independent review; build and run focused/full ISA/profile/IRQ gates;
    repeat unchanged bounded boot under a new label and renamed generic replay.
    Commit only validated changes. Repeat for each subsequent CPU/MMIO failure.
@@ -1386,6 +1440,16 @@ Read-only capture strategy is retained in main
 one-time late pre-clear instruction count, then replay at count+1 to capture
 the guest clearing its own bootguard. Use existing capture formats and the
 private extended host timeout; no guest counter writes or new runtime interface.
+
+The private host checker is retained at
+`.deps/qemu-sustained-home-2026-10-08/fm1-check-home-capture.py` with its
+review, preparation record and README. It uses existing capture formats,
+requires actual complete HOME/foreground/idle/health predicates, and accepts
+both existing metadata receipt names. Required progress starts from a healthy
+HOME capture with pinned firmware and the same QEMU binary, comparing only
+named initialized or owned SRAM ranges. Saved incomplete ECD0 fixture/generic
+captures are correctly rejected; successful HOME and 30-second acceptance
+remain pending. No new production observer, guest writes or schema change.
 
 Require repeated complete home frames, progressing milliseconds/foreground,
 per-source entry/return/ack balance, sound stacks/guards, no crash/watchdog
