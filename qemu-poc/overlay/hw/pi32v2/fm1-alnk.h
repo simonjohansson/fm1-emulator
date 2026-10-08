@@ -6,6 +6,7 @@
 #include "qemu/timer.h"
 #include "cpu.h"
 #include "fm1-syscon.h"
+#include "fm1-audio.h"
 
 #define FM1_ALNK_HALF_WORDS 512u
 #define FM1_ALNK_HALF_BYTES (FM1_ALNK_HALF_WORDS * 4u)
@@ -24,6 +25,7 @@ struct FM1PocALNK {
     MemoryRegion mmio;
     QEMUTimer *timer;
     qemu_irq irq;
+    FM1AudioOutput output;
     uint16_t control0, control1, half_words;
     uint8_t pending, control3, active_half, last_half;
     uint32_t dma_address;

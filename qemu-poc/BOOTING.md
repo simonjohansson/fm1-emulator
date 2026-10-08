@@ -122,7 +122,35 @@ family, and H returns HOME on a short release. A/S expose BPM encoder phases;
 D/F expose encoder3 (ENV DEC). A positive detent is S down, A down, S up, A up
 (or F down, D down, F up, D up), with stable phases and rest between detents.
 These are physical contacts; the firmware owns their meaning. Keyboard bindings
-are shared by Cocoa and standard QMP input. Host speaker output is not connected.
+are shared by Cocoa and standard QMP input. Cocoa now selects QEMU's CoreAudio
+backend and sends completed ALNK stereo samples to the default macOS output.
+The normal build automatically enables CoreAudio on macOS; bounded headless
+runs remain silent unless an audiodev is explicitly selected.
+
+The private host adapter has a bounded 1,024-frame queue (about 23 ms); overflow
+discards oldest host frames, and underflow never repeats guest samples. QEMU
+owns host buffering, conversion and VM pause/resume. Disable/local reset clears
+the voice and queue, and terminal shutdown closes output before backend cleanup.
+Guest DMA deadlines, IRQs, sample capture and the functional clock are unchanged.
+
+For the already supported serial configuration, the adapter models signed,
+right-justified 24-bit samples in little-endian 32-bit stereo slots and aligns
+them to QEMU S32 full scale. This is inferred from captured slot values, saved
+output disassembly and the [AC79 IIS format documentation](https://doc.zh-jieli.com/AC79/zh-cn/release_v1.0.3/module_example/audio/iis.html);
+the CON1 register-bit mapping and physical codec output remain unverified.
+Host playback can have gaps while guest execution runs below real time; the
+adapter preserves pitch instead of changing the guest clock or repeating notes.
+
+Known positive/negative stereo slots match QEMU WAV conversion for 6,912 frames.
+An unchanged-firmware recording has silent idle output, held RMS 272.5 and
+released RMS 10.35 (16-bit units). Cocoa/CoreAudio passes 32.1 guest seconds,
+bootguard, early/late notes, pause/resume and clean shutdown without diagnostics.
+Silent and audio-enabled 200-million-instruction runs retain exact CPU/device
+state and SRAM/ALNK/LCD bytes. All 18 local ALNK reset probes pass, as do the
+four affected completion/reconfiguration probes with a live QEMU voice. Evidence
+is in `.deps/qemu-profile-2026-10-08/audio-*` in the main repository. These
+checks establish the output connection and recorded samples; perceived speaker
+quality has not been assessed by listening.
 
 ## Next-fix checks
 
@@ -155,7 +183,7 @@ application-entry loading.
 
 Functional clock rates, completion-time buffer capture and current application
 handoff are limited models. Hardware timing, active-buffer streaming, whole
-reset, ROM boot, NOR persistence, UART/connected USB, host audio/MIDI and
+reset, ROM boot, NOR persistence, UART/connected USB, host MIDI and
 real-time performance remain incomplete. Successful Felucca does not prove
 all-firmware compatibility or physical hardware validation.
 

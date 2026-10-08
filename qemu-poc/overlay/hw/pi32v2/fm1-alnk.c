@@ -5,8 +5,9 @@
  * generated FS constant, not a calibrated model of the boot PLL or codec.
  * DMA samples are observed at completion boundaries; late callbacks cannot
  * reconstruct earlier SRAM contents and explicitly count skipped captures.
- * No host audio playback, receiver channels or auxiliary pending source is
- * implemented. All other register/configuration accesses fail explicitly. */
+ * Optional host output consumes these captured samples. Receiver channels
+ * and auxiliary pending sources are not implemented. Other unsupported
+ * register/configuration accesses fail explicitly. */
 #include "qemu/osdep.h"
 #include "qemu/bswap.h"
 #include "qemu/module.h"
@@ -95,6 +96,7 @@ static void completed(void *opaque)
     a->skipped_captures += due - 1;
     unsigned finished_half = (a->active_half + due - 1) & 1;
     capture_half(a, finished_half);
+    fm1_audio_push(&a->output, a->latest_half, a->latest_half_bytes);
     a->active_half = (a->active_half + due) & 1;
     a->scheduled_halves = reached;
     a->completions += due;
@@ -140,6 +142,9 @@ static void control0_write(FM1PocALNK *a, uint16_t value)
     } else if (!enabled && a->enabled) {
         timer_del(a->timer);
         a->deadline = 0;
+    }
+    if (enabled != a->enabled) {
+        fm1_audio_set_enabled(&a->output, enabled);
     }
     a->enabled = enabled;
     update_irq(a);
@@ -252,6 +257,7 @@ static void alnk_reset_enter(Object *obj, ResetType type)
     /* Only local state belongs to enter. Keep the QOM object, bindings,
      * shared syscon words, guest SRAM and IRQ connection intact. */
     timer_del(a->timer);
+    fm1_audio_set_enabled(&a->output, false);
     a->control0 = a->control1 = a->half_words = 0;
     a->pending = a->control3 = a->active_half = a->last_half = 0;
     a->dma_address = 0;
@@ -291,6 +297,9 @@ static void alnk_realize(DeviceState *dev, Error **errp)
         error_setg(errp, "ALNK requires composition-owned CPU and syscon bindings");
         return;
     }
+    if (!fm1_audio_init(&a->output, errp)) {
+        return;
+    }
     fm1_syscon_set_validator(a->syscon, FM1_SYSCON_CLK_CON2,
                               validate_clock_write, a);
     fm1_syscon_set_validator(a->syscon, FM1_SYSCON_IOMAP_CON5,
@@ -303,6 +312,7 @@ static void alnk_unrealize(DeviceState *dev)
     FM1PocALNK *a = FM1_ALNK(dev);
 
     device_cold_reset(dev);
+    fm1_audio_cleanup(&a->output);
     if (a->validators_registered) {
         fm1_syscon_clear_validator(a->syscon, FM1_SYSCON_CLK_CON2,
                                     validate_clock_write, a);
@@ -317,9 +327,14 @@ static void alnk_instance_finalize(Object *obj)
     FM1PocALNK *a = FM1_ALNK(obj);
 
     /* Qdev unparent unrealizes a realized child before finalization. */
-    g_assert(!a->validators_registered);
+    g_assert(!a->validators_registered && !a->output.voice &&
+             !a->output.shutdown_registered);
     timer_free(a->timer);
 }
+
+static const Property alnk_properties[] = {
+    DEFINE_AUDIO_PROPERTIES(FM1PocALNK, output.backend),
+};
 
 static void alnk_class_init(ObjectClass *klass, const void *data)
 {
@@ -328,6 +343,7 @@ static void alnk_class_init(ObjectClass *klass, const void *data)
 
     dc->realize = alnk_realize;
     dc->unrealize = alnk_unrealize;
+    device_class_set_props(dc, alnk_properties);
     /* CPU/syscon bindings and physical wiring are supplied by composition;
      * this private controller cannot be created independently with -device. */
     dc->user_creatable = false;
