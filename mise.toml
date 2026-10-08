@@ -8,3 +8,7 @@ run = "python tools/build.py --standalone"
 [tasks.test]
 description = "Run CPU, input, image, and CLI regression tests"
 run = "python -m unittest discover -s tests -p 'test_*.py' -v"
+
+[tasks.stress]
+description = "Boot firmware and randomly press every panel button for 30 seconds"
+run = "python tests/stress.py"

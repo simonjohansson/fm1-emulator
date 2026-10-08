@@ -25,6 +25,23 @@ returns, and USB console responses. They verify artifact identities and refuse
 existing capture labels. Captures live in `.cache/tests/`. Do not rebuild or
 patch firmware to make an emulator check pass.
 
+Random button testing accepts any application image:
+
+```sh
+mise run stress /path/to/firmware.fwsc --seed 123
+```
+
+It waits for Felucca's bootguard to clear, then shuffles all 41 panel buttons
+and piano keys for 30 **host** seconds or until the first failure. Holds default
+to 80 ms and released gaps to at least 20 ms, enforced in both host and guest
+time. The final hold finishes before releasing the button. For other firmware,
+set `--ready-memory ADDRESS:WORD[,WORD...]` or `--ready-console REGEX` to its
+actual boot-ready signal; all supplied conditions must match before clicking.
+The console greeting alone may precede complete startup. Use `--seconds` to
+change duration. Captures in `.cache/tests/stress/` include the seed, every
+attempted input, serial output, failure PC/reason and existing emulator fault
+captures. This checks faults and CPU progress; it does not prove UI correctness.
+
 To also check a local update package against an independently saved raw image:
 
 ```sh
