@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* Fresh interface model from pinned SDK register/field facts. WLA_CON0
- * bit14 (TEST_TO_ADC_EN), its source TEST_TO_ADC_S in bits 15-17, and the
- * RWF bias fields in bits 0-7 (enable, IGEN_SEL, test output and
- * selection), which stock configures and nothing modeled observes, may
- * change. The ADC validator freezes routing during conversions, and a
- * conversion through the test route still faults. Preserve all other initial fields rather than
- * claiming ADC ownership or inventing analog-block reset behavior. */
+/* Fresh interface model from pinned SDK register/field facts. Only the
+ * SAR ADC consumes WLA_CON0: TEST_TO_ADC_EN (bit 14) and TEST_TO_ADC_S
+ * (bits 15-17). Its validator freezes routing during conversions, and the
+ * ADC faults on test sources it does not model. The remaining fields are
+ * RF bias configuration for the inert radio; stock's startup sets them and
+ * nothing modeled observes them, so every field may change. The initial
+ * value is kept as handed off; no analog-block reset is invented. */
 #include "qemu/osdep.h"
 #include "fm1-analog.h"
 
@@ -26,9 +26,6 @@ static void analog_write(void *opaque, hwaddr offset, uint64_t value,
 
     if (offset || size != 4) {
         pi32v2_fail(&a->cpu->env, "unsupported WLA_CON0 register write or width");
-    }
-    if ((value ^ a->wla_con0) & ~(uint64_t)(FM1_ANALOG_TEST_TO_ADC | 0x380ff)) {
-        pi32v2_fail(&a->cpu->env, "unsupported WLA_CON0 field change");
     }
     /* Consumers may reject a supported field change while active. Both the
      * shared word and the consumer's state remain untouched until accepted. */

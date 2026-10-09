@@ -73,6 +73,9 @@ static void fm1_poc_reset_state(CPUPi32v2State *e)
 }
 
 static unsigned divider(FM1TimerState *t) { return t->control & 16 ? 4 : 1; }
+/* CON bits 2-3 select the clock, measured on a real FM-1: 0 counts the
+ * 60 MHz peripheral clock, 2 the 24 MHz crystal. Others are refused. */
+static uint64_t clock_hz(FM1TimerState *t) { return t->control & 8 ? 24000000 : 60000000; }
 static uint64_t period_ticks(FM1TimerState *t)
 {
     return t->period == UINT32_MAX ? 1ull << 32 : MAX(t->period, 1);
@@ -80,8 +83,9 @@ static uint64_t period_ticks(FM1TimerState *t)
 static uint64_t elapsed_ticks(FM1TimerState *t)
 {
     if (!(t->control & 1)) { return 0; }
-    return (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - t->epoch) * 24000000ull /
-           (divider(t) * 1000000000ull);
+    /* 128-bit intermediate: free-running timers keep their epoch for hours. */
+    return muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - t->epoch, clock_hz(t),
+                    divider(t) * 1000000000ull);
 }
 uint32_t fm1_timer_counter(FM1TimerState *t)
 {
@@ -101,10 +105,11 @@ static uint32_t software_pending(FM1PocState *m, bool core1)
     }
     return m->software_latch & enabled;
 }
+static bool spi2_irq_level(FM1PocState *m);
 static void update_irq(FM1PocState *m)
 {
     bool shared = m->timer1.pending || m->timers[1].pending || m->alnk_irq_level ||
-                  m->adc_irq_level || m->lrct.done;
+                  m->adc_irq_level || m->lrct.done || spi2_irq_level(m);
     qemu_set_irq(m->irq, shared || m->ttmr.pending || software_pending(m, false));
     if (m->cpu1) {
         qemu_set_irq(m->irq1, shared || m->ttmr1.pending || software_pending(m, true));
@@ -119,16 +124,17 @@ static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *pr
     bool core1 = CPU(env_archcpu(e))->cpu_index != 0;
     const uint32_t *configs = core1 ? m->irq1_configs : m->irq_configs;
     uint32_t soft = software_pending(m, core1);
-    const unsigned sources[] = {3, 5, 11, 24, 44, 63, 124, 125, 126, 127};
+    const unsigned sources[] = {3, 5, 11, 24, 37, 44, 63, 124, 125, 126, 127};
     const bool pending[] = {core1 ? m->ttmr1.pending : m->ttmr.pending,
                             m->timer1.pending, m->alnk_irq_level, m->adc_irq_level,
-                            m->lrct.done,
+                            spi2_irq_level(m), m->lrct.done,
                             m->timers[1].pending,
                             soft & 16, soft & 32, soft & 64, soft & 128};
     const unsigned config[] = {(configs[0] >> 12) & 15,
                                (configs[0] >> 20) & 15,
                                (configs[1] >> 12) & 15,
                                configs[3] & 15,
+                               (configs[4] >> 20) & 15,
                                (configs[5] >> 16) & 15,
                                e->irq_config >> 28,
                                (configs[15] >> 16) & 15,
@@ -177,7 +183,7 @@ static void fm1_timer_expired(void *opaque)
     t->pending = true;
     t->expirations++;
     timer_irq(t);
-    t->deadline += DIV_ROUND_UP(period_ticks(t) * divider(t) * 1000000000ull, 24000000);
+    t->deadline += DIV_ROUND_UP(period_ticks(t) * divider(t) * 1000000000ull, clock_hz(t));
     timer_mod_ns(t->timer, t->deadline);
 }
 static void rearm(FM1TimerState *t)
@@ -186,7 +192,8 @@ static void rearm(FM1TimerState *t)
     t->epoch = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     if (t->control & 1) {
         uint64_t remaining = period_ticks(t) - (t->counter % period_ticks(t));
-        t->deadline = t->epoch + DIV_ROUND_UP(remaining * divider(t) * 1000000000ull, 24000000);
+        t->deadline = t->epoch + DIV_ROUND_UP(remaining * divider(t) * 1000000000ull,
+                                              clock_hz(t));
         timer_mod_ns(t->timer, t->deadline);
     }
 }
@@ -210,7 +217,7 @@ static void timer_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
     FM1TimerState *t = opaque;
     switch (offset) {
     case 0:
-        if (value & ~0xc019ull || ((value & 1) && !(value & 8))) {
+        if (value & ~0xc019ull) {
             timer_fail(t, "clock/control");
         }
         if (value & 0x4000) {
@@ -302,6 +309,84 @@ static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
     }
     fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
 }
+/* SPI2 (0x11e00, IRQ 37) as stock drives the 74HC595 chain: a DMA
+ * transmit of CNT bytes from ADR, shifted MSB first through PA3/PA4 when
+ * IOMAP_CON1 bit 17 routes it there. CON uses the SPI0/1 layout (enable
+ * bit 0, receive 0x1000, pending 0x8000 cleared by 0x4000); 0x2000 enables
+ * the IRQ, as stock relies on. A byte takes 8 x (BAUD + 1) periods of the
+ * 60 MHz peripheral clock, the SPI1 timing measured on an FM-1. */
+#define SPI2_ENABLE 1u
+#define SPI2_RECEIVE 0x1000u
+#define SPI2_IRQ_ENABLE 0x2000u
+#define SPI2_ACK 0x4000u
+#define SPI2_PENDING 0x8000u
+static bool spi2_irq_level(FM1PocState *m)
+{
+    return (m->spi2_con & SPI2_IRQ_ENABLE) && m->spi2_pending;
+}
+static void spi2_complete(void *opaque)
+{
+    FM1PocState *m = opaque;
+    for (uint32_t i = 0; i < m->spi2_cnt; i++) {
+        uint8_t byte = 0;
+        if (address_space_read(&address_space_memory, m->spi2_adr + i,
+                               MEMTXATTRS_UNSPECIFIED, &byte, 1) != MEMTX_OK) {
+            pi32v2_fail(&m->cpu->env, "SPI2 DMA source is unmapped");
+        }
+        m->shift = (m->shift << 8) | byte;
+        m->shift_edges += 8;
+    }
+    m->spi2_busy = false;
+    m->spi2_pending = true;
+    update_irq(m);
+}
+static uint64_t spi2_read(void *opaque, hwaddr offset, unsigned size)
+{
+    FM1PocState *m = opaque;
+    switch (offset) {
+    case 0: return m->spi2_con | (m->spi2_pending ? SPI2_PENDING : 0);
+    case 4: return m->spi2_baud;
+    case 12: return m->spi2_adr;
+    case 16: return m->spi2_cnt;
+    default: pi32v2_fail(current_cpu ? cpu_env(current_cpu) : &m->cpu->env,
+                         "unsupported SPI2 register read");
+    }
+}
+static void spi2_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    FM1PocState *m = opaque;
+    CPUPi32v2State *env = current_cpu ? cpu_env(current_cpu) : &m->cpu->env;
+    switch (offset) {
+    case 0:
+        if (value & SPI2_RECEIVE || value & ~0xffffull) {
+            pi32v2_fail(env, "unsupported SPI2 control");
+        }
+        if (value & SPI2_ACK) { m->spi2_pending = false; }
+        m->spi2_con = value & ~(SPI2_ACK | SPI2_PENDING);
+        break;
+    case 4: m->spi2_baud = value; break;
+    case 12: m->spi2_adr = value; break;
+    case 16:
+        m->spi2_cnt = value;
+        /* Stock writes CNT before enabling; only an enabled write starts. */
+        if (!(m->spi2_con & SPI2_ENABLE)) { break; }
+        if (!(m->iomap_con1 & 0x20000) || m->spi2_busy) {
+            pi32v2_fail(env, "SPI2 transfer needs an idle, PA-routed controller");
+        }
+        m->spi2_busy = true;
+        m->spi2_pending = false;
+        timer_mod_ns(m->spi2_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+                     DIV_ROUND_UP((uint64_t)value * 8 * (m->spi2_baud + 1) * 1000, 60));
+        break;
+    default: pi32v2_fail(env, "unsupported SPI2 register write");
+    }
+    update_irq(m);
+}
+static const MemoryRegionOps spi2_ops = {
+    .read = spi2_read, .write = spi2_write, .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {.min_access_size = 4, .max_access_size = 4},
+    .impl = {.min_access_size = 4, .max_access_size = 4},
+};
 static uint64_t iomap_read(void *opaque, hwaddr offset, unsigned size)
 {
     FM1PocState *m = opaque;
@@ -333,7 +418,9 @@ static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
         else { m->iomap_con3 = value; }
         return;
     }
-    if (value & ~0x10ull) { pi32v2_fail(&m->cpu->env, "unsupported IOMAP_CON1 routing"); }
+    /* Bit 4 routes SPI1 to the LCD. Bit 17 routes SPI2 to port C
+     * (SDK spi.h): CLK PA3, DO PA4, DI PA2, the 74HC595 chain's pins. */
+    if (value & ~0x20010ull) { pi32v2_fail(&m->cpu->env, "unsupported IOMAP_CON1 routing"); }
     m->iomap_con1 = value;
     fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
 }
@@ -348,7 +435,8 @@ static uint64_t irq_read(void *opaque, hwaddr offset, unsigned size)
         return ((CPU(cpu)->cpu_index ? m->ttmr1.pending : m->ttmr.pending) ? 1u << 3 : 0) |
                (m->timer1.pending ? 1u << 5 : 0) | (m->alnk_irq_level ? 1u << 11 : 0) |
                (m->adc_irq_level ? 1u << 24 : 0);
-    case 0x84: return (m->lrct.done ? 1u << 12 : 0) | (m->timers[1].pending ? 0x80000000u : 0);
+    case 0x84: return (spi2_irq_level(m) ? 1u << 5 : 0) | (m->lrct.done ? 1u << 12 : 0) |
+                      (m->timers[1].pending ? 0x80000000u : 0);
     case 0x8c: return software_pending(m, CPU(cpu)->cpu_index != 0) << 24;
     case 0xa0: return 0;
     case 0xa8: return cpu->env.priority_mask;
@@ -362,8 +450,8 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     uint32_t *configs = CPU(cpu)->cpu_index ? m->irq1_configs : m->irq_configs;
     if (offset < 0x80 && !(offset & 3)) {
         /* Any source may be configured; only exception 1, tick timer 3,
-         * TIMER1 5, audio 11, SAR ADC 24, LRCT 44, TIMER5 63 and software 124-127 are
-         * raised. Stock FM-1 firmware
+         * TIMER1 5, audio 11, SAR ADC 24, SPI2 37, LRCT 44, TIMER5 63 and software
+         * 124-127 are raised. Stock FM-1 firmware
          * configures sources it never uses in this machine. */
         configs[offset / 4] = value;
         if (offset == 0x1c) { cpu->env.irq_config = value; }
@@ -385,7 +473,7 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
             pi32v2_fail(&cpu->env, "unsupported IRQ pending clear");
         }
         if (value == 255 && (m->timers[1].pending || m->timer1.pending || m->lrct.done ||
-                             m->adc_irq_level)) {
+                             m->adc_irq_level || spi2_irq_level(m))) {
             pi32v2_fail(&cpu->env, "IRQ clear requires a device acknowledgment");
         }
         if (!CPU(cpu)->cpu_index) { m->software_latch &= ~value; }
@@ -536,6 +624,72 @@ static const MemoryRegionOps rand_ops = {
     .impl = {.min_access_size = 4, .max_access_size = 4},
 };
 
+/* Inert Wi-Fi/RF: JL_WL (0x14000) and the undocumented baseband/RF windows
+ * at 0x20000-0x31fff that stock's startup configures (accesses observed at
+ * 0x200xx-0x201xx, 0x280xx, 0x2fcxx-0x2fdxx and 0x303xx-0x313xx).
+ * Registers store their last value and no radio exists behind them. The
+ * serial RF write port at 0x3101c starts with bit 17 and is polled until
+ * that bit clears; with no radio the transfer finishes immediately, so the
+ * bit reads as clear. */
+#define RF_BASE 0x20000u
+#define RF_SERIAL_PORT (0x3101cu - RF_BASE)
+#define RF_SERIAL_BUSY 0x20000u
+static uint64_t wl_read(void *opaque, hwaddr offset, unsigned size)
+{
+    return ((FM1PocState *)opaque)->wl[offset / 4];
+}
+static void wl_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    ((FM1PocState *)opaque)->wl[offset / 4] = value;
+}
+static uint64_t rf_read(void *opaque, hwaddr offset, unsigned size)
+{
+    uint32_t value = ((FM1PocState *)opaque)->rf[offset / 4];
+    return offset == RF_SERIAL_PORT ? value & ~RF_SERIAL_BUSY : value;
+}
+static void rf_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    ((FM1PocState *)opaque)->rf[offset / 4] = value;
+}
+/* WLA_CON1-39 (0x11904): RF analog configuration beside WLA_CON0, part of
+ * the inert radio. CON1-30 store; read-only CON31-39 read zero. Stock's RF
+ * calibration pulses WLA_CON30, then polls bit 5 and takes an 8-bit trim
+ * code from bits 8-15. With no radio, calibration is done at once with the
+ * mid-scale code 0x80, a chosen value rather than a measured one. */
+#define WLA_CON30 29                    /* index: the array starts at CON1 */
+static uint64_t wla_read(void *opaque, hwaddr offset, unsigned size)
+{
+    uint32_t value = ((FM1PocState *)opaque)->wla[offset / 4];
+    return offset / 4 == WLA_CON30 ? (value & ~0xff00u) | 0x8020u : value;
+}
+static void wla_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    FM1PocState *m = opaque;
+    if (offset / 4 >= 30) {
+        pi32v2_fail(current_cpu ? cpu_env(current_cpu) : &m->cpu->env,
+                    "write to read-only WLA_CON31-39");
+    }
+    m->wla[offset / 4] = value;
+}
+static const MemoryRegionOps wla_ops = {
+    .read = wla_read, .write = wla_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {.min_access_size = 4, .max_access_size = 4},
+    .impl = {.min_access_size = 4, .max_access_size = 4},
+};
+static const MemoryRegionOps wl_ops = {
+    .read = wl_read, .write = wl_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {.min_access_size = 4, .max_access_size = 4},
+    .impl = {.min_access_size = 4, .max_access_size = 4},
+};
+static const MemoryRegionOps rf_ops = {
+    .read = rf_read, .write = rf_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {.min_access_size = 4, .max_access_size = 4},
+    .impl = {.min_access_size = 4, .max_access_size = 4},
+};
+
 static const MemoryRegionOps core_control_ops = {
     .read = core_control_read, .write = core_control_write,
     .endianness = DEVICE_LITTLE_ENDIAN,
@@ -631,9 +785,22 @@ static void machine_init(MachineState *ms)
     memory_region_init_io(&m->core_control_mmio, OBJECT(m), &core_control_ops,
                           m, "fm1.core-control", 8);
     fm1_sfr_map(0x01eee000, &m->core_control_mmio);
+    m->spi2_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, spi2_complete, m);
+    memory_region_init_io(&m->spi2_mmio, OBJECT(m), &spi2_ops, m, "fm1.spi2", 20);
+    fm1_sfr_map(0x11e00, &m->spi2_mmio);
     memory_region_init_io(&m->src_mmio, OBJECT(m), &src_ops, m, "fm1.src", 36);
     fm1_sfr_map(0x14300, &m->src_mmio);
     m->rand_state = 0x464d312d454d55ull;     /* any fixed nonzero seed */
+    memory_region_init_io(&m->wla_mmio, OBJECT(m), &wla_ops, m, "fm1.wla-inert",
+                          sizeof(m->wla));
+    fm1_sfr_map(0x11904, &m->wla_mmio);
+    memory_region_init_io(&m->wl_mmio, OBJECT(m), &wl_ops, m, "fm1.wl-inert",
+                          sizeof(m->wl));
+    fm1_sfr_map(0x14000, &m->wl_mmio);
+    memory_region_init_io(&m->rf_mmio, OBJECT(m), &rf_ops, m, "fm1.rf-inert",
+                          sizeof(m->rf));
+    /* The window spans many SFR pages and shares none with other blocks. */
+    memory_region_add_subregion(get_system_memory(), RF_BASE, &m->rf_mmio);
     memory_region_init_io(&m->rand_mmio, OBJECT(m), &rand_ops, m, "fm1.rand", 8);
     fm1_sfr_map(0x13b00, &m->rand_mmio);
     if (m->cpu1) {
