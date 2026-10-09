@@ -71,6 +71,25 @@ class FloatTests(unittest.TestCase):
             with self.subTest(operand=hex(operand), source=hex(source)):
                 self.assertEqual(self.run_op(operand, 0, source)[0], expected)
 
+    def test_iff_branches_compare_as_floats(self):
+        # EE02 "iff (r1 > r2) goto" and EE82 "iff (r1 u<= r2) goto", captured
+        # on an FM-1: equal signed zeros compare equal.
+        cases = [
+            (0xee02, 0x3f800000, 0x3e449ba6, True), (0xee02, 0xbfc00000, 0xbf800000, False),
+            (0xee02, 0x00000000, 0x80000000, False), (0xee82, 0x00000000, 0x80000000, True),
+            (0xee82, 0xbfc00000, 0x3fc00000, True), (0xee82, 0x3f800000, 0x3e449ba6, False),
+        ]
+        for op, a, b, taken in cases:
+            with self.subTest(op=hex(op), a=hex(a), b=hex(b)):
+                guest = Guest()
+                guest.literal(1, a)
+                guest.literal(2, b)
+                guest.literal(3, 0)
+                guest.emit(op, 0x1803)          # skip the next literal
+                guest.literal(3, 1)
+                state = guest_state(self.directory, guest)
+                self.assertEqual(state["registers"][3], 0 if taken else 1)
+
     def test_unmeasured_values_fault(self):
         for operand, a, b in ((0x3213, 0x3f800000, 0), (0x3210, 0x7f800000, 0),
                               (0x321f, 0, 0x4f000000)):

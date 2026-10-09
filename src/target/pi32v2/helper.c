@@ -394,3 +394,25 @@ uint32_t HELPER(pi32v2_funary)(CPUPi32v2State *env, uint32_t kind, uint32_t a)
         return float32_to_int32_round_to_zero(a, &s);
     }
 }
+
+/* IFF compare-branch: the integer compare-branch encodings with bit 11 of
+ * the second halfword set (vendor assembler, -mfprev1). Signed and unsigned
+ * condition slots select ordered and unordered float relations, which agree
+ * for the finite operands accepted here. Measured on an FM-1 for > and
+ * unordered <=, including equal signed zeros. */
+uint32_t HELPER(pi32v2_fcmp)(CPUPi32v2State *env, uint32_t condition, uint32_t a, uint32_t b)
+{
+    float_status s = fpu_status();
+    uintptr_t ra = GETPC();
+    fpu_check(env, ra, a, &s, "operand");
+    fpu_check(env, ra, b, &s, "operand");
+    FloatRelation r = float32_compare(a, b, &s);
+    switch (condition) {
+    case 0x80: return r == float_relation_equal;
+    case 0x88: return r != float_relation_equal;
+    case 0x90: case 0xd0: return r != float_relation_less;
+    case 0x98: case 0xd8: return r == float_relation_less;
+    case 0xc0: case 0xe0: return r == float_relation_greater;
+    default: return r != float_relation_greater;    /* 0xc8, 0xe8: <= */
+    }
+}

@@ -1491,23 +1491,31 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                (op & 0xfff0) == 0xed00 || (op & 0xfff0) == 0xed80 ||
                (op & 0xfff0) == 0xee00 || (op & 0xfff0) == 0xee80) {
         uint16_t x = fetch(d, here + 2);
-        if (x & 0x0e00) { goto illegal; }
-        TCGCond cond;
-        switch ((op >> 4) & 255) {
-        case 0x80: cond = TCG_COND_EQ; break;
-        case 0x88: cond = TCG_COND_NE; break;
-        case 0x90: cond = TCG_COND_GEU; break;
-        case 0x98: cond = TCG_COND_LTU; break;
-        case 0xc0: cond = TCG_COND_GTU; break;
-        case 0xd0: cond = TCG_COND_GE; break;
-        case 0xd8: cond = TCG_COND_LT; break;
-        case 0xe0: cond = TCG_COND_GT; break;
-        case 0xe8: cond = TCG_COND_LE; break;
-        default: cond = TCG_COND_LEU; break;
-        }
+        if ((x & 0x0e00) != 0 && (x & 0x0e00) != 0x0800) { goto illegal; }
         next = here + 4;
-        count(d); compare_branch(d, next + sext(x & 511, 9) * 2, next, cond,
-                                 read_gpr(d, x >> 12), read_gpr(d, op & 15));
+        if (x & 0x0800) {
+            /* IFF: the same condition slots on single-precision values. */
+            TCGv_i32 taken = tcg_temp_new_i32();
+            gen_helper_pi32v2_fcmp(taken, tcg_env, tcg_constant_i32((op >> 4) & 255),
+                                   read_gpr(d, x >> 12), read_gpr(d, op & 15));
+            count(d); branch(d, next + sext(x & 511, 9) * 2, next, taken, true);
+        } else {
+            TCGCond cond;
+            switch ((op >> 4) & 255) {
+            case 0x80: cond = TCG_COND_EQ; break;
+            case 0x88: cond = TCG_COND_NE; break;
+            case 0x90: cond = TCG_COND_GEU; break;
+            case 0x98: cond = TCG_COND_LTU; break;
+            case 0xc0: cond = TCG_COND_GTU; break;
+            case 0xd0: cond = TCG_COND_GE; break;
+            case 0xd8: cond = TCG_COND_LT; break;
+            case 0xe0: cond = TCG_COND_GT; break;
+            case 0xe8: cond = TCG_COND_LE; break;
+            default: cond = TCG_COND_LEU; break;
+            }
+            count(d); compare_branch(d, next + sext(x & 511, 9) * 2, next, cond,
+                                     read_gpr(d, x >> 12), read_gpr(d, op & 15));
+        }
     } else if ((op & 0xfc00) == 0xf800 || (op & 0xfe00) == 0xfc00 || (op & 0xff00) == 0xfe00) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = (op >> 7) & 63;
@@ -1690,6 +1698,10 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     if (op == 0xe1d0) {
         uint16_t x = fetch(d, here + 2);
         return (x & 0xf0) || ((x >> 12) & 1) || ((x >> 10) & 3) == 1 ? -1 : 3u << (x >> 12);
+    }
+    if (op == 0xe0b8) {
+        uint16_t x = fetch(d, here + 2);
+        return (x & 15) == 0 || (x & 15) == 2 ? 1u << (x >> 12) : -1;
     }
     if (op == 0xe53f) {
         uint16_t x = fetch(d, here + 2);

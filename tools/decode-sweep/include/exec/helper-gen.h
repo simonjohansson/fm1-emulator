@@ -26,4 +26,5 @@ void sweep_illegal(uint32_t op);
 #define gen_helper_pi32v2_fop(...) ((void)0)
 #define gen_helper_pi32v2_fmac(...) ((void)0)
 #define gen_helper_pi32v2_funary(...) ((void)0)
+#define gen_helper_pi32v2_fcmp(...) ((void)0)
 #endif
