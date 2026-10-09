@@ -9,7 +9,7 @@
 typedef struct SweepTemp *TCGv_i32, *TCGv_i64, *TCGv_ptr;
 typedef struct SweepLabel TCGLabel;
 typedef enum { TCG_COND_EQ, TCG_COND_NE, TCG_COND_LT, TCG_COND_GE, TCG_COND_LE, TCG_COND_GT,
-               TCG_COND_LTU, TCG_COND_GEU, TCG_COND_LEU, TCG_COND_GTU } TCGCond;
+               TCG_COND_LTU, TCG_COND_GEU, TCG_COND_LEU, TCG_COND_GTU, TCG_COND_NEVER } TCGCond;
 typedef unsigned MemOp;
 enum { MO_8 = 0, MO_16 = 1, MO_32 = 2, MO_SIGN = 4, MO_ALIGN = 0x100,
        MO_UB = MO_8, MO_SB = MO_8 | MO_SIGN, MO_LEUW = MO_16, MO_LESW = MO_16 | MO_SIGN,

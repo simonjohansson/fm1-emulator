@@ -1593,6 +1593,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_andi_i32(old, old, 15);
         tcg_gen_andi_i32(spr[PSR], spr[PSR], ~15u);
         tcg_gen_or_i32(spr[PSR], spr[PSR], old);
+    } else if (op == 0xe870 && fetch(d, here + 2) == 0) {
+        /* TRIGGER, measured on an FM-1: falls through with registers and
+         * PSR unchanged (a debug trigger without an attached debugger). */
+        next = here + 4;
     } else if (op == 0x0001) {
         /* IDLE waits for an interrupt, which returns to the next one. */
         count(d);
