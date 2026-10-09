@@ -156,6 +156,27 @@ def main():
         if content.count(store) != 1:
             raise SystemExit("pinned TCG lockless store hook anchor differs")
         content = content.replace(store, lockless_store)
+    write_changed(cputlb, content)
+    # Timestamp icount's "guest is late" warnings with the host wall clock
+    # and the guest's virtual time, so lag can be related to activity.
+    cpuexec = SOURCE / "accel/tcg/cpu-exec.c"
+    content = cpuexec.read_text()
+    late = ('            qemu_printf("Warning: The guest is now late by %.1f to %.1f seconds\\n",\n'
+            "                        threshold_delay - 1,\n"
+            "                        threshold_delay);\n")
+    stamped = ("            g_autoptr(GDateTime) now = g_date_time_new_now_local();\n"
+               "            g_autofree char *stamp = g_date_time_format(now, \"%H:%M:%S\");\n"
+               '            qemu_printf("[%s.%03d] Warning: The guest is now late by %.1f to %.1f "\n'
+               '                        "seconds (guest time %.1f s)\\n", stamp,\n'
+               "                        g_date_time_get_microsecond(now) / 1000,\n"
+               "                        threshold_delay - 1, threshold_delay,\n"
+               "                        (sc->realtime_clock + sc->diff_clk) / 1e9);\n")
+    if stamped not in content:
+        if content.count(late) != 1:
+            raise SystemExit("pinned icount late-warning hook anchor differs")
+        content = content.replace(late, stamped)
+    write_changed(cpuexec, content)
+    content = cputlb.read_text()
     # Read simple lockless regions without the generic dispatch layers
     # (fm1-mmio-read.h); other regions keep memory_region_dispatch_read.
     for before, after in [

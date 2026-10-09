@@ -106,9 +106,10 @@ anchor changes.
 
 | File | Hook |
 | --- | --- |
-| `accel/tcg/cputlb.c` | TCG loads honor `lockless_io`; simple lockless regions are read directly (`src/accel/tcg/fm1-mmio-read.h`) |
+| `accel/tcg/cputlb.c` | TCG loads and stores honor `lockless_io`; simple lockless regions are read directly (`src/accel/tcg/fm1-mmio-read.h`) |
 | `util/async.c` | An AioContext with no virtual-clock timer ignores virtual-clock notifications |
 | `accel/tcg/tcg-accel-ops-rr.c` | Icount slices are split among runnable vCPUs only, and idle vCPUs are skipped |
+| `accel/tcg/cpu-exec.c` | icount's "guest is late" warnings carry the host wall-clock time and guest time |
 
 The earlier `physmem.c` subpage-read hook was retired once no subpages
 remained; integration restores the upstream text in trees it had patched.
