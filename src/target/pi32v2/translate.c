@@ -1136,11 +1136,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_mov_i32(gpr[base], addr);
         load(d, gpr[dest], addr, MO_LESW | MO_ALIGN);
         next = here + 4;
-    } else if ((op & 0xfffe) == 0xed50) {
+    } else if ((op & 0xfffc) == 0xed50) {
         uint16_t x = fetch(d, here + 2);
-        unsigned offset = (op & 1) * 256 + ((x >> 8) & 15) * 16 + (x & 14);
+        int32_t offset = sext(op & 3, 2) * 256 + ((x >> 8) & 15) * 16 + (x & 14);
         TCGv_i32 addr = tcg_temp_new_i32();
-        /* ED50/ED51 use operand bit 0 to select stores of the low halfword. */
+        /* ED50-ED53 use operand bit 0 to select stores of the low halfword.
+         * As in ED54, the op's two low bits extend the offset signed:
+         * vendor ED53/0A75 is h[r7+-92] = r0. */
         tcg_gen_addi_i32(addr, read_gpr(d, (x >> 4) & 15), offset);
         if (x & 1) { store(d, read_gpr(d, x >> 12), addr, MO_LEUW | MO_ALIGN); }
         else { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
@@ -1585,6 +1587,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_andi_i32(old, old, 15);
         tcg_gen_andi_i32(spr[PSR], spr[PSR], ~15u);
         tcg_gen_or_i32(spr[PSR], spr[PSR], old);
+    } else if (op == 0x0001) {
+        /* IDLE waits for an interrupt, which returns to the next one. */
+        count(d);
+        tcg_gen_movi_i32(pc, next);
+        gen_helper_pi32v2_idle(tcg_env);
+        db->is_jmp = DISAS_NORETURN;
     } else if (op != 0x0020 && op != 0x0000) {
         goto illegal;
     }

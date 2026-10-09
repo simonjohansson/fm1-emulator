@@ -416,3 +416,13 @@ uint32_t HELPER(pi32v2_fcmp)(CPUPi32v2State *env, uint32_t condition, uint32_t a
     default: return r != float_relation_greater;    /* 0xc8, 0xe8: <= */
     }
 }
+
+/* IDLE, measured on an FM-1: the core waits for an interrupt, whose RETI
+ * is the next instruction (PC already advanced by translation). */
+void HELPER(pi32v2_idle)(CPUPi32v2State *env)
+{
+    CPUState *cs = env_cpu(env);
+    cs->halted = 1;
+    cs->exception_index = EXCP_HLT;
+    cpu_loop_exit(cs);
+}
