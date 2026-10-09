@@ -145,7 +145,9 @@ class BoardInputTests(unittest.TestCase):
                      36, 37, 38, 39, 40, 41, 42, 43, 22, 23, 24, 25,
                      26, 28, 27, 17, 15, 13, 11, 31, 30, 18, 16,
                      14, 12, 32, 29, 44, 45]
-        positions.extend([0, 1, 2, 3, 55, 56, 19, 20, 8, 9, 6, 7, 4, 5])
+        # Encoders: SELECT, PRESETS, ALGORITHM (stock firmware swaps the
+        # transcription's PRESETS/ALGORITHM pair), KNOB 1-4.
+        positions.extend([0, 1, 55, 56, 2, 3, 19, 20, 8, 9, 6, 7, 4, 5])
         self.assertEqual([(c, r) for _, c, r in contacts],
                          [(position % 11, position // 11) for position in positions])
         legacy = {"z": (3, 4), "c": (2, 4), "x": (0, 4), "v": (1, 4),
