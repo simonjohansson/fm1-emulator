@@ -1091,10 +1091,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0xedd8) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 15;
-        if (kind != 0 && kind != 2 && kind != 8 && kind != 9 && kind != 10) { goto illegal; }
+        if (kind != 0 && kind != 1 && kind != 2 && kind != 8 && kind != 9 && kind != 10) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
         /* Operand bit 3 scales the index by two. Kind 0 is the unsigned
-         * unscaled halfword load, including destination/base aliases. */
+         * unscaled halfword load, including destination/base aliases.
+         * Vendor stock EDD8/5431 at 0x020278d0 is h[r3+r4] = r5;
+         * kind 1 stores the low halfword at the unscaled incoming sum. */
         tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), kind & 8 ? 1 : 0);
         tcg_gen_add_i32(addr, addr, read_gpr(d, (x >> 4) & 15));
         if (kind == 0 || kind == 8) { load(d, gpr[x >> 12], addr, MO_LEUW | MO_ALIGN); }
