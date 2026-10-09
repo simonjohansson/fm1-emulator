@@ -178,11 +178,15 @@ an IRQ. A paced 40-second run then stays within a second of real time
 instead of falling 5 seconds behind. The rest of the cost is translated
 code, indirect-jump TB lookups and the MMIO slow path itself.
 
-Two-core runs are not exactly reproducible: identical stock runs stopped
-at the same instruction limit can differ by microseconds of guest time.
-Main-loop activity kicks the vCPU thread at host-dependent moments, which
-moves round-robin switch points. One-core runs, such as the Felucca A/B,
-remain exact.
+Two-core runs are mostly reproducible. Main-loop activity kicks the vCPU
+thread at host-dependent moments; a kicked vCPU now resumes its unrun icount
+budget instead of handing over early, and slices end at guest timer deadlines
+only (upstream also stopped them at host REALTIME timers). Eight identical
+stock runs to 15 guest seconds on a loaded host gave seven identical results
+(before: few matched). A kick that lands on the next vCPU before it starts
+still recomputes its budget at a later guest time; clearing it there stalled
+the guest, so that case remains. One-core runs, such as the Felucca A/B, are
+exact.
 
 ## Hardware timing
 

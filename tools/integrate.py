@@ -237,12 +237,57 @@ def main():
          "            cpu_budget = icount_percpu_budget(MAX(cpu_count, 1));\n"),
         ("            if (cpu_can_run(cpu)) {\n",
          "            if (cpu_can_run(cpu) && !cpu_thread_is_idle(cpu)) {\n"),
+        # A kick from the main loop (host timing) used to end the slice and
+        # hand over to the next vCPU early, so two-core runs were not
+        # reproducible. Resume the same vCPU with its unrun budget; yield
+        # only at a timer deadline, for queued work or a stop request.
+        ("                if (icount_enabled()) {\n"
+         "                    icount_prepare_for_run(cpu, cpu_budget);\n"
+         "                }\n"
+         "                r = tcg_cpu_exec(cpu);\n"
+         "                if (icount_enabled()) {\n"
+         "                    icount_process_data(cpu);\n"
+         "                }\n",
+         "                int64_t slice = cpu_budget, before;\n"
+         "                unsigned stalls = 0;\n"
+         "                do {\n"
+         "                    before = slice;\n"
+         "                    if (icount_enabled()) {\n"
+         "                        icount_prepare_for_run(cpu, slice);\n"
+         "                    }\n"
+         "                    r = tcg_cpu_exec(cpu);\n"
+         "                    if (icount_enabled()) {\n"
+         "                        slice = cpu->icount_budget ?\n"
+         "                            cpu->neg.icount_decr.u16.low + cpu->icount_extra : 0;\n"
+         "                        icount_process_data(cpu);\n"
+         "                    }\n"
+         "                } while (icount_enabled() && r == EXCP_INTERRUPT &&\n"
+         "                         slice > 0 && (slice < before || ++stalls < 3) &&\n"
+         "                         qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,\n"
+         "                                                    QEMU_TIMER_ATTR_ALL) != 0 &&\n"
+         "                         cpu_work_list_empty(cpu) &&\n"
+         "                         cpu_can_run(cpu) && !cpu_thread_is_idle(cpu));\n"),
     ]:
         if after not in content:
             if content.count(before) != 1:
                 raise SystemExit("pinned round-robin icount budget hook anchor differs")
             content = content.replace(before, after)
     write_changed(rr, content)
+    # The icount budget also stopped at host REALTIME timer deadlines (for
+    # UI input), another host-dependent slice boundary. The main loop runs
+    # those timers on its own thread; bound slices by guest timers only.
+    icount = SOURCE / "accel/tcg/tcg-accel-ops-icount.c"
+    content = icount.read_text()
+    before = ("        /* Check realtime timers, because they help with input processing */\n"
+              "        deadline = qemu_soonest_timeout(deadline,\n"
+              "                qemu_clock_deadline_ns_all(QEMU_CLOCK_REALTIME,\n"
+              "                                           QEMU_TIMER_ATTR_ALL));\n")
+    after = "        /* FM-1: guest (virtual) timers alone bound a slice. */\n"
+    if after not in content:
+        if content.count(before) != 1:
+            raise SystemExit("pinned icount limit anchor differs")
+        content = content.replace(before, after)
+    write_changed(icount, content)
     write_changed(SOURCE / "configs/targets/pi32v2-softmmu.mak",
                   "TARGET_ARCH=pi32v2\nTARGET_LONG_BITS=32\n")
     devices = SOURCE / "configs/devices/pi32v2-softmmu"
