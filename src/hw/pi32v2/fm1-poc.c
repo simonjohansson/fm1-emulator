@@ -108,7 +108,8 @@ static uint32_t software_pending(FM1PocState *m, bool core1)
 static bool spi2_irq_level(FM1PocState *m);
 static void update_irq(FM1PocState *m)
 {
-    bool shared = m->timer1.pending || m->timers[1].pending || m->alnk_irq_level ||
+    bool shared = m->timer1.pending || m->timers[0].pending || m->timers[1].pending ||
+                  m->alnk_irq_level ||
                   m->adc_irq_level || m->lcd.irq_level || m->uart.irq_level ||
                   m->lrct.done || spi2_irq_level(m);
     qemu_set_irq(m->irq, shared || m->ttmr.pending || software_pending(m, false));
@@ -125,12 +126,12 @@ static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *pr
     bool core1 = CPU(env_archcpu(e))->cpu_index != 0;
     const uint32_t *configs = core1 ? m->irq1_configs : m->irq_configs;
     uint32_t soft = software_pending(m, core1);
-    const unsigned sources[] = {3, 5, 11, 16, 20, 24, 37, 44, 63, 124, 125, 126, 127};
+    const unsigned sources[] = {3, 5, 11, 16, 20, 24, 37, 44, 62, 63, 124, 125, 126, 127};
     const bool pending[] = {core1 ? m->ttmr1.pending : m->ttmr.pending,
                             m->timer1.pending, m->alnk_irq_level, m->lcd.irq_level,
                             m->uart.irq_level, m->adc_irq_level,
                             spi2_irq_level(m), m->lrct.done,
-                            m->timers[1].pending,
+                            m->timers[0].pending, m->timers[1].pending,
                             soft & 16, soft & 32, soft & 64, soft & 128};
     const unsigned config[] = {(configs[0] >> 12) & 15,
                                (configs[0] >> 20) & 15,
@@ -140,6 +141,7 @@ static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *pr
                                configs[3] & 15,
                                (configs[4] >> 20) & 15,
                                (configs[5] >> 16) & 15,
+                               (configs[7] >> 24) & 15,
                                e->irq_config >> 28,
                                (configs[15] >> 16) & 15,
                                (configs[15] >> 20) & 15,
@@ -176,10 +178,9 @@ static void alnk_irq_input(void *opaque, int number, int level)
 }
 static void timer_irq(FM1TimerState *t)
 {
-    if (t->number != 4) { update_irq(t->machine); }
-    else if (t->pending) {
-        pi32v2_fail(&t->machine->cpu->env, "TIMER4 IRQ62 is unimplemented");
-    }
+    /* SDK hwi.h assigns TIMER4 source 62; stock's ISR at 0x02034e64
+     * clears its pending latch with the same CON bit-14 ACK as TIMER5. */
+    update_irq(t->machine);
 }
 static void fm1_timer_expired(void *opaque)
 {
@@ -441,6 +442,7 @@ static uint64_t irq_read(void *opaque, hwaddr offset, unsigned size)
                (m->lcd.irq_level ? 1u << 16 : 0) | (m->uart.irq_level ? 1u << 20 : 0) |
                (m->adc_irq_level ? 1u << 24 : 0);
     case 0x84: return (spi2_irq_level(m) ? 1u << 5 : 0) | (m->lrct.done ? 1u << 12 : 0) |
+                      (m->timers[0].pending ? 1u << 30 : 0) |
                       (m->timers[1].pending ? 0x80000000u : 0);
     case 0x8c: return software_pending(m, CPU(cpu)->cpu_index != 0) << 24;
     case 0xa0: return 0;
@@ -455,7 +457,8 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     uint32_t *configs = CPU(cpu)->cpu_index ? m->irq1_configs : m->irq_configs;
     if (offset < 0x80 && !(offset & 3)) {
         /* Any source may be configured; only exception 1, tick timer 3,
-         * TIMER1 5, audio 11, SPI1 16, SAR ADC 24, SPI2 37, LRCT 44, TIMER5 63 and software
+         * TIMER1 5, audio 11, SPI1 16, SAR ADC 24, SPI2 37, LRCT 44, TIMER4 62,
+         * TIMER5 63 and software
          * 124-127 are raised. Stock FM-1 firmware
          * configures sources it never uses in this machine. */
         configs[offset / 4] = value;
@@ -477,7 +480,8 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         if (value != 255 && (value & ~0xf0ull)) {
             pi32v2_fail(&cpu->env, "unsupported IRQ pending clear");
         }
-        if (value == 255 && (m->timers[1].pending || m->timer1.pending || m->lrct.done ||
+        if (value == 255 && (m->timers[0].pending || m->timers[1].pending ||
+                             m->timer1.pending || m->lrct.done ||
                              m->adc_irq_level || m->lcd.irq_level || m->uart.irq_level ||
                              spi2_irq_level(m))) {
             pi32v2_fail(&cpu->env, "IRQ clear requires a device acknowledgment");

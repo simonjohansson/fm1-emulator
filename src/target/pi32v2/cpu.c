@@ -111,7 +111,7 @@ static bool interrupt(CPUState *cs, int request)
     if ((number != 3 && number != 5 && number != 11 && number != 16 && number != 20 &&
          number != 24 && number != 37 &&
          number != 44 &&
-         number != 63 &&
+         number != 62 && number != 63 &&
          (number < 124 || number > 127)) || priority > 7) {
         pi32v2_fail(e, "unsupported selected IRQ source or priority");
     }
