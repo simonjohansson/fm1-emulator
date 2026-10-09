@@ -59,13 +59,16 @@
     APPLY("OCT+",      V,   1, 4)
 
 /* SELECT, PRESETS, ALGORITHM, then KNOB 1-4 in physical panel order.
+ * Labels follow stock firmware: PRESETS steps the preset number,
+ * ALGORITHM shows the algorithm overlay, KNOB 1-4 edit ENV's Attack,
+ * Decay, Sustain and Release in turn.
  * A clockwise detent visits 00,01,11,10,00 (B closes first); reverse for CCW.
  * Each transition must remain present across a guest matrix scan.
  */
 #define FM1_PANEL_ENCODER_CONTACTS(APPLY) \
     APPLY("SELECT",    A,   S,    0, 0, 1, 0) \
-    APPLY("PRESETS",   F13, F14,  2, 0, 3, 0) \
-    APPLY("ALGORITHM", F15, F16,  0, 5, 1, 5) \
+    APPLY("PRESETS",   F13, F14,  0, 5, 1, 5) \
+    APPLY("ALGORITHM", F15, F16,  2, 0, 3, 0) \
     APPLY("KNOB 1",    F17, F18,  8, 1, 9, 1) \
     APPLY("KNOB 2",    D,   F,    8, 0, 9, 0) \
     APPLY("KNOB 3",    F19, F20,  6, 0, 7, 0) \
