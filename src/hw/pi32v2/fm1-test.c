@@ -557,6 +557,14 @@ void fm1_test_reset_state(CPUPi32v2State *e)
     memcpy(e->spr, m->initial_spr, sizeof(e->spr));
 }
 
+/* FM1_POC_CAPTURE_NS ends a run with the usual fault capture (state,
+ * SRAM, LCD) at that guest time, e.g. after QMP-driven panel input. */
+static void requested_capture(void *opaque)
+{
+    FM1PocState *m = opaque;
+    pi32v2_fail(&m->cpu->env, "requested capture");
+}
+
 void fm1_test_configure(FM1PocState *m, MachineState *ms)
 {
     const char *profile = ms->kernel_cmdline ? ms->kernel_cmdline : "";
@@ -660,6 +668,17 @@ void fm1_test_configure(FM1PocState *m, MachineState *ms)
     if (!m->application || getenv("FM1_POC_STOP_PC") ||
         getenv("FM1_POC_MAX_INSTRUCTIONS") || getenv("FM1_POC_STATE_DIR")) {
         m->cpu->observer_ops = &observers;
+    }
+    const char *capture = getenv("FM1_POC_CAPTURE_NS");
+    if (capture) {
+        char *end = NULL;
+        errno = 0;
+        uint64_t when = g_ascii_strtoull(capture, &end, 0);
+        if (errno || !*capture || *capture == '-' || *end || !when || when > INT64_MAX) {
+            error_report("FM1_POC_CAPTURE_NS must be a positive guest time in ns");
+            exit(EXIT_FAILURE);
+        }
+        timer_mod_ns(timer_new_ns(QEMU_CLOCK_VIRTUAL, requested_capture, m), when);
     }
 }
 
