@@ -17,6 +17,7 @@ typedef struct FM1PocNOR {
     MemoryRegion spi_mmio, sfc_mmio, encryption_mmio, xip;
     QEMUTimer *transfer_timer, *write_timer;
     Pi32v2CPU *cpu;
+    Pi32v2CPU *transfer_cpu;
     uint8_t *bytes;
     uint32_t control, buffer, sfc_control;
     uint32_t pd_out, iomap_con0, plain_low, plain_high;
@@ -24,6 +25,7 @@ typedef struct FM1PocNOR {
     uint8_t encryption_control, command, phase;
     uint8_t transfer_byte;
     bool busy, pending, transfer_receive, selected;
+    bool completing_transfer;
     bool write_enabled, write_busy, ignore_command, program_data;
     uint8_t write_command, page_buffer[256];
     uint32_t program_base, write_address;

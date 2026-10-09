@@ -96,6 +96,8 @@ void fm1_ttmr_init(FM1PocTTMR *t, Object *owner, Pi32v2CPU *cpu,
     t->update_irq = update_irq;
     t->opaque = opaque;
     t->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, expired, t);
-    memory_region_init_io(&t->mmio, owner, &ttmr_ops, t, "fm1.ttmr", 12);
-    fm1_sfr_map(0x01eef0ec, &t->mmio);
+    unsigned core = CPU(cpu)->cpu_index;
+    memory_region_init_io(&t->mmio, owner, &ttmr_ops, t,
+                          core ? "fm1.core1-ttmr" : "fm1.ttmr", 12);
+    fm1_sfr_map(0x01eef0ec + core * 0x200, &t->mmio);
 }

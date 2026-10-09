@@ -30,9 +30,25 @@ its stacks and initializes memory. Erased 1 MiB NOR is seeded at physical
 `0x4120`; XIP maps physical `0x4000` to `0x02000000`. Application handoff is
 separate from architectural reset. The package loader validates and decrypts
 uncompressed FWSC/UFW containers, retains flash and preset data, and supplies
-the decoded flash header and chip key through the existing SRAM handoff.
+the decoded flash header, chip key and validated application-area directory
+through the existing SRAM handoff.
 Other SPL parameters remain unknown; no firmware identity selects defaults.
 ROM/SPL execution and ELF loading are unsupported.
+
+The development command line accepts `--qemu -smp 2` with
+`-accel tcg,thread=single` for an experimental second CPU; normal launches
+still use one. Core 1 starts in reset and is
+released through C1_CON, using the SRAM entry vector at `0x01c7fff8` and an
+RTI startup handoff exercised on hardware. Its registers, interrupt
+configuration, tick timer and stack guards are independent. Both cores share
+SRAM, peripherals, XIP routing and the LOCKSET/LOCKCLR lock. Bank-0 software
+requests 124/125 route through each core's IRQ configuration and acknowledge
+through bank 0. Pause/resume commands suspend and continue instruction execution
+without resetting registers; their status and self-clearing command bits were
+measured on hardware. Bank-1 requests remain unsupported. The boot-ROM reset sequence,
+retained register values and startup latency are not modeled. Icount
+continues to charge 8 ns per instruction across both
+CPUs; this does not model two physical cores executing simultaneously.
 
 The Cocoa panel embeds the existing LCD surface. Mouse and keyboard inputs
 close the same matrix contacts; encoders emit quadrature transitions. MASTER
@@ -41,11 +57,14 @@ contacts, while keyboard and mouse holds are combined.
 
 ## Hardware and limits
 
-The model includes 512 KiB SRAM, NOR/SFC/SPI0, SPI1/LCD, GPIO/IOMAP, TIMER4/5,
+The model includes 512 KiB SRAM, NOR/SFC/SPI0, SPI1/LCD, GPIO/IOMAP, TIMER1/4/5,
 protection/P33/watchdog, ALNK0 audio, SAR/WLA, USB, and idle UART1 receiver
 initialization. Controllers own their registers, transfers, and IRQ outputs;
 the board owns composition and wiring.
 Unimplemented accesses or configurations fault explicitly.
+TIMER1 uses the existing functional timer clock; its IRQ remains unsupported.
+The high-speed USB controller accepts only its disabled control value; its
+active SIE, endpoints and DMA remain unsupported.
 NOR page program and sector erase update SPI/XIP data after their modeled busy
 interval. Writes last for the current session; the firmware file stays unchanged.
 

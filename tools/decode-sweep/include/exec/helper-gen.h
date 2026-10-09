@@ -22,4 +22,5 @@ void sweep_illegal(uint32_t op);
 #define gen_helper_pi32v2_div(...) ((void)0)
 #define gen_helper_pi32v2_divs(...) ((void)0)
 #define gen_helper_pi32v2_rti(...) ((void)0)
+#define gen_helper_pi32v2_lock(...) ((void)0)
 #endif

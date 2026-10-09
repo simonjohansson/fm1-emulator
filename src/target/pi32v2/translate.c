@@ -328,6 +328,9 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_mov_i32(gpr[dest + 1], read_gpr(d, source + 1));
     } else if ((op & 0xff00) == 0x1600) {
         tcg_gen_mov_i32(gpr[op & 15], read_gpr(d, (op >> 4) & 15));
+    } else if (op == 0x1442) {
+        /* Vendor 1442: USP = SP in stock's initial task handoff. */
+        tcg_gen_mov_i32(spr[USP], spr[SP]);
     } else if ((op & 0xfff8) == 0x14c0) {
         tcg_gen_movi_i32(gpr[8 + (op & 7)], 0);
     } else if ((op & 0xfff0) == 0x1480) {
@@ -908,15 +911,17 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xfff8) == 0xecd0 && (fetch(d, here + 2) & 3) == 3) {
         uint16_t x = fetch(d, here + 2);
         unsigned base = (x >> 4) & 15, source = x >> 12;
-        /* Exact primary stores after writeback, while the reference stores
-         * the incoming source. Keep their source==base disagreement explicit. */
-        if (base == source) { goto illegal; }
+        /* Hardware ECD0 000B ([++r0=8] = r0) stores the incoming r0
+         * at the advanced address, then leaves r0 advanced. Capture the
+         * source before writeback, including source/base aliases. */
         int32_t offset = sext(op & 7, 3) * 256 + ((x >> 8) & 15) * 16 + ((x >> 2) & 3) * 4;
         translator_io_start(db);
         TCGv_i32 addr = tcg_temp_new_i32();
+        TCGv_i32 value = tcg_temp_new_i32();
+        tcg_gen_mov_i32(value, read_gpr(d, source));
         tcg_gen_addi_i32(addr, read_gpr(d, base), offset);
         tcg_gen_mov_i32(gpr[base], addr);
-        store(d, read_gpr(d, source), addr, MO_LEUL | MO_ALIGN);
+        store(d, value, addr, MO_LEUL | MO_ALIGN);
         next = here + 4;
     } else if ((op & 0xfff8) == 0xecd0 && (fetch(d, here + 2) & 3) == 2) {
         uint16_t x = fetch(d, here + 2);
@@ -1283,10 +1288,14 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             pop(d, dest);
             count(d); dynamic_jump(d, dest);
         }
-    } else if (op == 0x04e9) {
-        push(d, spr[PSR]); push(d, spr[RETS]); push(d, spr[RETI]);
-    } else if (op == 0x04a9) {
-        pop(d, spr[RETI]); pop(d, spr[RETS]); pop(d, spr[PSR]);
+    } else if (op == 0x04e9 || op == 0x04e8) {
+        push(d, spr[PSR]); push(d, spr[RETS]);
+        if (op & 1) { push(d, spr[RETI]); }
+    } else if (op == 0x04a9 || op == 0x04a8) {
+        /* Stock's first task restore uses 04A8: the same special-register
+         * stack ordering as 04A9, without RETI. */
+        if (op & 1) { pop(d, spr[RETI]); }
+        pop(d, spr[RETS]); pop(d, spr[PSR]);
     } else if ((op & 0xfff0) == 0xea00) {
         int32_t delta = (int16_t)fetch(d, here + 2) * 2;
         next = here + 4;
@@ -1501,8 +1510,9 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
          * Preserve full ordering without advancing virtual time or IRQs. */
         tcg_gen_mb(TCG_MO_ALL | TCG_BAR_SC);
     } else if (op == 0x0040 || op == 0x0041) {
-        /* LOCKCLR/LOCKSET take the inter-core lock; with one core they only
-         * order memory. */
+        /* Single-threaded TCG still switches cores between instructions.
+         * LOCKSET protects the whole region through LOCKCLR. */
+        gen_helper_pi32v2_lock(tcg_env, tcg_constant_i32(op == 0x0041));
         tcg_gen_mb(TCG_MO_ALL | TCG_BAR_SC);
     } else if ((op & 0xfff0) == 0x00b0) {
         /* TESTSET b[rA], measured on an FM-1: writes 0xff and copies the old
@@ -1551,6 +1561,12 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     }
     if ((op & 0xff88) == 0x0780 || (op & 0xff88) == 0x0680) {
         return 1u << ((op >> 4) & 7);
+    }
+    if ((op & 0xfff8) == 0xecd8 && (fetch(d, here + 2) & 3) < 2) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, reg = x >> 12;
+        if (!(x & 1) && base == reg) { return -1; }
+        return (1u << base) | (x & 1 ? 0 : 1u << reg);
     }
     if ((op & 0xe008) == 0x6000) { return op & 128 ? 0 : 1u << (op & 7); }
     if ((op & 0xe088) == 0x6008) { return 1u << (op & 7); }

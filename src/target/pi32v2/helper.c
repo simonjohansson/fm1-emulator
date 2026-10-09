@@ -286,3 +286,18 @@ void HELPER(pi32v2_rti)(CPUPi32v2State *env)
     if (env->last_irq_source == 11) { env->irq11_rti_count++; }
     else if (env->last_irq_source == 63) { env->irq63_rti_count++; }
 }
+
+void HELPER(pi32v2_lock)(CPUPi32v2State *env, uint32_t acquire)
+{
+    Pi32v2CPU *cpu = env_archcpu(env);
+    if (cpu->ops && cpu->ops->lock && !cpu->ops->lock(env, acquire)) {
+        /* Retry this same LOCKSET after its owner releases it. Nothing
+         * after the acquisition may execute while another core owns it. */
+        CPUState *cs = CPU(cpu);
+        cpu_restore_state(cs, GETPC());
+        cpu->lock_waiting = true;
+        cs->halted = true;
+        cs->exception_index = EXCP_HLT;
+        cpu_loop_exit(cs);
+    }
+}

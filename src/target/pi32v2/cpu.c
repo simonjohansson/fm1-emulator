@@ -16,7 +16,12 @@ static void set_pc(CPUState *cs, vaddr pc) { cpu_env(cs)->pc = pc; }
 static vaddr get_pc(CPUState *cs) { return cpu_env(cs)->pc; }
 static int mmu_index(CPUState *cs, bool ifetch) { return 0; }
 static hwaddr physical_debug(CPUState *cs, vaddr addr) { return addr; }
-static bool has_work(CPUState *cs) { return cpu_test_interrupt(cs, CPU_INTERRUPT_HARD); }
+static bool has_work(CPUState *cs)
+{
+    Pi32v2CPU *cpu = PI32V2_CPU(cs);
+    return !cpu->held_reset && !cpu->core_paused && !cpu->lock_waiting &&
+           cpu_test_interrupt(cs, CPU_INTERRUPT_HARD);
+}
 
 static TCGTBCPUState get_tb_state(CPUState *cs)
 {
@@ -25,7 +30,8 @@ static TCGTBCPUState get_tb_state(CPUState *cs)
                            .flags = (env->in_irq ? PI32V2_TB_IRQ : 0) |
                            (env->repeat_end ? PI32V2_TB_REPEAT : 0) |
                            (env->xip_fetch ? PI32V2_TB_XIP : 0) |
-                           (env->predicate_end ? PI32V2_TB_PREDICATE : 0) };
+                           (env->predicate_end ? PI32V2_TB_PREDICATE : 0) |
+                           (cs->cpu_index ? PI32V2_TB_CORE1 : 0) };
 }
 
 static void synchronize(CPUState *cs, const TranslationBlock *tb)
@@ -87,7 +93,8 @@ static bool interrupt(CPUState *cs, int request)
         !cpu->ops->select_irq(e, &number, &priority)) {
         return false;
     }
-    if ((number != 11 && number != 63) || priority > 7) {
+    if ((number != 3 && number != 11 && number != 63 &&
+         number != 124 && number != 125) || priority > 7) {
         pi32v2_fail(e, "unsupported selected IRQ source or priority");
     }
     uint32_t vector = 0x01c7fe00 + number * 4;
@@ -107,7 +114,7 @@ static bool interrupt(CPUState *cs, int request)
     e->irq_entries++;
     e->last_irq_source = number;
     if (number == 11) { e->irq11_entries++; }
-    else { e->irq63_entries++; }
+    else if (number == 63) { e->irq63_entries++; }
     /* The handler starts on the interrupt stack and its guard window. */
     pi32v2_check_stack(e);
     return true;
@@ -126,12 +133,17 @@ static void reset(Object *obj, ResetType type)
     Pi32v2CPUClass *klass = PI32V2_CPU_GET_CLASS(obj);
     if (klass->parent_phases.hold) { klass->parent_phases.hold(obj, type); }
     memset(&cpu->env, 0, sizeof(cpu->env));
+    cpu->lock_waiting = false;
+    cpu->core_paused = false;
+    cpu->resume_requested = false;
+    cpu->held_reset = CPU(cpu)->start_powered_off;
     cpu->env.pc = cpu->boot_pc;
     /* Initial realize has no machine interface yet. Later resets apply the
      * explicitly configured loader contract outside the architectural CPU. */
     if (cpu->ops && cpu->ops->reset_state) {
         cpu->ops->reset_state(&cpu->env);
     }
+    cpu->env.spr[6] = CPU(cpu)->cpu_index;
 }
 static ObjectClass *class_by_name(const char *name)
 {

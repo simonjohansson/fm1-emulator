@@ -121,11 +121,12 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
             a->sample_frames, a->nonzero_words, a->sample_digest, a->last_half,
             a->latest_half_bytes, a->epoch, a->deadline);
     FM1PocSystem *s = &m->system;
+    FM1PocSystem *local = CPU(env_archcpu(e))->cpu_index ? &m->system1 : s;
     fprintf(f, "\"guards\":{\"emu_control\":%u,\"debug_enable\":%u,"
             "\"debug_message\":%u,\"emu_message\":%u,\"debug_unlocked\":%s,"
-            "\"write_enable\":%u,\"write_windows\":[", s->emu_control,
-            s->debug_enable, s->debug_message, s->emu_message,
-            s->debug_unlocked ? "true" : "false", s->write_enable);
+            "\"write_enable\":%u,\"write_windows\":[", local->emu_control,
+            s->debug_enable, s->debug_message, local->emu_message,
+            s->debug_unlocked ? "true" : "false", local->write_enable);
     for (unsigned i = 0; i < 3; i++) {
         fprintf(f, "%s[%u,%u]", i ? "," : "", s->write_low[i], s->write_high[i]);
     }
@@ -135,7 +136,7 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
     }
     fprintf(f, "],\"stack_windows\":[");
     for (unsigned i = 0; i < 2; i++) {
-        fprintf(f, "%s[%u,%u]", i ? "," : "", s->stack_low[i], s->stack_high[i]);
+        fprintf(f, "%s[%u,%u]", i ? "," : "", local->stack_low[i], local->stack_high[i]);
     }
     fprintf(f, "]}}\n");
     if (fclose(f)) { error_report("cannot close machine state"); exit(EXIT_FAILURE); }

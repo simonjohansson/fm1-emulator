@@ -11,6 +11,7 @@
 #include "hw/core/irq.h"
 #include "system/address-spaces.h"
 #include "system/runstate.h"
+#include "system/tcg.h"
 #include "cpu.h"
 #include "fm1-lcd.h"
 #include "fm1-system.h"
@@ -46,22 +47,24 @@ static G_NORETURN void fm1_poc_guard_fault(CPUPi32v2State *e, unsigned kind,
     if (kind == PI32V2_GUARD_XIP_DISABLED || kind == PI32V2_GUARD_XIP_BOUNDS) {
         fm1_nor_guard_fault(&m->nor, kind);
     }
-    fm1_system_guard_fault(&m->system, kind);
+    fm1_system_guard_fault(kind == PI32V2_GUARD_STACK && CPU(env_archcpu(e))->cpu_index ?
+                           &m->system1 : &m->system, kind);
 }
 
 static void fm1_poc_check_stack(CPUPi32v2State *e)
 {
     FM1PocState *m = env_archcpu(e)->machine;
-    fm1_system_check_stack(&m->system);
+    fm1_system_check_stack(CPU(env_archcpu(e))->cpu_index ? &m->system1 : &m->system);
 }
 
 /* Resets clear the CPU state, including the machine's guard mirrors. */
 static void fm1_poc_reset_state(CPUPi32v2State *e)
 {
     FM1PocState *m = env_archcpu(e)->machine;
-    fm1_test_reset_state(e);
-    if (m->system.cpu) {
-        fm1_system_sync_guards(&m->system);
+    if (CPU(env_archcpu(e))->cpu_index == 0) { fm1_test_reset_state(e); }
+    FM1PocSystem *s = CPU(env_archcpu(e))->cpu_index ? &m->system1 : &m->system;
+    if (s->cpu) {
+        fm1_system_sync_guards(s);
     }
     e->xip_fetch = m->nor.cpu && fm1_nor_xip_enabled(&m->nor);
 }
@@ -81,21 +84,44 @@ uint32_t fm1_timer_counter(FM1TimerState *t)
 {
     return (t->counter + elapsed_ticks(t)) % period_ticks(t);
 }
+/* Bank-0 ILAT bits 4/5 are sources 124/125. Hardware observes the request
+ * through each running core's enabled-source configuration; bank-1 clear
+ * does not acknowledge a bank-0 request. Bank-1 SET remains unqualified. */
+static uint32_t software_pending(FM1PocState *m, bool core1)
+{
+    if (core1 && (!m->cpu1 || m->cpu1->held_reset)) { return 0; }
+    uint32_t config = (core1 ? m->irq1_configs : m->irq_configs)[15];
+    uint32_t enabled = ((config & 0x00010000) ? 16 : 0) |
+                       ((config & 0x00100000) ? 32 : 0);
+    return m->software_latch & enabled;
+}
 static void update_irq(FM1PocState *m)
 {
-    qemu_set_irq(m->irq, m->timers[1].pending || m->alnk_irq_level || m->ttmr.pending);
+    qemu_set_irq(m->irq, m->timers[1].pending || m->alnk_irq_level ||
+                 m->ttmr.pending || software_pending(m, false));
+    if (m->cpu1) {
+        qemu_set_irq(m->irq1, m->timers[1].pending || m->alnk_irq_level ||
+                     m->ttmr1.pending || software_pending(m, true));
+    }
 }
 static void ttmr_irq(void *opaque) { update_irq(opaque); }
-/* Private source selection for the reached audio/timer pair. Raw device
+/* Private source selection for the reached timer/audio/software sources. Raw device
  * levels remain pending until their guest acknowledgments. */
 static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *priority)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
-    const unsigned sources[] = {3, 11, 63};
-    const bool pending[] = {m->ttmr.pending, m->alnk_irq_level, m->timers[1].pending};
-    const unsigned config[] = {(m->irq_configs[0] >> 12) & 15,
-                               (m->irq_configs[1] >> 12) & 15,
-                               e->irq_config >> 28};
+    bool core1 = CPU(env_archcpu(e))->cpu_index != 0;
+    const uint32_t *configs = core1 ? m->irq1_configs : m->irq_configs;
+    uint32_t soft = software_pending(m, core1);
+    const unsigned sources[] = {3, 11, 63, 124, 125};
+    const bool pending[] = {core1 ? m->ttmr1.pending : m->ttmr.pending,
+                            m->alnk_irq_level, m->timers[1].pending,
+                            soft & 16, soft & 32};
+    const unsigned config[] = {(configs[0] >> 12) & 15,
+                               (configs[1] >> 12) & 15,
+                               e->irq_config >> 28,
+                               (configs[15] >> 16) & 15,
+                               (configs[15] >> 20) & 15};
     bool selected = false;
     for (unsigned i = 0; i < G_N_ELEMENTS(sources); i++) {
         unsigned level = config[i] >> 1;
@@ -103,7 +129,7 @@ static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *pr
             continue;
         }
         if (selected && level == *priority) {
-            pi32v2_fail(e, "equal-priority audio/timer arbitration is unsupported");
+            pi32v2_fail(e, "equal-priority IRQ arbitration is unsupported");
         }
         if (!selected || level > *priority) {
             *number = sources[i];
@@ -123,7 +149,9 @@ static void timer_irq(FM1TimerState *t)
 {
     if (t->number == 5) { update_irq(t->machine); }
     else if (t->pending) {
-        pi32v2_fail(&t->machine->cpu->env, "TIMER4 IRQ62 is unimplemented");
+        g_autofree char *reason = g_strdup_printf("TIMER%u IRQ%u is unimplemented",
+                                                  t->number, t->number == 1 ? 5 : 62);
+        pi32v2_fail(&t->machine->cpu->env, reason);
     }
 }
 static void fm1_timer_expired(void *opaque)
@@ -294,36 +322,54 @@ static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
 }
 static uint64_t irq_read(void *opaque, hwaddr offset, unsigned size)
 {
-    FM1PocState *m = opaque;
-    if (offset < 0x80 && !(offset & 3)) { return m->irq_configs[offset / 4]; }
+    Pi32v2CPU *cpu = opaque;
+    FM1PocState *m = cpu->machine;
+    uint32_t *configs = CPU(cpu)->cpu_index ? m->irq1_configs : m->irq_configs;
+    if (offset < 0x80 && !(offset & 3)) { return configs[offset / 4]; }
     switch (offset) {
-    case 0x1c: return m->cpu->env.irq_config;
+    case 0x80:
+        return ((CPU(cpu)->cpu_index ? m->ttmr1.pending : m->ttmr.pending) ? 1u << 3 : 0) |
+               (m->alnk_irq_level ? 1u << 11 : 0);
     case 0x84: return m->timers[1].pending ? 0x80000000u : 0;
-    case 0xa8: return m->cpu->env.priority_mask;
-    default: pi32v2_fail(&m->cpu->env, "unsupported IRQ register");
+    case 0x8c: return software_pending(m, CPU(cpu)->cpu_index != 0) << 24;
+    case 0xa8: return cpu->env.priority_mask;
+    default: pi32v2_fail(&cpu->env, "unsupported IRQ register");
     }
 }
 static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
-    FM1PocState *m = opaque;
+    Pi32v2CPU *cpu = opaque;
+    FM1PocState *m = cpu->machine;
+    uint32_t *configs = CPU(cpu)->cpu_index ? m->irq1_configs : m->irq_configs;
     if (offset < 0x80 && !(offset & 3)) {
         /* Any source may be configured; only exception 1, tick timer 3,
-         * audio 11 and TIMER5 63 are ever raised. Stock FM-1 firmware
+         * audio 11, TIMER5 63 and software 124/125 are raised. Stock FM-1 firmware
          * configures sources it never uses in this machine. */
-        m->irq_configs[offset / 4] = value;
-        if (offset == 0x1c) { m->cpu->env.irq_config = value; }
+        configs[offset / 4] = value;
+        if (offset == 0x1c) { cpu->env.irq_config = value; }
         update_irq(m);
         return;
     }
     switch (offset) {
-    case 0xa8:
-        if (value > 7) { pi32v2_fail(&m->cpu->env, "invalid priority mask"); }
-        m->cpu->env.priority_mask = value; break;
-    case 0xa4:
-        if (value != 255) { pi32v2_fail(&m->cpu->env, "unsupported IRQ pending clear"); }
-        if (m->timers[1].pending) { pi32v2_fail(&m->cpu->env, "IRQ clear requires TIMER5 device acknowledgment"); }
+    case 0xa0:
+        if (CPU(cpu)->cpu_index || (value & ~0x30ull)) {
+            pi32v2_fail(&cpu->env, "unsupported software IRQ request bank or source");
+        }
+        m->software_latch |= value;
         break;
-    default: pi32v2_fail(&m->cpu->env, "unsupported IRQ write");
+    case 0xa8:
+        if (value > 7) { pi32v2_fail(&cpu->env, "invalid priority mask"); }
+        cpu->env.priority_mask = value; break;
+    case 0xa4:
+        if (value != 255 && (value & ~0x30ull)) {
+            pi32v2_fail(&cpu->env, "unsupported IRQ pending clear");
+        }
+        if (value == 255 && m->timers[1].pending) {
+            pi32v2_fail(&cpu->env, "IRQ clear requires TIMER5 device acknowledgment");
+        }
+        if (!CPU(cpu)->cpu_index) { m->software_latch &= ~value; }
+        break;
+    default: pi32v2_fail(&cpu->env, "unsupported IRQ write");
     }
     update_irq(m);
 }
@@ -348,10 +394,93 @@ static const MemoryRegionOps irq_ops = {
     .impl = {.min_access_size = 4, .max_access_size = 4},
 };
 
+static bool fm1_poc_lock(CPUPi32v2State *e, bool acquire)
+{
+    FM1PocState *m = env_archcpu(e)->machine;
+    int core = CPU(env_archcpu(e))->cpu_index;
+    if (!m->cpu1) { return true; }
+    if (acquire) {
+        if (m->lock_owner >= 0 && m->lock_owner != core) { return false; }
+        m->lock_owner = core;
+    } else if (m->lock_owner == core) {
+        m->lock_owner = -1;
+        Pi32v2CPU *peer = core ? m->cpu : m->cpu1;
+        if (peer->lock_waiting) {
+            peer->lock_waiting = false;
+            CPU(peer)->halted = peer->held_reset || peer->core_paused;
+            qemu_cpu_kick(CPU(peer));
+        }
+    }
+    return true;
+}
+
+static uint64_t core_control_read(void *opaque, hwaddr offset, unsigned size)
+{
+    FM1PocState *m = opaque;
+    unsigned core = offset / 4;
+    Pi32v2CPU *cpu = core ? m->cpu1 : m->cpu;
+    return m->core_control[core] | (cpu && cpu->core_paused ? 0x11 : 0);
+}
+
+static void core_control_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    FM1PocState *m = opaque;
+    unsigned core = offset / 4;
+    if ((value ^ m->core_control[core]) & ~0x1full ||
+        (!core && ((value ^ m->core_control[0]) & 2))) {
+        pi32v2_fail(&m->cpu->env, "unsupported core control bits");
+    }
+    Pi32v2CPU *cpu = core ? m->cpu1 : m->cpu;
+    if (!cpu) {
+        pi32v2_fail(&m->cpu->env, "core-1 control requires -smp 2");
+    }
+    if ((value & 0xc) == 0xc) {
+        pi32v2_fail(&m->cpu->env, "simultaneous core pause/resume is unsupported");
+    }
+    uint32_t previous = m->core_control[core];
+    /* Bits 2/3 are self-clearing pause/resume commands, not stored enables.
+     * Hardware reports a stopped core through bits 0/4. */
+    m->core_control[core] = value & ~0x1du;
+    if (core && (value & 2)) {
+        if (!(previous & 2)) {
+            fm1_poc_lock(&cpu->env, false);
+            cpu_reset(CPU(cpu));
+        }
+        cpu->held_reset = true;
+    }
+    if (value & 4) { cpu->core_paused = true; }
+    if (value & 8) {
+        cpu->core_paused = false;
+        cpu->resume_requested = true;
+    }
+    if (core && !(value & 2) && cpu->resume_requested && cpu->held_reset) {
+        /* Hardware probes confirm the SRAM vector and cnum=1, and execute
+         * the stock-style supervisor-to-user RTI handoff. Boot-ROM code,
+         * retained reset registers and startup latency remain unmodeled. */
+        cpu->env.pc = address_space_ldl(&address_space_memory, 0x01c7fff8,
+                                           MEMTXATTRS_UNSPECIFIED, NULL);
+        cpu->env.in_irq = true;
+        cpu->env.spr[ICFG] = 0x100;
+        cpu->held_reset = false;
+    }
+    CPU(cpu)->halted = cpu->held_reset || cpu->core_paused || cpu->lock_waiting;
+    if (CPU(cpu)->halted) { cpu_exit(CPU(cpu)); }
+    else { qemu_cpu_kick(CPU(cpu)); }
+    update_irq(m);
+}
+
+static const MemoryRegionOps core_control_ops = {
+    .read = core_control_read, .write = core_control_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {.min_access_size = 4, .max_access_size = 4},
+    .impl = {.min_access_size = 4, .max_access_size = 4},
+};
+
 static const Pi32v2MachineOps machine_ops = {
     .reset_state = fm1_poc_reset_state, .select_irq = fm1_poc_select_irq,
     .fetch_fault = fm1_poc_fetch_fault, .guard_fault = fm1_poc_guard_fault,
     .check_stack = fm1_poc_check_stack,
+    .lock = fm1_poc_lock,
 };
 
 static bool board_adc_raw(void *opaque, unsigned channel, uint32_t *raw)
@@ -369,11 +498,28 @@ static bool board_adc_raw(void *opaque, unsigned channel, uint32_t *raw)
 static void machine_init(MachineState *ms)
 {
     FM1PocState *m = FM1_POC_MACHINE(ms);
+    if (ms->smp.cpus == 2 && qemu_tcg_mttcg_enabled()) {
+        error_report("fm1-poc -smp 2 requires -accel tcg,thread=single");
+        exit(EXIT_FAILURE);
+    }
     m->cpu = PI32V2_CPU(cpu_create(TYPE_PI32V2_CPU));
     m->cpu->machine = m;
     m->cpu->ops = &machine_ops;
     fm1_test_configure(m, ms);
     cpu_reset(CPU(m->cpu));
+    m->lock_owner = -1;
+    m->core_control[0] = 0x01000000;
+    m->core_control[1] = 0x01000002;  /* measured: core 1 held in reset */
+    if (ms->smp.cpus == 2) {
+        m->cpu1 = PI32V2_CPU(object_new(TYPE_PI32V2_CPU));
+        m->cpu1->machine = m;
+        m->cpu1->ops = &machine_ops;
+        m->cpu1->observer_ops = m->cpu->observer_ops;
+        m->cpu1->stop_pc = UINT32_MAX;
+        m->cpu1->instruction_limit = m->cpu->instruction_limit;
+        object_property_set_bool(OBJECT(m->cpu1), "start-powered-off", true, &error_fatal);
+        qdev_realize(DEVICE(m->cpu1), NULL, &error_fatal);
+    }
     memory_region_add_subregion(get_system_memory(), 0x01c00000, ms->ram);
     /* Cache-side RAM. The SDK linker scripts place free cache ways as RAM at
      * 0x1f20000 (eight 4 KiB I-cache ways, then eight D-cache ways); stock
@@ -397,20 +543,30 @@ static void machine_init(MachineState *ms)
     m->iomap_con0 = 0x20;
     fm1_nor_init(&m->nor, OBJECT(m), m->cpu, ms->kernel_filename);
     fm1_nor_set_pins(&m->nor, m->gpio[3][0], m->iomap_con0);
-    for (unsigned i = 0; i < 2; i++) {
-        FM1TimerState *t = &m->timers[i];
+    for (unsigned i = 0; i < 3; i++) {
+        FM1TimerState *t = i == 2 ? &m->timer1 : &m->timers[i];
         t->machine = m;
-        t->number = i + 4;
+        t->number = i == 2 ? 1 : i + 4;
         t->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, fm1_timer_expired, t);
         memory_region_init_io(&t->mmio, OBJECT(m), &timer_ops, t,
-                              i ? "fm1.timer5" : "fm1.timer4", 12);
-        fm1_sfr_map(0x10800 + i * 0x100, &t->mmio);
+                              i == 2 ? "fm1.timer1" : i ? "fm1.timer5" : "fm1.timer4", 12);
+        fm1_sfr_map(0x10400 + t->number * 0x100, &t->mmio);
     }
     memory_region_init_io(&m->gpio_mmio, OBJECT(m), &gpio_ops, m, "fm1.gpio", 0x1e0);
     fm1_sfr_map(0x50000, &m->gpio_mmio);
-    memory_region_init_io(&m->irq_mmio, OBJECT(m), &irq_ops, m, "fm1.irq", 0xac);
+    memory_region_init_io(&m->irq_mmio, OBJECT(m), &irq_ops, m->cpu, "fm1.irq", 0xac);
     fm1_sfr_map(0x01eef100, &m->irq_mmio);
     m->irq = qdev_get_gpio_in(DEVICE(m->cpu), 0);
+    memory_region_init_io(&m->core_control_mmio, OBJECT(m), &core_control_ops,
+                          m, "fm1.core-control", 8);
+    fm1_sfr_map(0x01eee000, &m->core_control_mmio);
+    if (m->cpu1) {
+        m->irq1 = qdev_get_gpio_in(DEVICE(m->cpu1), 0);
+        memory_region_init_io(&m->irq1_mmio, OBJECT(m), &irq_ops, m->cpu1,
+                              "fm1.core1-irq", 0xac);
+        fm1_sfr_map(0x01eef300, &m->irq1_mmio);
+        fm1_system_init_core1(&m->system1, &m->system, OBJECT(m), m->cpu1);
+    }
     fm1_system_init(&m->system, OBJECT(m), m->cpu);
     fm1_syscon_init(&m->syscon, OBJECT(m), m->cpu);
     fm1_sfr_map(0x10010, &m->syscon.mmio[FM1_SYSCON_CLK_CON1]);
@@ -435,6 +591,9 @@ static void machine_init(MachineState *ms)
     fm1_uart_init(&m->uart, OBJECT(m), m->cpu);
     fm1_crc_init(&m->crc, OBJECT(m), m->cpu);
     fm1_ttmr_init(&m->ttmr, OBJECT(m), m->cpu, ttmr_irq, m);
+    if (m->cpu1) {
+        fm1_ttmr_init(&m->ttmr1, OBJECT(m), m->cpu1, ttmr_irq, m);
+    }
     fm1_sfr_map(0x12100, &m->uart.mmio);
     fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
     memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 16);
@@ -453,7 +612,8 @@ static void machine_class_init(ObjectClass *oc, const void *data)
     mc->default_cpu_type = TYPE_PI32V2_CPU;
     mc->default_ram_size = 512 * 1024;
     mc->default_ram_id = "fm1.sram";
-    mc->max_cpus = mc->min_cpus = mc->default_cpus = 1;
+    mc->max_cpus = 2;
+    mc->min_cpus = mc->default_cpus = 1;
     mc->no_floppy = true; mc->no_cdrom = true; mc->no_parallel = true;
 }
 static const TypeInfo machine_type = {

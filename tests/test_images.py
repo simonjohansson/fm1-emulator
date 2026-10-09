@@ -41,13 +41,13 @@ def jlfs(offset, size, flags, name, data_crc=0xFFFF, last=1):
     return struct.pack("<H", crc(body)) + body
 
 
-def flash_image(key=0x2468, compressed=False):
+def flash_image(key=0x2468, compressed=False, app=None):
     # Encoded chip key with deterministic entropy: threshold becomes 0x55.
     entropy = bytes(16)
     key_data = entropy + bytes(0 if key & (1 << bit) else 0x55
                                for bit in range(16))
     config = key_data + struct.pack("<H", crc(key_data))
-    app = bytes(range(64)) * 2
+    app = bytes(range(64)) * 2 if app is None else app
     directory = jlfs(0x120, len(app), 0x42 if compressed else 0x82,
                      "app.bin", crc(app))
     area_data = directory + bytes([255]) * (0x100 - len(directory)) + app
@@ -66,8 +66,8 @@ def flash_image(key=0x2468, compressed=False):
 
 
 def package(fwsc=True, resource=True, key=0x2468, compressed=False,
-            destination=0xEA000, resource_type=0x32, trim_tail=False):
-    flash, app = flash_image(key, compressed)
+            destination=0xEA000, resource_type=0x32, trim_tail=False, app=None):
+    flash, app = flash_image(key, compressed, app)
     entries = []
     data = bytearray([255] * 0x6000)
     data[0x400:0x400 + len(flash)] = flash

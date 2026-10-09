@@ -22,13 +22,16 @@
 #define SPI_MODE 0x21u
 #define SPI_SHIFT 0x08u
 #define SPI_RECEIVE 0x1000u
+#define SPI_CLOCK_DRIVE 0x2000u
 #define SPI_ACK 0x4000u
 #define SPI_PENDING 0x8000u
 #define SPI_CLOCK_HZ 12000000ull
 
 static G_NORETURN void nor_fail(FM1PocNOR *nor, const char *reason)
 {
-    pi32v2_fail(&nor->cpu->env, reason);
+    CPUPi32v2State *env = nor->completing_transfer ? &nor->transfer_cpu->env :
+                          current_cpu ? cpu_env(current_cpu) : &nor->cpu->env;
+    pi32v2_fail(env, reason);
 }
 
 bool fm1_nor_xip_enabled(const FM1PocNOR *nor)
@@ -60,18 +63,23 @@ void fm1_nor_guard_fault(FM1PocNOR *nor, unsigned kind)
 static void update_xip(FM1PocNOR *nor)
 {
     bool on = fm1_nor_xip_enabled(nor);
-    if (on == nor->cpu->env.xip_fetch) {
-        return;
+    if (on != nor->cpu->env.xip_fetch) {
+        memory_region_rom_device_set_romd(&nor->xip, on);
     }
-    memory_region_rom_device_set_romd(&nor->xip, on);
-    nor->cpu->env.xip_fetch = on;
-    cpu_exit(CPU(nor->cpu));
+    CPUState *cs;
+    CPU_FOREACH(cs) {
+        if (cpu_env(cs)->xip_fetch != on) {
+            cpu_env(cs)->xip_fetch = on;
+            cpu_exit(cs);
+        }
+    }
 }
 
 static uint64_t xip_read(void *opaque, hwaddr offset, unsigned size)
 {
     FM1PocNOR *nor = opaque;
-    pi32v2_guard_fault(&nor->cpu->env, PI32V2_GUARD_XIP_DISABLED,
+    pi32v2_guard_fault(current_cpu ? cpu_env(current_cpu) : &nor->cpu->env,
+                       PI32V2_GUARD_XIP_DISABLED,
                        FM1_NOR_XIP_BASE + offset, size);
 }
 
@@ -104,7 +112,10 @@ static void command_start(FM1PocNOR *nor, uint8_t command)
         nor->program_data = false;
         break;
     case 0x04: case 0x06: case 0x20: break;
-    default: nor_fail(nor, "unsupported NOR command");
+    default: {
+        g_autofree char *reason = g_strdup_printf("unsupported NOR command 0x%02x", command);
+        nor_fail(nor, reason);
+    }
     }
 }
 
@@ -214,7 +225,9 @@ static void command_end(FM1PocNOR *nor)
 static void transfer_complete(void *opaque)
 {
     FM1PocNOR *nor = opaque;
+    nor->completing_transfer = true;
     nor->buffer = transfer_byte(nor);
+    nor->completing_transfer = false;
     nor->busy = false;
     nor->pending = true;
     nor->completed_transfers++;
@@ -229,6 +242,9 @@ static void transfer_start(FM1PocNOR *nor, uint8_t byte)
         nor_fail(nor, "SPI0 transfer needs disabled SFC, SPI routing and asserted PD0 CS");
     }
     nor->transfer_byte = byte;
+    /* A timer callback may run after the scheduler selected another CPU.
+     * Attribute its fault to the guest that submitted this byte. */
+    nor->transfer_cpu = current_cpu ? PI32V2_CPU(current_cpu) : nor->cpu;
     nor->transfer_receive = (nor->control & SPI_RECEIVE) != 0;
     if (nor->transfer_receive && byte != 0xff) {
         nor_fail(nor, "NOR receive transfer requires the guest dummy byte");
@@ -258,9 +274,9 @@ static void spi_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     switch (offset) {
     case 0: {
         uint32_t control = value & ~(SPI_ACK | SPI_PENDING);
-        if (value & ~(uint64_t)(SPI_MODE | SPI_SHIFT | SPI_RECEIVE |
+        if (value & ~(uint64_t)(SPI_MODE | SPI_SHIFT | SPI_RECEIVE | SPI_CLOCK_DRIVE |
                                SPI_ACK | SPI_PENDING) ||
-            (control && (control & SPI_MODE) != SPI_MODE)) {
+            ((control & ~SPI_CLOCK_DRIVE) && (control & SPI_MODE) != SPI_MODE)) {
             nor_fail(nor, "unsupported SPI0 control mode");
         }
         if (nor->busy && control != nor->control) {
@@ -415,10 +431,13 @@ void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
         /* The generic package handoff carries a pointer to its decoded flash
          * header and the parsed SFC key. The saved stock app consumes header
          * fields +8/+13 through param[0], and the key through param+12.
-         * Storage words, calibration and MAC remain zero/unverified; this
+         * Param+8 supplies the first application-area directory. The
+         * decoder validates this area at the board's fixed XIP origin.
+         * Reserved storage, calibration and MAC remain zero/unverified; this
          * does not implement the SPL's complete hardware/ROM boot contract.
          * Raw applications retain the previous zeroed SRAM handoff exactly. */
         static const uint8_t header_pointer[4] = {0x40, 0xfe, 0xc7, 0x01};
+        static const uint8_t directory_pointer[4] = {0x00, 0x00, 0x00, 0x02};
         uint8_t key[2] = {handoff.chip_key, handoff.chip_key >> 8};
         if (address_space_write(&address_space_memory, 0x01c7fe40,
                                 MEMTXATTRS_UNSPECIFIED, handoff.flash_header,
@@ -426,6 +445,9 @@ void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
             address_space_write(&address_space_memory, 0x01c7fe08,
                                 MEMTXATTRS_UNSPECIFIED, header_pointer,
                                 sizeof(header_pointer)) != MEMTX_OK ||
+            address_space_write(&address_space_memory, 0x01c7fe10,
+                                MEMTXATTRS_UNSPECIFIED, directory_pointer,
+                                sizeof(directory_pointer)) != MEMTX_OK ||
             address_space_write(&address_space_memory, 0x01c7fe14,
                                 MEMTXATTRS_UNSPECIFIED, key,
                                 sizeof(key)) != MEMTX_OK) {

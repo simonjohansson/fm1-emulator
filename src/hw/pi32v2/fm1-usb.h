@@ -11,7 +11,7 @@
  * host clock; without one, retain the cold, unclocked controller. */
 typedef struct FM1PocUSB {
     Pi32v2CPU *cpu;
-    MemoryRegion mmio, pads_mmio;
+    MemoryRegion mmio, pads_mmio, high_speed_mmio;
     uint32_t control, bridge, pads;
     uint32_t endpoint_count[5], tx_address[5], rx_address[5];
     uint32_t recent_requests[6];

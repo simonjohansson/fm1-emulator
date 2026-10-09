@@ -10,6 +10,7 @@
 
 #define USB_BASE 0x11800u
 #define USB_PADS_BASE 0x51000u
+#define HUSB_CONTROL_BASE 0x16800u
 #define USB_SIE_ON 4u
 #define USB_SOF_ACK 0x1000u
 #define USB_SIE_READ 0x4000u
@@ -341,6 +342,21 @@ static void pads_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
     usb->pads = value;
 }
 
+/* Stock startup disables the distinct high-speed controller. Its active
+ * SIE, endpoints and DMA remain unsupported; it shares no USB0 state. */
+static uint64_t high_speed_read(void *opaque, hwaddr offset, unsigned size)
+{
+    return 0;
+}
+
+static void high_speed_write(void *opaque, hwaddr offset, uint64_t value,
+                             unsigned size)
+{
+    if (value) {
+        usb_fail(opaque, "active high-speed USB controller is unimplemented");
+    }
+}
+
 #define USB_OPS(name) \
 static const MemoryRegionOps name##_ops = { \
     .read = name##_read, .write = name##_write, .endianness = DEVICE_LITTLE_ENDIAN, \
@@ -349,6 +365,7 @@ static const MemoryRegionOps name##_ops = { \
 }
 USB_OPS(usb);
 USB_OPS(pads);
+USB_OPS(high_speed);
 
 void fm1_usb_init(FM1PocUSB *usb, Object *owner, Pi32v2CPU *cpu)
 {
@@ -367,4 +384,7 @@ void fm1_usb_init(FM1PocUSB *usb, Object *owner, Pi32v2CPU *cpu)
     fm1_sfr_map_locked(USB_BASE, &usb->mmio);
     memory_region_init_io(&usb->pads_mmio, owner, &pads_ops, usb, "fm1.usb-pads", 4);
     fm1_sfr_map_locked(USB_PADS_BASE, &usb->pads_mmio);
+    memory_region_init_io(&usb->high_speed_mmio, owner, &high_speed_ops, usb,
+                          "fm1.husb-disabled", 4);
+    fm1_sfr_map_locked(HUSB_CONTROL_BASE, &usb->high_speed_mmio);
 }

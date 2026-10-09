@@ -115,6 +115,51 @@ class GuardTests(unittest.TestCase):
     def word(sram, address):
         return int.from_bytes(sram[address - SRAM:address - SRAM + 4], "little")
 
+    def test_stock_startup_disables_unused_guards_and_acknowledges_core1(self):
+        guest = GuardGuest()
+        guest.unlock()
+        for offset in (0x104, 0x10c, 0x110, 0x114, 0x118):
+            guest.write(DEBUG + offset, 0)
+            guest.literal(1, DEBUG + offset)
+            guest.load(2, 1)
+            guest.literal(3, 0x01c08000 + offset)
+            guest.store(2, 3)
+        guest.stack_window(False, self.S_LOW, self.S_HIGH)
+        guest.literal(SP, self.S_LOW + 16, special=True)
+        guest.write(EMU, 0x10c)  # stack, divide-by-zero and ETM watchpoint errors
+        guest.write(0x01eef2d4, 0xffffffff)
+        guest.literal(1, 0x01eef2d4)
+        guest.load(2, 1)
+        result, state, sram = self.run_guest(guest)
+        self.assert_passes(result, state)
+        self.assertEqual(state["registers"][2], 0)
+        self.assertEqual(state["guards"]["emu_control"], 0x10c)
+        self.assertEqual(state["guards"]["stack_windows"][1], [self.S_LOW, self.S_HIGH])
+        for offset in (0x104, 0x10c, 0x110, 0x114, 0x118):
+            self.assertEqual(self.word(sram, 0x01c08000 + offset), 0)
+
+    def test_unused_guard_enables_remain_unsupported(self):
+        for offset in (0x104, 0x10c, 0x110, 0x114, 0x118):
+            with self.subTest(offset=hex(offset)):
+                guest = GuardGuest()
+                guest.unlock()
+                pc = guest.write(DEBUG + offset, 1)
+                result, state, _ = self.run_guest(guest)
+                self.assert_fault(result, state,
+                                  "unsupported debug/peripheral guard configuration",
+                                  pc, guest.instructions - 1)
+
+    def test_stock_can_enable_ssp_guard_before_configuring_usp(self):
+        guest = GuardGuest()
+        guest.stack_window(True, self.S_LOW, self.S_HIGH)
+        guest.literal(SP, self.S_LOW - 64, special=True)
+        guest.stack_guard()
+        guest.emit(0x0410, 0x0488)
+        result, state, _ = self.run_guest(guest)
+        self.assert_passes(result, state)
+        self.assertEqual(state["guards"]["stack_windows"],
+                         [[self.S_LOW, self.S_HIGH], [0, 0xffffffff]])
+
     # ---- write windows -------------------------------------------------
 
     LOW, HIGH = 0x01c09000, 0x01c090ff

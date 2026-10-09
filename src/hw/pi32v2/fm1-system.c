@@ -21,14 +21,16 @@
 
 static G_NORETURN void system_fail(FM1PocSystem *s, const char *reason)
 {
-    pi32v2_fail(&s->cpu->env, reason);
+    pi32v2_fail(current_cpu ? cpu_env(current_cpu) : &s->cpu->env, reason);
 }
 
 /* Plain P33 bytes stock FM-1 firmware touches, as a real FM-1 holds them
  * after its SPL (measured). Address bit 10 marks the RTC domain. */
 static const struct { uint16_t address; uint8_t handoff; } p33_plain[] = {
+    {0x11, 0x05},           /* P3_VLVD_CON; no supply-voltage events */
     {0x31, 0x80},           /* written 0xc0 by stock firmware */
     {0x93, 0xff},           /* P3_WKUP_PND */
+    {0x94, 0x08},           /* P3_PINR_CON; no external reset-pin events */
     {0x400 | 0xa8, 0x02},   /* R3_WKUP_SRC */
 };
 
@@ -40,10 +42,18 @@ static int p33_plain_index(uint16_t address)
     return -1;
 }
 
+static bool p33_latch(uint16_t address)
+{
+    return (address >= 0xad && address <= 0xaf) ||
+           (address >= 0xd0 && address <= 0xdf);
+}
+
 static uint8_t register_read(FM1PocSystem *s, uint16_t address)
 {
     int plain = p33_plain_index(address);
     if (plain >= 0) { return s->p33_plain[plain]; }
+    /* P3_{P33,OTH,USB}_LAT and PORT[A-H]_LAT[0-1], measured clear. */
+    if (p33_latch(address)) { return 0; }
     switch (address) {
     case 0x12: return s->p3_reset_source;
     case 0x17: return s->valid_keep;
@@ -64,6 +74,12 @@ static void register_write(FM1PocSystem *s, uint16_t address, uint8_t value)
 {
     int plain = p33_plain_index(address);
     if (plain >= 0) { s->p33_plain[plain] = value; return; }
+    if (p33_latch(address)) {
+        /* Stock clears the port latches. Pin retention itself is not
+         * modeled, so refuse attempts to latch a port. */
+        if (value) { system_fail(s, "unsupported P33 port latch enable"); }
+        return;
+    }
     switch (address) {
     case 0x17:
         /* Bit 6 (SDK WDT_EXPT_EN) selects an exception at watchdog expiry,
@@ -264,16 +280,22 @@ static void psram_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
     system_fail(opaque, "PSRAM controller configuration is unimplemented");
 }
 
-/* JL_CLOCK SYS_DIV as a real FM-1's SPL leaves it (measured). Stock FM-1
- * firmware reads its divider fields; changing them is unimplemented. */
+/* JL_CLOCK SYS_DIV as a real FM-1's SPL leaves it (measured). Only the
+ * core-start bit is writable; divider changes remain unimplemented. */
 static uint64_t sys_div_read(void *opaque, hwaddr offset, unsigned size)
 {
-    return 0x00010200;
+    return ((FM1PocSystem *)opaque)->sys_div;
 }
 
 static void sys_div_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
-    system_fail(opaque, "system clock divider changes are unimplemented");
+    FM1PocSystem *s = opaque;
+    /* Stock toggles bit 3 around core-1 release and restores it afterwards.
+     * Divider/rate changes remain unsupported; icount policy is unchanged. */
+    if ((value ^ 0x00010200ull) & ~8ull) {
+        system_fail(s, "system clock divider changes are unimplemented");
+    }
+    s->sys_div = value;
 }
 
 /* JL_INTEST CHIP_ID as a real FM-1 reads it. */
@@ -326,6 +348,8 @@ static uint64_t debug_read(void *opaque, hwaddr offset, unsigned size)
     case 0x248: system_fail(s, "debug event acknowledgment register is write-only");
     case 0x340: return s->debug_enable;
     case 0x348: return s->write_enable;
+    case 0x344: case 0x34c: case 0x350: case 0x354: case 0x358:
+        return 0;
     }
     if (offset >= 0x280 && offset < 0x28c) { return s->write_high[(offset - 0x280) / 4]; }
     if (offset >= 0x2c0 && offset < 0x2cc) { return s->write_low[(offset - 0x2c0) / 4]; }
@@ -356,6 +380,11 @@ static void debug_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
         s->write_enable = value;
         fm1_system_sync_guards(s);
         return;
+    case 0x344: case 0x34c: case 0x350: case 0x354: case 0x358:
+        /* Stock startup disables DBG_CON, core-1 write limits and the
+         * peripheral write limits. Only their disabled state is modeled. */
+        if (value) { system_fail(s, "unsupported debug/peripheral guard configuration"); }
+        return;
     }
     if (offset >= 0x280 && offset < 0x28c) {
         s->write_high[(offset - 0x280) / 4] = value;
@@ -373,8 +402,11 @@ static void debug_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
         else { s->pc_high[window] = value; }
         /* Translated code was checked against the old windows: retire it
          * and leave the current TB chain before the next instruction. */
-        s->cpu->env.fetch_epoch++;
-        cpu_exit(CPU(s->cpu));
+        CPUState *cs;
+        CPU_FOREACH(cs) {
+            cpu_env(cs)->fetch_epoch++;
+            cpu_exit(cs);
+        }
         return;
     }
     system_fail(s, "unsupported debug/guard register write");
@@ -396,7 +428,10 @@ static void emu_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
 {
     FM1PocSystem *s = opaque;
     if (offset == 0) {
-        if (value & ~12ull) { system_fail(s, "unsupported EMU control bits"); }
+        /* Bit 8 enables ETM watchpoint-0 errors. No watchpoint can be
+         * armed by the currently accepted ETM configuration, so keeping
+         * this enable cannot create a watchpoint event. */
+        if (value & ~0x10cull) { system_fail(s, "unsupported EMU control bits"); }
         s->emu_control = value;
         fm1_system_sync_guards(s);
         fm1_system_check_stack(s);      /* enabling it checks the current SP */
@@ -412,6 +447,19 @@ static void emu_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         return;
     }
     system_fail(s, "unsupported EMU register write");
+}
+
+/* The board has no running second core and hence no core-1 EMU events.
+ * Stock core-0 startup acknowledges both cores' messages. Keep this
+ * separate from core 0 so it cannot accidentally clear active guards. */
+static uint64_t core1_emu_message_read(void *opaque, hwaddr offset, unsigned size)
+{
+    return 0;
+}
+
+static void core1_emu_message_write(void *opaque, hwaddr offset, uint64_t value,
+                                    unsigned size)
+{
 }
 
 static uint64_t etm_read(void *opaque, hwaddr offset, unsigned size)
@@ -441,6 +489,7 @@ SYSTEM_OPS(reset);
 SYSTEM_OPS(cache);
 SYSTEM_OPS(debug);
 SYSTEM_OPS(emu);
+SYSTEM_OPS(core1_emu_message);
 SYSTEM_OPS(etm);
 SYSTEM_OPS(sdr);
 SYSTEM_OPS(psram);
@@ -451,6 +500,7 @@ SYSTEM_OPS(chip_id);
 void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
 {
     s->cpu = cpu;
+    s->sys_div = 0x00010200;
     s->p3_reset_source = 1; /* Cold power-on, rather than a synthetic warm reset. */
     s->p33_control = P33_DIVIDER;   /* as a real FM-1's SPL leaves it (measured) */
     for (unsigned i = 0; i < G_N_ELEMENTS(p33_plain); i++) {
@@ -458,6 +508,10 @@ void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
     }
     s->p33_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, p33_complete, s);
     s->watchdog_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, watchdog_expired, s);
+    /* The SPL leaves unconfigured stack windows unrestricted. Measured
+     * on the idle second core; stock initializes only the SSP window
+     * before enabling guards while still using its startup user stack. */
+    s->stack_high[0] = s->stack_high[1] = UINT32_MAX;
 #define MAP(region, ops, label, address, length) \
     memory_region_init_io(&s->region, owner, &ops, s, label, length); \
     fm1_sfr_map(address, &s->region)
@@ -466,6 +520,10 @@ void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
     MAP(cache_mmio, cache_ops, "fm1.cache", 0x01eee008, 12);
     MAP(debug_mmio, debug_ops, "fm1.debug-guards", 0x01eee240, 0x150);
     MAP(emu_mmio, emu_ops, "fm1.emu-guards", 0x01eef0d0, 24);
+    if (!s->secondary) {
+        MAP(core1_emu_message_mmio, core1_emu_message_ops,
+            "fm1.core1-emu-message", 0x01eef2d4, 4);
+    }
     MAP(etm_mmio, etm_ops, "fm1.branch-trace", 0x01eef1c0, 20);
     MAP(sdr_mmio, sdr_ops, "fm1.sdram-controller", 0x40400, 0x48);
     MAP(psram_mmio, psram_ops, "fm1.psram-controller", 0x40500, 12);
@@ -485,12 +543,27 @@ void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
     fm1_system_sync_guards(s);
 }
 
+void fm1_system_init_core1(FM1PocSystem *s, FM1PocSystem *shared,
+                           Object *owner, Pi32v2CPU *cpu)
+{
+    s->cpu = cpu;
+    s->shared = shared;
+    shared->secondary = s;
+    s->stack_high[0] = s->stack_high[1] = UINT32_MAX;
+    memory_region_init_io(&s->emu_mmio, owner, &emu_ops, s, "fm1.core1-emu", 24);
+    fm1_sfr_map(0x01eef2d0, &s->emu_mmio);
+    memory_region_init_io(&s->etm_mmio, owner, &etm_ops, s, "fm1.core1-etm", 20);
+    fm1_sfr_map(0x01eef3c0, &s->etm_mmio);
+    fm1_system_sync_guards(s);
+}
+
 /* Translated code checks stores and SP writes against these CPU mirrors.
  * Register indexes differ: EMU window 0 is the interrupt stack, while the
  * CPU mirror is indexed by in_irq. */
 void fm1_system_sync_guards(FM1PocSystem *s)
 {
     CPUPi32v2State *env = &s->cpu->env;
+    FM1PocSystem *shared = s->shared ? s->shared : s;
     for (unsigned irq = 0; irq < 2; irq++) {
         unsigned window = irq ? 0 : 1;
         bool on = s->emu_control & 8;
@@ -500,10 +573,14 @@ void fm1_system_sync_guards(FM1PocSystem *s)
     }
     env->etm_on = s->etm_control & 1;
     for (unsigned i = 0; i < 3; i++) {
-        bool on = (s->write_enable & (1u << i)) && s->write_low[i] <= s->write_high[i];
-        env->write_low[i] = on ? s->write_low[i] : UINT32_MAX;
-        env->write_high[i] = on ? s->write_high[i] : 0;
+        /* The address windows are shared, but C0_WR_LIMIT_EN and
+         * C1_WR_LIMIT_EN select them independently. Core-1 enables are
+         * currently supported only in their disabled state. */
+        bool on = (s->write_enable & (1u << i)) && shared->write_low[i] <= shared->write_high[i];
+        env->write_low[i] = on ? shared->write_low[i] : UINT32_MAX;
+        env->write_high[i] = on ? shared->write_high[i] : 0;
     }
+    if (s->secondary) { fm1_system_sync_guards(s->secondary); }
 }
 
 bool fm1_system_fetch_allowed(FM1PocSystem *s, uint32_t address, unsigned size)

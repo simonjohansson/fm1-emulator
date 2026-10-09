@@ -16,18 +16,23 @@ enum { FM1_STORED_PMU, FM1_STORED_PLL, FM1_STORED_USB_PHY, FM1_STORED_OSA, FM1_S
 
 typedef struct FM1PocSystem {
     Pi32v2CPU *cpu;
+    /* Optional peer owns only its per-core EMU/ETM state. P33, debug and
+     * other system devices remain shared in the primary instance. */
+    struct FM1PocSystem *shared, *secondary;
     MemoryRegion p33_mmio, reset_mmio, debug_mmio, emu_mmio, etm_mmio, cache_mmio;
+    MemoryRegion core1_emu_message_mmio;
     MemoryRegion sdr_mmio, psram_mmio;
     MemoryRegion sys_div_mmio, chip_id_mmio;
     QEMUTimer *p33_timer, *watchdog_timer;
     uint32_t p33_control, reset_source;
+    uint32_t sys_div;
     MemoryRegion stored_mmio[FM1_STORED_COUNT];
     uint32_t stored[FM1_STORED_COUNT][FM1_STORED_WORDS];   /* see stored_blocks */
     uint8_t p33_data, transfer_byte, command, phase;
     uint16_t address;
     bool p33_busy, debug_unlocked;
     uint8_t p3_reset_source, valid_keep, watchdog_control, power_control;
-    uint8_t p33_plain[3];                   /* see p33_plain in fm1-system.c */
+    uint8_t p33_plain[5];                   /* see p33_plain in fm1-system.c */
     uint32_t debug_message, debug_enable, write_enable;
     uint32_t write_low[3], write_high[3], pc_low[2], pc_high[2];
     uint32_t emu_control, emu_message, stack_low[2], stack_high[2];
@@ -39,6 +44,8 @@ typedef struct FM1PocSystem {
 } FM1PocSystem;
 
 void fm1_system_init(FM1PocSystem *system, Object *owner, Pi32v2CPU *cpu);
+void fm1_system_init_core1(FM1PocSystem *system, FM1PocSystem *shared,
+                           Object *owner, Pi32v2CPU *cpu);
 /* Copy the stack and write-window guards and ETM enable into the CPU. */
 void fm1_system_sync_guards(FM1PocSystem *system);
 /* PC windows only; no side effects (translation asks before executing). */

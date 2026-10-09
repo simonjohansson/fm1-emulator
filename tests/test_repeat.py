@@ -9,6 +9,17 @@ from support import INSPECTION, ROOT, Guest, guest_state, run_guest
 
 
 class RepeatTests(unittest.TestCase):
+    def test_immediate_repeat_accepts_stock_postincrement_word_store(self):
+        guest = Guest()
+        guest.literal(0, INSPECTION)
+        guest.literal(11, 0)
+        guest.emit(0x9d10)         # REP four-byte body, 30 iterations.
+        guest.emit(0xecd8, 0xb005) # [r0++=4] = r11.
+        state = guest_state(self.directory, guest)
+        self.assertEqual(state["inspection"], [0] * 12)
+        self.assertEqual(state["registers"][0], INSPECTION + 120)
+        self.assertEqual(state["instructions"], guest.instructions + 29)
+
     def setUp(self):
         cache = ROOT / ".cache" / "tests"
         cache.mkdir(parents=True, exist_ok=True)
