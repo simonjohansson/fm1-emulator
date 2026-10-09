@@ -31,6 +31,20 @@ class BytePreLoadTests(unittest.TestCase):
                 self.assertEqual(state["specials"][5], 0x89abcde5)
                 self.assertEqual(state["instructions"], guest.instructions)
 
+    def test_negative_offset_signed_load_without_writeback(self):
+        # Vendor EE55 0B0A at Felucca 0x02002230: r0 = b[r0+-70] (s).
+        for imm, byte in ((0xba, 0x80), (0xff, 0x7f), (0x00, 0xfe)):
+            with self.subTest(imm=imm, byte=byte):
+                offset = imm - 256
+                guest = Guest()
+                guest.write(INSPECTION, 0x12345600 | byte)
+                guest.literal(0, INSPECTION - offset)
+                guest.emit(0xee55, 0x0000 | (imm & 15) | (imm & 0xf0) << 4)
+                state = guest_state(self.directory, guest)
+                self.assertEqual(state["registers"][0], byte if byte < 128 else byte | 0xffffff00)
+                self.assertEqual(state["inspection"][0], 0x12345600 | byte)
+                self.assertEqual(state["instructions"], guest.instructions)
+
     def test_skipped_load_preserves_base_without_access(self):
         guest = Guest()
         guest.literal(0, 1)
