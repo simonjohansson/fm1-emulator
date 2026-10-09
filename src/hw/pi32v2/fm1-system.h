@@ -12,9 +12,9 @@
 /* Plain configuration words kept without effect (fm1-system.c). */
 enum { FM1_STORED_PMU, FM1_STORED_PLL, FM1_STORED_USB_PHY, FM1_STORED_OSA, FM1_STORED_DBG,
        FM1_STORED_COUNT };
-#define FM1_STORED_WORDS 4
+#define FM1_STORED_WORDS 5
 
-#define FM1_P33_PLAIN_COUNT 36     /* see p33_plain in fm1-system.c */
+#define FM1_P33_PLAIN_COUNT 37     /* see p33_plain in fm1-system.c */
 
 typedef struct FM1PocSystem {
     Pi32v2CPU *cpu;

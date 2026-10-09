@@ -53,6 +53,7 @@ static const struct { uint16_t address; uint8_t handoff; } p33_plain[] = {
     {0x93, 0xff},           /* P3_WKUP_PND */
     {0x94, 0x08},           /* P3_PINR_CON; no external reset-pin events */
     {0x9b, 0x01},           /* P3_PR_DIE */
+    {0xa1, 0x00},           /* P3_LDO5V_CON, as read while USB-powered */
     {0x400 | 0xa8, 0x02},   /* R3_WKUP_SRC */
     {0x400 | 0xab, 0xa0},
 };
@@ -364,7 +365,8 @@ static const struct {
     [FM1_STORED_PMU] = {"fm1.p33-pmu", 0x13e00, 2, {0x100, 0xe0}},   /* PMU_CON, RTC_CON */
     [FM1_STORED_PLL] = {"fm1.pll", 0x119a0, 4,                      /* PLL_CON0..PLL2_CON1 */
                         {0x45400203, 0x3f503026, 0x0940022b, 0x0750310c}},
-    [FM1_STORED_USB_PHY] = {"fm1.usb-phy", 0x16a00, 4, {0, 0x008881c3}},
+    [FM1_STORED_USB_PHY] = {"fm1.usb-phy", 0x16a00, 5,              /* word 4: USB1 pad status */
+                            {0, 0x008881c3, 0, 0, 0x0006003f}},
     [FM1_STORED_OSA] = {"fm1.osa", 0x13400, 1, {0x80}},              /* JL_OSA CON */
     [FM1_STORED_DBG] = {"fm1.dbg", 0x41c00, 4, {0}},                 /* JL_DBG; stock clears it */
 };

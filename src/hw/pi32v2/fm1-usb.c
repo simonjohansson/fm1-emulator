@@ -279,7 +279,10 @@ static void usb_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     FM1PocUSB *usb = opaque;
     switch (offset) {
     case 0: {
-        uint64_t allowed = 0xf8003dull | USB_SOF_ACK |
+        /* Stock also sets bit 9 while it reads D+/D- levels from bits 15
+         * and 17 with the pads in GPIO mode; that mode is stored only, so
+         * those levels read low. */
+        uint64_t allowed = 0xf8023dull | USB_SOF_ACK |
                            (usb->sie_clock_available ? USB_SOF_PENDING : 0);
         if (value & ~allowed) {
             usb_fail(usb, "unsupported USB0 control bits");
@@ -338,7 +341,9 @@ static uint64_t pads_read(void *opaque, hwaddr offset, unsigned size)
 static void pads_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     FM1PocUSB *usb = opaque;
-    if (value & ~0x1efcull) { usb_fail(usb, "unsupported USB pad configuration"); }
+    /* Stock's GPIO helper maps USB pins 148/149 to bits 13/14; like the
+     * other accepted bits they are stored, with no modeled pad effect. */
+    if (value & ~0x7efcull) { usb_fail(usb, "unsupported USB pad configuration"); }
     usb->pads = value;
 }
 

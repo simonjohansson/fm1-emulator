@@ -633,6 +633,11 @@ static const MemoryRegionOps rand_ops = {
  * bit reads as clear. */
 #define RF_BASE 0x20000u
 #define RF_SERIAL_PORT (0x3101cu - RF_BASE)
+/* Stock latches a radio timer by writing 1 to 0x2001c, polling it to zero
+ * and reading 0x20020. With no radio the latch completes at once and the
+ * timer reads virtual microseconds; its unit is assumed, not measured. */
+#define RF_TIMER_LATCH (0x2001cu - RF_BASE)
+#define RF_TIMER_VALUE (0x20020u - RF_BASE)
 #define RF_SERIAL_BUSY 0x20000u
 static uint64_t wl_read(void *opaque, hwaddr offset, unsigned size)
 {
@@ -649,7 +654,12 @@ static uint64_t rf_read(void *opaque, hwaddr offset, unsigned size)
 }
 static void rf_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
-    ((FM1PocState *)opaque)->rf[offset / 4] = value;
+    FM1PocState *m = opaque;
+    if (offset == RF_TIMER_LATCH && value) {
+        m->rf[RF_TIMER_VALUE / 4] = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1000;
+        value = 0;
+    }
+    m->rf[offset / 4] = value;
 }
 /* WLA_CON1-39 (0x11904): RF analog configuration beside WLA_CON0, part of
  * the inert radio. CON1-30 store; read-only CON31-39 read zero. Stock's RF

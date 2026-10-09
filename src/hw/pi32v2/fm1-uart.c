@@ -41,12 +41,13 @@ static void uart_write(void *opaque, hwaddr offset, uint64_t value,
     check_width(u, offset, size);
     switch (offset) {
     case 0:
-        if (value & ~0x34c1ull) {
+        if (value & ~0x34edull) {
             uart_fail(u, "unsupported UART1 control configuration");
         }
         /* Idle pending-clear/reload commands are not persistent config.
-         * Only enable and the reached receiver interrupt mask read back. */
-        u->registers[0] = value & 0x41;
+         * Enable and the reached interrupt enables read back: stock also
+         * sets bits 2, 3 and 5 (0x6c); no UART1 IRQ is raised. */
+        u->registers[0] = value & 0x6d;
         return;
     case 4:
         if (value) { uart_fail(u, "unsupported UART1 CON1 configuration"); }
