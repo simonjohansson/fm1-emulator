@@ -682,9 +682,18 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                (op & 0xfff0) == 0xe8a0) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = (op >> 4) & 255;
-        TCGv_i32 left = read_gpr(d, op & 15), right, result = tcg_temp_new_i32();
-        TCGCond cond;
-        if (kind == 0xa1) {
+        TCGv_i32 left = read_gpr(d, op & 15), right = NULL, result = tcg_temp_new_i32();
+        TCGCond cond = TCG_COND_NEVER;
+        bool register_kind = kind == 0x81 || kind == 0x89 || kind == 0x91 || kind == 0x99 ||
+                             kind == 0xc1 || kind == 0xc9 || kind == 0xd1 || kind == 0xd9 ||
+                             kind == 0xe1 || kind == 0xe9;
+        if (register_kind && (x & 255) == 0x80) {
+            /* IFF block, measured on an FM-1 (EE11 0080/0280): bit 7 makes
+             * the register form a single-precision compare under the same
+             * condition (the branch kind + 1); equal signed zeros are equal. */
+            gen_helper_pi32v2_fcmp(result, tcg_env, tcg_constant_i32(kind - 1),
+                                   left, read_gpr(d, (x >> 8) & 15));
+        } else if (kind == 0xa1) {
             if (x & 127) { goto illegal; }
             TCGv_i32 masked = tcg_temp_new_i32();
             tcg_gen_and_i32(masked, left, read_gpr(d, (x >> 8) & 15));
@@ -756,7 +765,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             cond = kind == 0x83 ? TCG_COND_EQ : kind == 0x8b ? TCG_COND_NE :
                    kind == 0x9b ? TCG_COND_LTU : TCG_COND_GEU;
         }
-        tcg_gen_setcond_i32(cond, result, left, right);
+        if (right) { tcg_gen_setcond_i32(cond, result, left, right); }
         uint32_t then_end = here + 4, else_end;
         for (unsigned i = 0; i <= (x >> 14); i++) { then_end = instruction_end(d, then_end); }
         else_end = then_end;

@@ -90,6 +90,23 @@ class FloatTests(unittest.TestCase):
                 state = guest_state(self.directory, guest)
                 self.assertEqual(state["registers"][3], 0 if taken else 1)
 
+    def test_iff_blocks_compare_as_floats(self):
+        # EE11 0080 "iff (r1 > r0) {", captured on an FM-1 (bit 7 of the
+        # second word selects the float compare of the register IF block).
+        cases = [(0x40000000, 0x3f800000, True), (0x3f800000, 0x40000000, False),
+                 (0xbf800000, 0xc0000000, True), (0x80000000, 0x00000000, False),
+                 (0x00000000, 0x80000000, False)]
+        for a, b, taken in cases:
+            with self.subTest(a=hex(a), b=hex(b)):
+                guest = Guest()
+                guest.literal(1, a)
+                guest.literal(0, b)
+                guest.literal(3, 0)
+                guest.emit(0xee11, 0x0080)      # one-instruction THEN arm
+                guest.literal(3, 1)
+                state = guest_state(self.directory, guest)
+                self.assertEqual(state["registers"][3], 1 if taken else 0)
+
     def test_unmeasured_values_fault(self):
         for operand, a, b in ((0x3213, 0x3f800000, 0), (0x3210, 0x7f800000, 0),
                               (0x321f, 0, 0x4f000000)):
