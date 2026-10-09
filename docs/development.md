@@ -66,8 +66,21 @@ and test-hook names retaining `poc` are internal compatibility names.
 `./emulator --qemu ...` retains the underlying QEMU command line for development.
 With it, `FM1_POC_CAPTURE_NS=<guest ns>` together with `FM1_POC_STATE_DIR`
 ends the run with a full capture (state, SRAM, LCD image) at that guest
-time, for example after panel input sent over QMP. `FM1_POC_UART1_LOG=/path/to/file` appends bytes the firmware sends on
-UART1 to that file; stock firmware sends MIDI messages there. Normal launches clear
+time, for example after panel input sent over QMP. `FM1_POC_INPUT` presses
+and releases host keys at guest times (`NS:QCODE:1,NS:QCODE:0,...`) through
+QEMU's input layer, so scripted panel scenarios run unpaced.
+
+With stock update packages, the scenarios in `tests/test_stock_scenarios.py`
+boot each package and check HOME, the ENV page, PRESETS, a held note (audio
+and MIDI note-on) and OCT+:
+
+```sh
+cd tests && FM1_STOCK_PACKAGES=/path/FM-1.fwsc:/path/FM-1_093.fwsc \
+  mise exec python@3.13.15 -- python -m unittest test_stock_scenarios
+```
+
+`FM1_POC_UART1_LOG=/path/to/file` appends bytes the firmware sends on UART1 to
+that file; stock firmware sends MIDI messages there. Normal launches clear
 `FM1_POC_*` variables.
 Serialize builds and guest runs that share captures or caches.
 

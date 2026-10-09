@@ -11,6 +11,8 @@
 #include "hw/core/irq.h"
 #include "system/address-spaces.h"
 #include "system/runstate.h"
+#include "qapi/util.h"
+#include "ui/input.h"
 #include "accel/tcg/cpu-loop.h"
 #include "cpu.h"
 #include "fm1-lcd.h"
@@ -565,6 +567,43 @@ static void requested_capture(void *opaque)
     pi32v2_fail(&m->cpu->env, "requested capture");
 }
 
+/* FM1_POC_INPUT="NS:QCODE:1,NS:QCODE:0,..." presses (1) and releases (0)
+ * host keys at guest times through QEMU's input layer, the path QMP and
+ * Cocoa use, so scripted panel scenarios are deterministic and unpaced. */
+typedef struct ScriptedKey {
+    QEMUTimer *timer;
+    QKeyCode code;
+    bool down;
+} ScriptedKey;
+
+static void scripted_key(void *opaque)
+{
+    ScriptedKey *key = opaque;
+    qemu_input_event_send_key_linux(NULL, qemu_input_map_qcode_to_linux[key->code], key->down);
+    qemu_input_event_sync();
+}
+
+static void schedule_input(const char *script)
+{
+    g_auto(GStrv) events = g_strsplit(script, ",", -1);
+    for (char **event = events; *event; event++) {
+        g_auto(GStrv) field = g_strsplit(*event, ":", 3);
+        char *end = NULL;
+        uint64_t when = field[0] ? g_ascii_strtoull(field[0], &end, 0) : 0;
+        int code = field[0] && field[1] ? qapi_enum_parse(&QKeyCode_lookup, field[1], -1, NULL) : -1;
+        if (!field[0] || !field[1] || !field[2] || *end || !when || when > INT64_MAX ||
+            code < 0 || (strcmp(field[2], "0") && strcmp(field[2], "1"))) {
+            error_report("FM1_POC_INPUT event '%s' is not NS:QCODE:0|1", *event);
+            exit(EXIT_FAILURE);
+        }
+        ScriptedKey *key = g_new0(ScriptedKey, 1);
+        key->code = code;
+        key->down = field[2][0] == '1';
+        key->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, scripted_key, key);
+        timer_mod_ns(key->timer, when);
+    }
+}
+
 void fm1_test_configure(FM1PocState *m, MachineState *ms)
 {
     const char *profile = ms->kernel_cmdline ? ms->kernel_cmdline : "";
@@ -680,6 +719,8 @@ void fm1_test_configure(FM1PocState *m, MachineState *ms)
         }
         timer_mod_ns(timer_new_ns(QEMU_CLOCK_VIRTUAL, requested_capture, m), when);
     }
+    const char *input = getenv("FM1_POC_INPUT");
+    if (input) { schedule_input(input); }
 }
 
 void fm1_test_seed_ram(FM1PocState *m)
