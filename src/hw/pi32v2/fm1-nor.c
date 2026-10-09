@@ -444,13 +444,16 @@ void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
         /* The generic package handoff carries a pointer to its decoded flash
          * header and the parsed SFC key. The saved stock app consumes header
          * fields +8/+13 through param[0], and the key through param+12.
-         * Param+8 supplies the first application-area directory. The
-         * decoder validates this area at the board's fixed XIP origin.
+         * Param+8 supplies the first application-area directory and param+4
+         * its NOR offset, 0x4000 behind XIP 0x02000000 (measured); stock
+         * maps resource addresses with this pair. The decoder validates
+         * this area at the board's fixed XIP origin.
          * Reserved storage, calibration and MAC remain zero/unverified; this
          * does not implement the SPL's complete hardware/ROM boot contract.
          * Raw applications retain the previous zeroed SRAM handoff exactly. */
         static const uint8_t header_pointer[4] = {0x40, 0xfe, 0xc7, 0x01};
-        static const uint8_t directory_pointer[4] = {0x00, 0x00, 0x00, 0x02};
+        static const uint8_t directory[8] = {0x00, 0x40, 0x00, 0x00,
+                                             0x00, 0x00, 0x00, 0x02};
         uint8_t key[2] = {handoff.chip_key, handoff.chip_key >> 8};
         if (address_space_write(&address_space_memory, 0x01c7fe40,
                                 MEMTXATTRS_UNSPECIFIED, handoff.flash_header,
@@ -458,9 +461,9 @@ void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
             address_space_write(&address_space_memory, 0x01c7fe08,
                                 MEMTXATTRS_UNSPECIFIED, header_pointer,
                                 sizeof(header_pointer)) != MEMTX_OK ||
-            address_space_write(&address_space_memory, 0x01c7fe10,
-                                MEMTXATTRS_UNSPECIFIED, directory_pointer,
-                                sizeof(directory_pointer)) != MEMTX_OK ||
+            address_space_write(&address_space_memory, 0x01c7fe0c,
+                                MEMTXATTRS_UNSPECIFIED, directory,
+                                sizeof(directory)) != MEMTX_OK ||
             address_space_write(&address_space_memory, 0x01c7fe14,
                                 MEMTXATTRS_UNSPECIFIED, key,
                                 sizeof(key)) != MEMTX_OK) {
