@@ -9,7 +9,9 @@
  * Pages are lockless for loads. Device state is changed only on the vCPU
  * thread (MMIO, icount's virtual timers and queued CPU work), apart from
  * blocks mapped with fm1_sfr_map_locked, whose reads keep the BQL. Writes
- * always hold it: they reconfigure timers, IRQs, audio and the memory map. */
+ * hold it, as they reconfigure timers, IRQs, audio and the memory map,
+ * except for blocks mapped with fm1_sfr_map_self_locking, whose handlers
+ * take it for the writes that need it. */
 #include "qemu/osdep.h"
 #include "qemu/main-loop.h"
 #include "system/address-spaces.h"
@@ -26,7 +28,7 @@ typedef struct FM1SfrPage {
     struct {
         hwaddr offset, size;
         MemoryRegion *mr;
-        bool locked;
+        bool locked, self_locking;
         uint8_t direct;             /* access sizes the block's handlers take as is */
     } block[SFR_BLOCKS];
     uint8_t owner[SFR_PAGE / 4];    /* block index + 1 per word; 0 unowned */
@@ -36,7 +38,8 @@ static FM1SfrPage pages[SFR_PAGES];
 static unsigned page_count;
 
 static MemoryRegion *block_at(FM1SfrPage *p, hwaddr addr, unsigned size,
-                              hwaddr *offset, bool *locked, bool *direct)
+                              hwaddr *offset, bool *locked, bool *direct,
+                              bool *self_locking)
 {
     unsigned b = p->owner[addr / 4];
     if (!b--) {
@@ -47,6 +50,7 @@ static MemoryRegion *block_at(FM1SfrPage *p, hwaddr addr, unsigned size,
     }
     *offset = addr - p->block[b].offset;
     *locked = p->block[b].locked;
+    *self_locking = p->block[b].self_locking;
     *direct = (p->block[b].direct & size) && !(*offset & (size - 1));
     return p->block[b].mr;
 }
@@ -78,8 +82,9 @@ static MemTxResult sfr_read(void *opaque, hwaddr addr, uint64_t *data,
                             unsigned size, MemTxAttrs attrs)
 {
     hwaddr offset;
-    bool locked, direct;
-    MemoryRegion *mr = block_at(opaque, addr, size, &offset, &locked, &direct);
+    bool locked, direct, self_locking;
+    MemoryRegion *mr = block_at(opaque, addr, size, &offset, &locked, &direct,
+                                &self_locking);
     if (!mr) {
         return MEMTX_DECODE_ERROR;
     }
@@ -94,12 +99,13 @@ static MemTxResult sfr_write(void *opaque, hwaddr addr, uint64_t data,
                              unsigned size, MemTxAttrs attrs)
 {
     hwaddr offset;
-    bool locked, direct;
-    MemoryRegion *mr = block_at(opaque, addr, size, &offset, &locked, &direct);
+    bool locked, direct, self_locking;
+    MemoryRegion *mr = block_at(opaque, addr, size, &offset, &locked, &direct,
+                                &self_locking);
     if (!mr) {
         return MEMTX_DECODE_ERROR;
     }
-    if (!bql_locked()) {
+    if (!self_locking && !bql_locked()) {
         BQL_LOCK_GUARD();
         return block_write(mr, offset, data, size, direct, attrs);
     }
@@ -150,7 +156,7 @@ static uint8_t direct_sizes(const MemoryRegionOps *ops)
     return sizes;
 }
 
-static void map_block(hwaddr address, MemoryRegion *mr, bool locked)
+static void map_block(hwaddr address, MemoryRegion *mr, bool locked, bool self_locking)
 {
     hwaddr base = address & ~(hwaddr)(SFR_PAGE - 1), offset = address - base;
     uint64_t size = memory_region_size(mr);
@@ -165,16 +171,22 @@ static void map_block(hwaddr address, MemoryRegion *mr, bool locked)
     p->block[p->count].size = size;
     p->block[p->count].mr = mr;
     p->block[p->count].locked = locked;
+    p->block[p->count].self_locking = self_locking;
     p->block[p->count].direct = direct_sizes(mr->ops);
     p->count++;
 }
 
 void fm1_sfr_map(hwaddr address, MemoryRegion *mr)
 {
-    map_block(address, mr, false);
+    map_block(address, mr, false, false);
 }
 
 void fm1_sfr_map_locked(hwaddr address, MemoryRegion *mr)
 {
-    map_block(address, mr, true);
+    map_block(address, mr, true, false);
+}
+
+void fm1_sfr_map_self_locking(hwaddr address, MemoryRegion *mr)
+{
+    map_block(address, mr, false, true);
 }

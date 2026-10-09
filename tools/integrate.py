@@ -128,7 +128,7 @@ def main():
     write_changed(physmem, content)
     (SOURCE / "system/fm1-subpage-read.h").unlink(missing_ok=True)
     # Honor lockless MMIO regions on TCG loads, as the physical-memory path
-    # already does. Stores and 16-byte loads keep taking the BQL.
+    # already does. 16-byte accesses keep taking the BQL.
     cputlb = SOURCE / "accel/tcg/cputlb.c"
     content = cputlb.read_text()
     load = ("    BQL_LOCK_GUARD();\n"
@@ -142,6 +142,20 @@ def main():
         if content.count(load) != 1:
             raise SystemExit("pinned TCG lockless load hook anchor differs")
         content = content.replace(load, lockless)
+    # Stores to lockless regions (the FM-1 peripheral pages) also skip the
+    # generic BQL: the page dispatcher takes it for every block except those
+    # whose handlers lock themselves (fm1_sfr_map_self_locking).
+    store = ("    BQL_LOCK_GUARD();\n"
+             "    return int_st_mmio_leN(cpu, full, val_le, addr, size, mmu_idx,\n"
+             "                           ra, mr, mr_offset);\n")
+    lockless_store = ("    if (mr->lockless_io) {\n"
+                      "        return int_st_mmio_leN(cpu, full, val_le, addr, size, mmu_idx,\n"
+                      "                               ra, mr, mr_offset);\n"
+                      "    }\n" + store)
+    if lockless_store not in content:
+        if content.count(store) != 1:
+            raise SystemExit("pinned TCG lockless store hook anchor differs")
+        content = content.replace(store, lockless_store)
     # Read simple lockless regions without the generic dispatch layers
     # (fm1-mmio-read.h); other regions keep memory_region_dispatch_read.
     for before, after in [

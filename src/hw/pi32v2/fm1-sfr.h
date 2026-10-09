@@ -12,5 +12,8 @@ void fm1_sfr_map(hwaddr address, MemoryRegion *mr);
 /* As fm1_sfr_map, for a block whose reads must hold the BQL: its state is
  * also changed outside the vCPU thread. */
 void fm1_sfr_map_locked(hwaddr address, MemoryRegion *mr);
+/* As fm1_sfr_map, for a block whose write handler takes the BQL itself
+ * where needed (IRQ changes): hot register writes then avoid it. */
+void fm1_sfr_map_self_locking(hwaddr address, MemoryRegion *mr);
 
 #endif

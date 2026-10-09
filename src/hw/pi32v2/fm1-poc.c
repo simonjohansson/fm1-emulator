@@ -236,6 +236,14 @@ static uint64_t timer_read(void *opaque, hwaddr offset, unsigned size)
 static void timer_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     FM1TimerState *t = opaque;
+    /* Mapped self-locking: stock's audio core rewrites TIMER5 CNT millions
+     * of times a second. CNT/PRD writes only re-arm a QEMU timer, which has
+     * its own lock; CON may acknowledge an IRQ, which needs the BQL. */
+    if (offset == 0 && !bql_locked()) {
+        BQL_LOCK_GUARD();
+        timer_write(opaque, offset, value, size);
+        return;
+    }
     switch (offset) {
     case 0:
         if (value & ~0xc019ull) {
@@ -811,7 +819,7 @@ static void machine_init(MachineState *ms)
         t->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, fm1_timer_expired, t);
         memory_region_init_io(&t->mmio, OBJECT(m), &timer_ops, t,
                               i == 2 ? "fm1.timer1" : i ? "fm1.timer5" : "fm1.timer4", 12);
-        fm1_sfr_map(0x10400 + t->number * 0x100, &t->mmio);
+        fm1_sfr_map_self_locking(0x10400 + t->number * 0x100, &t->mmio);
     }
     memory_region_init_io(&m->gpio_mmio, OBJECT(m), &gpio_ops, m, "fm1.gpio", 0x1e0);
     fm1_sfr_map(0x50000, &m->gpio_mmio);
