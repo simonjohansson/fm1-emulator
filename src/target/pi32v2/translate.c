@@ -44,6 +44,30 @@ static int32_t sext(uint32_t n, unsigned bits)
 {
     return (int32_t)(n << (32 - bits)) >> (32 - bits);
 }
+/* Branch and IF condition slots (op bits 7-11 of E800-EEFF). */
+static TCGCond branch_condition(unsigned slot)
+{
+    switch (slot) {
+    case 0x80: return TCG_COND_EQ;
+    case 0x88: return TCG_COND_NE;
+    case 0x90: return TCG_COND_GEU;
+    case 0x98: return TCG_COND_LTU;
+    case 0xc0: return TCG_COND_GTU;
+    case 0xc8: return TCG_COND_LEU;
+    case 0xd0: return TCG_COND_GE;
+    case 0xd8: return TCG_COND_LT;
+    case 0xe0: return TCG_COND_GT;
+    case 0xe8: return TCG_COND_LE;
+    default: return TCG_COND_NEVER;
+    }
+}
+static bool if_block_kind(uint16_t op)
+{
+    unsigned kind = (op >> 4) & 255, type = kind & 7;
+    if ((op & 0xf800) != 0xe800 || op >= 0xef00) { return false; }
+    if (kind == 0xa1 || kind == 0xa2 || kind == 0xa3) { return true; }
+    return type >= 1 && type <= 3 && branch_condition(kind & 0xf8) != TCG_COND_NEVER;
+}
 static uint32_t packed_mask(uint16_t x)
 {
     unsigned mode = (x >> 10) & 3;
@@ -662,38 +686,19 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             else { tcg_gen_shri_i32(gpr[dst], gpr[dst], 32 - len); }
         }
         next = here + 4;
-    } else if ((op & 0xfff0) == 0xea20 || (op & 0xfff0) == 0xea30 ||
-               (op & 0xfff0) == 0xea10 ||
-               (op & 0xfff0) == 0xe830 || (op & 0xfff0) == 0xe8b0 ||
-               (op & 0xfff0) == 0xe810 || (op & 0xfff0) == 0xe890 ||
-               (op & 0xfff0) == 0xe910 ||
-               (op & 0xfff0) == 0xe930 || (op & 0xfff0) == 0xe9b0 ||
-               (op & 0xfff0) == 0xec10 ||
-               (op & 0xfff0) == 0xecb0 ||
-               (op & 0xfff0) == 0xed30 || (op & 0xfff0) == 0xeeb0 ||
-               (op & 0xfff0) == 0xed10 || (op & 0xfff0) == 0xee10 ||
-               (op & 0xfff0) == 0xed90 || (op & 0xfff0) == 0xee90 ||
-               (op & 0xfff0) == 0xe920 || (op & 0xfff0) == 0xe990 ||
-               (op & 0xfff0) == 0xec30 ||
-               (op & 0xfff0) == 0xec90 || (op & 0xfff0) == 0xeca0 ||
-               (op & 0xfff0) == 0xeea0 ||
-               (op & 0xfff0) == 0xed20 || (op & 0xfff0) == 0xedb0 ||
-               (op & 0xfff0) == 0xee30 ||
-               (op & 0xfff0) == 0xe8a0) {
+    } else if (if_block_kind(op)) {
+        /* IF block: kind (op bits 4-11) is a branch condition (bits 3-7,
+         * as E800-EE8F) plus an operand type (bits 0-2): 1 a register in
+         * x bits 8-11, 2 a packed constant, 3 a 12-bit literal, signed for
+         * EQ/NE and the signed conditions. A0-A3 test bits instead. Every
+         * earlier special case (vendor E8A6/0B00, EDB5/0000, EE30/6FFF,
+         * ECB0/0208, ED31/0F00, EEB2/4FFF, E9B5/1005, ED90/0800, EE17/0F00,
+         * EEA6/0B80) is an instance of this layout. */
         uint16_t x = fetch(d, here + 2);
-        unsigned kind = (op >> 4) & 255;
+        unsigned kind = (op >> 4) & 255, type = kind & 7;
         TCGv_i32 left = read_gpr(d, op & 15), right = NULL, result = tcg_temp_new_i32();
         TCGCond cond = TCG_COND_NEVER;
-        bool register_kind = kind == 0x81 || kind == 0x89 || kind == 0x91 || kind == 0x99 ||
-                             kind == 0xc1 || kind == 0xc9 || kind == 0xd1 || kind == 0xd9 ||
-                             kind == 0xe1 || kind == 0xe9;
-        if (register_kind && (x & 255) == 0x80) {
-            /* IFF block, measured on an FM-1 (EE11 0080/0280): bit 7 makes
-             * the register form a single-precision compare under the same
-             * condition (the branch kind + 1); equal signed zeros are equal. */
-            gen_helper_pi32v2_fcmp(result, tcg_env, tcg_constant_i32(kind - 1),
-                                   left, read_gpr(d, (x >> 8) & 15));
-        } else if (kind == 0xa1) {
+        if (kind == 0xa1) {
             if (x & 127) { goto illegal; }
             TCGv_i32 masked = tcg_temp_new_i32();
             tcg_gen_and_i32(masked, left, read_gpr(d, (x >> 8) & 15));
@@ -703,67 +708,24 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             tcg_gen_andi_i32(masked, left, packed_mask(x));
             left = masked; right = tcg_constant_i32(0);
             cond = kind == 0xa2 ? TCG_COND_EQ : TCG_COND_NE;
-        } else if (kind == 0x92 || kind == 0xca || kind == 0xd2 || kind == 0xea) {
-            /* E920/ED20 have pinned packed constructors. Saved vendor
-             * ECA1/0980 and complete-state oracle cases establish packed LE.
-             * Preserve the existing repeated-byte expansion policy. */
-            /* Vendor EEA6/0B80 (Felucca 0x0202f6e2) is ifs (r6 <= 65536),
-             * the signed counterpart of ECA0's packed unsigned LE. */
-            right = tcg_constant_i32(packed_mask(x));
-            cond = kind == 0x92 ? TCG_COND_GEU : kind == 0xca ? TCG_COND_LEU :
-                   kind == 0xea ? TCG_COND_LE : TCG_COND_GE;
-        } else if (kind == 0x8a) {
-            /* E8A6/0B00 compares against packed 0x00020000, not literal
-             * 0xB00 or zero. Separate executable discriminators agree;
-             * the existing zero operand is the same packed NE operation. */
-            right = tcg_constant_i32(packed_mask(x)); cond = TCG_COND_NE;
-        } else if (kind == 0xdb) {
-            /* Primary signed12 IF; vendor EDB5/0000 selects r5 < 0. */
-            right = tcg_constant_i32(sext(x & 4095, 12));
-            cond = TCG_COND_LT;
-        } else if (kind == 0xc3 || kind == 0xe3) {
-            /* Full-state literal boundaries establish EC30 unsigned12,
-             * contradicting the primary packed constructor. Vendor EE30/6FFF
-             * and signed-boundary cases establish > -1; primary is absent. */
-            right = tcg_constant_i32(kind == 0xe3 ? sext(x & 4095, 12) : x & 4095);
-            cond = kind == 0xe3 ? TCG_COND_GT : TCG_COND_GTU;
-        } else if (kind == 0x81 || kind == 0x89 || kind == 0x91 || kind == 0xc1 ||
-                   kind == 0x99 || kind == 0xc9) {
-            if (x & 255) { goto illegal; }
-            right = read_gpr(d, (x >> 8) & 15);
-            cond = kind == 0x81 ? TCG_COND_EQ : kind == 0x89 ? TCG_COND_NE :
-                   kind == 0x91 ? TCG_COND_GEU : kind == 0xc1 ? TCG_COND_GTU :
-                   kind == 0x99 ? TCG_COND_LTU : TCG_COND_LEU;
-        } else if (kind == 0xd1 || kind == 0xe1) {
-            /* Admit the constructor's canonical zero low byte. */
-            if (x & 255) { goto illegal; }
-            right = read_gpr(d, (x >> 8) & 15);
-            /* Vendor EE17/0F00 establishes signed r7 > r15. */
-            cond = kind == 0xe1 ? TCG_COND_GT : TCG_COND_GE;
-        } else if (kind == 0xd9 || kind == 0xe9) {
-            if (x & 255) { goto illegal; }
-            /* Primary D9 register IF and vendor ED90/0800 at stock
-             * 0x02015492 select signed r0 < r8. Existing THEN/ELSE
-             * boundaries apply; the IF itself has no memory access. */
-            right = read_gpr(d, (x >> 8) & 15);
-            cond = kind == 0xd9 ? TCG_COND_LT : TCG_COND_LE;
-        } else if (kind == 0xcb) {
-            /* Vendor-backed unsigned literals disagree with SLEIGH's packed
-             * label (ECB0 0208 means 520). Keep all twelve literal bits. */
-            right = tcg_constant_i32(x & 4095); cond = TCG_COND_LEU;
-        } else if (kind == 0xd3) {
-            /* Vendor ED31 0F00 selects >= -256; the pinned SLEIGH
-             * constructor instead names the unsigned imm1627 token. */
-            right = tcg_constant_i32(sext(x & 4095, 12)); cond = TCG_COND_GE;
-        } else if (kind == 0xeb) {
-            /* Vendor EEB2 4FFF selects <= -1; the pinned SLEIGH
-             * constructor instead names the packedimm12 token. */
-            right = tcg_constant_i32(sext(x & 4095, 12)); cond = TCG_COND_LE;
         } else {
-            right = tcg_constant_i32(kind == 0x83 || kind == 0x8b ? sext(x & 4095, 12) : x & 4095);
-            /* Vendor E9B5 1005 at Felucca 0x02004b30 selects r5 < 5. */
-            cond = kind == 0x83 ? TCG_COND_EQ : kind == 0x8b ? TCG_COND_NE :
-                   kind == 0x9b ? TCG_COND_LTU : TCG_COND_GEU;
+            cond = branch_condition(kind & 0xf8);
+            bool is_signed = cond != TCG_COND_GEU && cond != TCG_COND_LTU &&
+                             cond != TCG_COND_GTU && cond != TCG_COND_LEU;
+            if (type == 1 && (x & 255) == 0x80) {
+                /* IFF block, measured on an FM-1 (EE11 0080/0280): bit 7
+                 * compares single-precision values under the same condition;
+                 * equal signed zeros are equal. */
+                gen_helper_pi32v2_fcmp(result, tcg_env, tcg_constant_i32(kind - 1),
+                                       left, read_gpr(d, (x >> 8) & 15));
+            } else if (type == 1) {
+                if (x & 255) { goto illegal; }
+                right = read_gpr(d, (x >> 8) & 15);
+            } else if (type == 2) {
+                right = tcg_constant_i32(packed_mask(x));
+            } else {
+                right = tcg_constant_i32(is_signed ? sext(x & 4095, 12) : x & 4095);
+            }
         }
         if (right) { tcg_gen_setcond_i32(cond, result, left, right); }
         uint32_t then_end = here + 4, else_end;
