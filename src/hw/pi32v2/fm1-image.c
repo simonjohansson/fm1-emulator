@@ -336,9 +336,22 @@ bool fm1_image_decode_handoff(const uint8_t *data, size_t length, bool packaged,
                     }
                 }
             }
-            memcpy(nor + destination, data + offset + skew, size);
-            sfc(nor + destination, size, offset, chipkey);
-            if (crc(nor + destination, size) != word(entry + 4)) {
+            /* The SFC key covers address bits 2-17 of the package offset the
+             * resource was encrypted at. FM-1_093 carries FM-1's resource
+             * unchanged (encrypted at 0x93400, stored at 0xae400), so when
+             * the entry offset fails, every 32-byte-aligned key base is
+             * tried; only the CRC of the whole plaintext accepts one. */
+            bool decoded = false;
+            for (uint32_t base = 0; base < 0x40000 && !decoded; base += 32) {
+                uint32_t key_base = base ? (offset & ~0x3ffffu) | (base - 32) : offset;
+                if (base && key_base == offset) {
+                    continue;
+                }
+                memcpy(nor + destination, data + offset + skew, size);
+                sfc(nor + destination, size, key_base, chipkey);
+                decoded = crc(nor + destination, size) == word(entry + 4);
+            }
+            if (!decoded) {
                 return fail(error, error_length, "invalid UFW NOR resource CRC");
             }
         } else if (type != 0 && type != 2 && type != 0x34 &&
