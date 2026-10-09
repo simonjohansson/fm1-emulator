@@ -77,7 +77,17 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
     for (unsigned i = 0; i < 16; i++) { fprintf(f, "%s%u", i ? "," : "", e->gpr[i]); }
     fprintf(f, "],\"specials\":[");
     for (unsigned i = 0; i < 16; i++) { fprintf(f, "%s%u", i ? "," : "", e->spr[i]); }
-    fprintf(f, "],\"irq_entries\":%" PRIu64 ",\"rti_count\":%" PRIu64
+    fprintf(f, "]");
+    if (m->cpu1) {
+        /* The other core, which the fault does not describe. */
+        Pi32v2CPU *peer = PI32V2_CPU(env_cpu(e)) == m->cpu ? m->cpu1 : m->cpu;
+        CPUPi32v2State *p = &peer->env;
+        fprintf(f, ",\"peer\":{\"cnum\":%u,\"pc\":%u,\"instructions\":%" PRIu64
+                ",\"in_irq\":%s,\"halted\":%s,\"rets\":%u,\"sp\":%u}",
+                p->spr[6], p->pc, p->instructions, p->in_irq ? "true" : "false",
+                CPU(peer)->halted ? "true" : "false", p->spr[RETS], p->spr[SP]);
+    }
+    fprintf(f, ",\"irq_entries\":%" PRIu64 ",\"rti_count\":%" PRIu64
             ",\"in_irq\":%s,\"timer_expirations\":%" PRIu64
             ",\"acknowledgments\":%" PRIu64 ",\"pending\":%s,"
             "\"p33_transfers\":%" PRIu64 ",\"watchdog_arms\":%" PRIu64
