@@ -83,9 +83,13 @@ static uint64_t period_ticks(FM1TimerState *t)
 static uint64_t elapsed_ticks(FM1TimerState *t)
 {
     if (!(t->control & 1)) { return 0; }
-    /* 128-bit intermediate: free-running timers keep their epoch for hours. */
-    return muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - t->epoch, clock_hz(t),
-                    divider(t) * 1000000000ull);
+    uint64_t ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - t->epoch;
+    /* The 128-bit intermediate is needed only once a free-running timer
+     * keeps its epoch for minutes; the result is the same. */
+    if (ns < UINT64_MAX / clock_hz(t)) {
+        return ns * clock_hz(t) / (divider(t) * 1000000000ull);
+    }
+    return muldiv64(ns, clock_hz(t), divider(t) * 1000000000ull);
 }
 uint32_t fm1_timer_counter(FM1TimerState *t)
 {
@@ -185,21 +189,32 @@ static void timer_irq(FM1TimerState *t)
 static void fm1_timer_expired(void *opaque)
 {
     FM1TimerState *t = opaque;
+    /* rearm() leaves an earlier QEMU timer armed; see there. */
+    if (!(t->control & 1)) { return; }
+    if (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) < t->deadline) {
+        timer_mod_ns(t->timer, t->deadline);
+        return;
+    }
     t->pending = true;
     t->expirations++;
     timer_irq(t);
     t->deadline += DIV_ROUND_UP(period_ticks(t) * divider(t) * 1000000000ull, clock_hz(t));
     timer_mod_ns(t->timer, t->deadline);
 }
+/* Stock rewrites a free-running counter constantly, which only ever moves
+ * its deadline later. An already armed QEMU timer is then left in place:
+ * the expiry callback re-arms at the true deadline when it fires early, and
+ * returns while disabled. Expiry times are unchanged. */
 static void rearm(FM1TimerState *t)
 {
-    timer_del(t->timer);
     t->epoch = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     if (t->control & 1) {
         uint64_t remaining = period_ticks(t) - (t->counter % period_ticks(t));
         t->deadline = t->epoch + DIV_ROUND_UP(remaining * divider(t) * 1000000000ull,
                                               clock_hz(t));
-        timer_mod_ns(t->timer, t->deadline);
+        if (!timer_pending(t->timer) || timer_expire_time_ns(t->timer) > t->deadline) {
+            timer_mod_ns(t->timer, t->deadline);
+        }
     }
 }
 static G_NORETURN void timer_fail(FM1TimerState *t, const char *reason)
