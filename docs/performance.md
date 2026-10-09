@@ -158,6 +158,7 @@ guest seconds (core 0 430 million, core 1 1.5 billion instructions):
 | HOME reached | 16.5 |
 | Re-arm timers lazily on counter rewrites | 15.5 |
 | Fast-forward pure polling loops | about 15.4 (noisy) |
+| Write timer counters without the BQL | about 14.5 |
 
 Core 1's render routine rewrites TIMER5's free-running counter constantly.
 Each write used to delete and re-arm the QEMU timer; now an armed timer
@@ -169,10 +170,18 @@ timer fires, so spinning on would read the same values. Core 1 polls only
 about a tenth of the time, so this gains little for stock; it applies to any
 firmware.
 
-Remaining cost is about 35% translated code, 10% indirect-jump TB lookups
-and much of the rest MMIO dispatch with BQL-held stores, mostly the timer
-accesses. Windowed sessions add display and audio work, so stock can fall
-behind real time there.
+Core 1 reads and rewrites TIMER5's counter about five million times a
+guest second each. Stores to the peripheral pages now skip the BQL in
+QEMU's TCG path; timer blocks take it only for CON writes, which may change
+an IRQ. A paced 40-second run then stays within a second of real time
+instead of falling 5 seconds behind. The rest of the cost is translated
+code, indirect-jump TB lookups and the MMIO slow path itself.
+
+Two-core runs are not exactly reproducible: identical stock runs stopped
+at the same instruction limit can differ by microseconds of guest time.
+Main-loop activity kicks the vCPU thread at host-dependent moments, which
+moves round-robin switch points. One-core runs, such as the Felucca A/B,
+remain exact.
 
 ## Hardware timing
 
