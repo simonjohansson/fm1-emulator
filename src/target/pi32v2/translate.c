@@ -873,6 +873,15 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (a == b) { goto illegal; }
         load(d, gpr[a], read_gpr(d, b), MO_UB);
         tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 1);
+    } else if ((op & 0xff88) == 0x1380) {
+        /* Stock vendor 13C0 at 0x0200de98 is r0 = b[r4++=r15] (u);
+         * 13D1 at 0x0201cb3a is r1 = b[r5++=r15] (u). The compact
+         * form loads the old base then advances by the unscaled r15.
+         * Keep the unresolved destination/base alias rejected, as for
+         * the accepted compact immediate post-index byte loads. */
+        if (a == b) { goto illegal; }
+        load(d, gpr[a], read_gpr(d, b), MO_UB);
+        tcg_gen_add_i32(gpr[b], read_gpr(d, b), read_gpr(d, 15));
     } else if ((op & 0xff88) == 0x0780 || (op & 0xff88) == 0x0788) {
         /* Vendor stock 079B at 0x0201948a is b[r1++=-1] = r3,
          * bundled with r6 = r4. Store at the incoming base before updating. */
