@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Fresh implementation from reached register/width and guest protocol facts.
- * Supported configurations transmit 128 or 256 stereo frames per half.
+ * Supported configurations transmit 64, 128 or 256 stereo frames per half;
+ * stock FM-1 firmware uses 64.
  * 44100 Hz is a documented functional clock matching the selected firmware's
  * generated FS constant, not a calibrated model of the boot PLL or codec.
  * DMA samples are observed at completion boundaries; late callbacks cannot
@@ -110,7 +111,8 @@ static void check_configuration(FM1PocALNK *a)
 {
     if (a->control0 != (0x0180u | DMA_ENABLE) ||
         a->control1 != 0x5000u || a->control3 != 0x83u ||
-        (a->half_words != 256u && a->half_words != FM1_ALNK_HALF_WORDS) ||
+        (a->half_words != 128u && a->half_words != 256u &&
+         a->half_words != FM1_ALNK_HALF_WORDS) ||
         (fm1_syscon_get(a->syscon, FM1_SYSCON_CLK_CON2) & 0xf00) ||
         fm1_syscon_get(a->syscon, FM1_SYSCON_IOMAP_CON5)) {
         alnk_fail(a, "unsupported ALNK0 enabled configuration");
@@ -217,7 +219,7 @@ static void alnk_write(void *opaque, hwaddr offset, uint64_t value,
         return;
     case 0x20:
         if (a->enabled) { alnk_fail(a, "ALNK0 DMA length changed while enabled"); }
-        if (value != 256u && value != FM1_ALNK_HALF_WORDS) {
+        if (value != 128u && value != 256u && value != FM1_ALNK_HALF_WORDS) {
             alnk_fail(a, "unsupported ALNK0 DMA half length");
         }
         a->half_words = value;
