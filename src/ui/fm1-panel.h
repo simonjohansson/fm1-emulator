@@ -24,6 +24,9 @@ static void fm1_panel_keyboard_event(QKbdState *state, unsigned code, bool down)
 static void fm1_panel_contact(QKeyCode code, bool down)
 {
     with_bql(^{
+        /* A release queued by the stop handler can run after display
+         * cleanup has freed the keyboard state. */
+        if (!kbd) { return; }
         fm1_panel_pointer[code] = down;
         qkbd_state_key_event(kbd, qemu_input_map_qcode_to_linux[code],
                             down || fm1_panel_keyboard[code]);
@@ -406,7 +409,7 @@ static void fm1_panel_release(void)
     with_bql(^{
         memset(fm1_panel_keyboard, 0, sizeof(fm1_panel_keyboard));
         memset(fm1_panel_pointer, 0, sizeof(fm1_panel_pointer));
-        qkbd_state_lift_all_keys(kbd);
+        if (kbd) { qkbd_state_lift_all_keys(kbd); }
     });
 }
 
