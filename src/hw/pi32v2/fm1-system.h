@@ -12,6 +12,7 @@
 typedef struct FM1PocSystem {
     Pi32v2CPU *cpu;
     MemoryRegion p33_mmio, reset_mmio, debug_mmio, emu_mmio, etm_mmio, cache_mmio;
+    MemoryRegion sdr_mmio, psram_mmio;
     QEMUTimer *p33_timer, *watchdog_timer;
     uint32_t p33_control, reset_source;
     uint8_t p33_data, transfer_byte, command, phase;
@@ -22,6 +23,7 @@ typedef struct FM1PocSystem {
     uint32_t write_low[3], write_high[3], pc_low[2], pc_high[2];
     uint32_t emu_control, emu_message, stack_low[2], stack_high[2];
     uint32_t etm_control;
+    uint32_t cache_control, cache_way[2];   /* CACHE_CON enables, DCACHE_WAY, ICACHE_WAY */
     uint64_t p33_transfers, p33_transactions, watchdog_feeds;
     uint64_t watchdog_arms, watchdog_expirations, guard_checks;
     int64_t watchdog_deadline;

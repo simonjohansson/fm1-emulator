@@ -30,7 +30,7 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(state["instructions"], guest.instructions)
 
     def test_unknown_cache_commands_remain_faults(self):
-        for value in (1, 0x4100, 0x80000000):
+        for value in (1, 0x4004, 0x80000000):
             with self.subTest(value=value):
                 guest = Guest()
                 fault_pc = guest.write(CACHE_CON, value)

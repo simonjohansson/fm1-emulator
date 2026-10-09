@@ -15,6 +15,7 @@
 #include "fm1-analog.h"
 #include "fm1-input.h"
 #include "fm1-uart.h"
+#include "fm1-crc.h"
 
 #define TYPE_FM1_POC_MACHINE MACHINE_TYPE_NAME("fm1-poc")
 #define FM1_POC_MAX_ALNK_RESETS 16
@@ -35,6 +36,7 @@ struct FM1PocState {
     MachineState parent_obj;
     Pi32v2CPU *cpu;
     MemoryRegion irq_mmio, gpio_mmio, iomap_mmio;
+    MemoryRegion cache_ram[5];
     FM1TimerState timers[2];
     qemu_irq irq, alnk_irq;
     uint32_t irq_configs[32];
@@ -50,6 +52,7 @@ struct FM1PocState {
     FM1PocAnalog analog;
     FM1PocInput input;
     FM1PocUART uart;
+    FM1PocCRC crc;
     unsigned frames;
     const char *frame_dir;
     QEMUTimer *display_key_timer;

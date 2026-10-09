@@ -374,6 +374,20 @@ static void machine_init(MachineState *ms)
     fm1_test_configure(m, ms);
     cpu_reset(CPU(m->cpu));
     memory_region_add_subregion(get_system_memory(), 0x01c00000, ms->ram);
+    /* Cache-side RAM. The SDK linker scripts place free cache ways as RAM at
+     * 0x1f20000 (eight 4 KiB I-cache ways, then eight D-cache ways); stock
+     * startup zeroes the tag ranges below before using them. Caching itself
+     * is not modelled, so a way in use as cache simply behaves as memory. */
+    static const struct { hwaddr base, size; const char *name; } cache_ram[] = {
+        {0x01f00000, 0x4000, "fm1.cache-tag0"}, {0x01f08000, 0x2000, "fm1.cache-tag1"},
+        {0x01f0a000, 0x200, "fm1.cache-tag2"}, {0x01f0b000, 0x200, "fm1.cache-tag3"},
+        {0x01f20000, 0x10000, "fm1.cache-ram"},
+    };
+    for (unsigned i = 0; i < G_N_ELEMENTS(cache_ram); i++) {
+        memory_region_init_ram(&m->cache_ram[i], NULL, cache_ram[i].name,
+                               cache_ram[i].size, &error_fatal);
+        memory_region_add_subregion(get_system_memory(), cache_ram[i].base, &m->cache_ram[i]);
+    }
     fm1_test_seed_ram(m);
     m->latched = UINT16_MAX;
     /* Explicit application handoff with SFC routed to the board NOR. This
@@ -418,6 +432,7 @@ static void machine_init(MachineState *ms)
     fm1_sfr_map(0x13100, sysbus_mmio_get_region(SYS_BUS_DEVICE(&m->adc), 0));
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
     fm1_uart_init(&m->uart, OBJECT(m), m->cpu);
+    fm1_crc_init(&m->crc, OBJECT(m), m->cpu);
     fm1_sfr_map(0x12100, &m->uart.mmio);
     fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
     memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 16);

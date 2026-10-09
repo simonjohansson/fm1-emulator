@@ -173,22 +173,67 @@ static void reset_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
     system_fail(opaque, "chip reset source is read-only");
 }
 
+/* CACHE_CON, DCACHE_WAY and ICACHE_WAY (WL82 corex2 SFRs). */
 static uint64_t cache_read(void *opaque, hwaddr offset, unsigned size)
 {
+    FM1PocSystem *s = opaque;
     /* This machine has no asynchronous cache fill/flush queue: QEMU's memory
      * access and translated-code invalidation are synchronous. CACHE_CON's
      * idle flag therefore describes the model's actual idle state. */
-    return 0x4000;
+    if (offset == 0) { return 0x4000 | s->cache_control; }
+    return s->cache_way[(offset - 4) / 4];
 }
 
 static void cache_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
-    /* Allow a zero command or read/modify/write of the read-only idle bit.
-     * Reached startup clears already-zero control bits this way. Actual
-     * cache commands remain unqualified rather than silently discarded. */
-    if (value & ~0x4000ull) {
-        system_fail(opaque, "cache control writes are unsupported");
+    FM1PocSystem *s = opaque;
+    /* Allow read/modify/write of the read-only idle bit, the two enables
+     * stock startup clears around way allocation and sets again (bits 8 and
+     * 9) and bit 1, found set at handoff. Enabling a cache changes nothing
+     * here. Other cache commands remain unqualified rather than discarded. */
+    if (offset == 0) {
+        if (value & ~0x4302ull) {
+            system_fail(s, "cache control writes are unsupported");
+        }
+        s->cache_control = value & 0x302;
+        return;
     }
+    /* Way allocation only partitions the cache, which memory here does not
+     * model: QEMU accesses are coherent and synchronous. Keep the value. */
+    s->cache_way[(offset - 4) / 4] = value;
+}
+
+/* SDRAM (JL_SDR) and PSRAM controllers: the board has neither memory, and
+ * application handoff leaves both disabled. Reads return the values a real
+ * FM-1 holds after its SPL (measured; SDR_CON0 bit 11 and PSRAM_CON bit 0
+ * clear). Configuring either is unimplemented. */
+static const uint32_t sdr_handoff[18] = {
+    0, 0, 0, 0x40ff0000,
+    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+    0, 0, 0, 0,
+};
+
+static uint64_t sdr_read(void *opaque, hwaddr offset, unsigned size)
+{
+    if (offset == 4) { system_fail(opaque, "SDR_CON1 is write-only"); }
+    return sdr_handoff[offset / 4];
+}
+
+static void sdr_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    system_fail(opaque, "SDRAM controller configuration is unimplemented");
+}
+
+static uint64_t psram_read(void *opaque, hwaddr offset, unsigned size)
+{
+    if (offset) { system_fail(opaque, "PSRAM baud and queue registers are write-only"); }
+    return 0x01520034;
+}
+
+static void psram_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    system_fail(opaque, "PSRAM controller configuration is unimplemented");
 }
 
 static uint64_t debug_read(void *opaque, hwaddr offset, unsigned size)
@@ -317,6 +362,8 @@ SYSTEM_OPS(cache);
 SYSTEM_OPS(debug);
 SYSTEM_OPS(emu);
 SYSTEM_OPS(etm);
+SYSTEM_OPS(sdr);
+SYSTEM_OPS(psram);
 
 void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
 {
@@ -329,10 +376,16 @@ void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
     fm1_sfr_map(address, &s->region)
     MAP(p33_mmio, p33_ops, "fm1.p33", 0x13e08, 8);
     MAP(reset_mmio, reset_ops, "fm1.reset-source", 0x100c0, 4);
-    MAP(cache_mmio, cache_ops, "fm1.cache-idle", 0x01eee008, 4);
+    MAP(cache_mmio, cache_ops, "fm1.cache", 0x01eee008, 12);
     MAP(debug_mmio, debug_ops, "fm1.debug-guards", 0x01eee240, 0x150);
     MAP(emu_mmio, emu_ops, "fm1.emu-guards", 0x01eef0d0, 24);
     MAP(etm_mmio, etm_ops, "fm1.branch-trace", 0x01eef1c0, 20);
+    MAP(sdr_mmio, sdr_ops, "fm1.sdram-controller", 0x40400, 0x48);
+    MAP(psram_mmio, psram_ops, "fm1.psram-controller", 0x40500, 12);
+    /* Cache configuration as a real FM-1's SPL leaves it (measured). */
+    s->cache_control = 0x302;
+    s->cache_way[0] = 0x00ffffff;
+    s->cache_way[1] = 0x0000ffff;
 #undef MAP
     fm1_system_sync_guards(s);
 }
