@@ -108,11 +108,8 @@ static bool interrupt(CPUState *cs, int request)
         !cpu->ops->select_irq(e, &number, &priority)) {
         return false;
     }
-    if ((number != 3 && number != 5 && number != 11 && number != 16 && number != 20 &&
-         number != 24 && number != 37 &&
-         number != 44 &&
-         number != 62 && number != 63 &&
-         (number < 124 || number > 127)) || priority > 7) {
+    /* The machine's select_irq chooses only sources it models. */
+    if (number > 127 || priority > 7) {
         pi32v2_fail(e, "unsupported selected IRQ source or priority");
     }
     uint32_t vector = 0x01c7fe00 + number * 4;

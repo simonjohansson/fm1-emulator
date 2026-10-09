@@ -28,7 +28,8 @@
 
 static void lcd_fail(FM1PocLCD *lcd, const char *reason)
 {
-    pi32v2_fail(&lcd->cpu->env, reason);
+    /* Transfers complete on a timer; attribute to the running core. */
+    pi32v2_fail(current_cpu ? cpu_env(current_cpu) : &lcd->cpu->env, reason);
 }
 
 static void lcd_update_irq(FM1PocLCD *lcd)

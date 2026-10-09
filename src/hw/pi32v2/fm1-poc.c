@@ -121,7 +121,8 @@ static void update_irq(FM1PocState *m)
         qemu_set_irq(m->irq1, shared || m->ttmr1.pending || software_pending(m, true));
     }
 }
-static void ttmr_irq(void *opaque) { update_irq(opaque); }
+/* Shared IRQ-change callback for the tick timer, LRCT, UART1 and LCD. */
+static void device_irq(void *opaque) { update_irq(opaque); }
 /* Private source selection for the reached timer/audio/software sources. Raw device
  * levels remain pending until their guest acknowledgments. */
 static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *priority)
@@ -867,15 +868,15 @@ static void machine_init(MachineState *ms)
     sysbus_connect_irq(SYS_BUS_DEVICE(&m->adc), 0, qemu_allocate_irq(adc_irq_input, m, 24));
     fm1_sfr_map(0x13100, sysbus_mmio_get_region(SYS_BUS_DEVICE(&m->adc), 0));
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
-    fm1_uart_init(&m->uart, OBJECT(m), m->cpu, &m->syscon, ttmr_irq, m);
+    fm1_uart_init(&m->uart, OBJECT(m), m->cpu, &m->syscon, device_irq, m);
     fm1_crc_init(&m->crc, OBJECT(m), m->cpu);
-    fm1_ttmr_init(&m->ttmr, OBJECT(m), m->cpu, ttmr_irq, m);
-    fm1_lrct_init(&m->lrct, OBJECT(m), &m->system, ttmr_irq, m);
+    fm1_ttmr_init(&m->ttmr, OBJECT(m), m->cpu, device_irq, m);
+    fm1_lrct_init(&m->lrct, OBJECT(m), &m->system, device_irq, m);
     if (m->cpu1) {
-        fm1_ttmr_init(&m->ttmr1, OBJECT(m), m->cpu1, ttmr_irq, m);
+        fm1_ttmr_init(&m->ttmr1, OBJECT(m), m->cpu1, device_irq, m);
     }
     fm1_sfr_map(0x12100, &m->uart.mmio);
-    fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu, ttmr_irq, m);
+    fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu, device_irq, m);
     memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 16);
     fm1_sfr_map(0x5101c, &m->iomap_mmio);
     fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);

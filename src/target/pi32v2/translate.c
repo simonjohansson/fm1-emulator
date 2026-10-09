@@ -1504,13 +1504,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             case 0xff4c: cond = TCG_COND_GT; break;
             default: cond = TCG_COND_LE; break; /* Exact FF4D. */
             }
-            /* Vendor FF4A uses C bits8:11; the primary B field is contradicted. */
-            /* Vendor objdump decodes captured stock SRAM FF4B/5100/FD67
-             * at 0x01c022e4 as ifs (r5 < r1) goto -1330, also using C. */
-            /* Stock vendor FF4D/0100/FD6C at 0x0200ac02 is
-             * ifs (r0 <= r1) goto -1320, from the six-byte end. */
-            /* Stock vendor FF4C/8200/0220 at 0x0201435e is
-             * ifs (r8 > r2) goto 1088, from the same six-byte end. */
+            /* The right register is C, bits 8-11 (the primary B field is
+             * contradicted); displacements count from the six-byte end.
+             * Vendor: FF4A; stock FF4B/5100 ifs (r5 < r1) at 0x01c022e4,
+             * FF4C/8200 ifs (r8 > r2) at 0x0201435e, FF4D/0100
+             * ifs (r0 <= r1) at 0x0200ac02. */
             right = read_gpr(d, (x >> 8) & 15);
         }
         next = here + 6;
@@ -1791,8 +1789,8 @@ static unsigned operation_size(uint16_t op)
         op == 0xff0a || op == 0xff0b || op == 0xff0d ||
         op == 0xff20 || op == 0xff21 || op == 0xff23 || op == 0xff28 || op == 0xff29 ||
         op == 0xff2a || op == 0xff2b || op == 0xff2d ||
-        op == 0xff40 || op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff49 || op == 0xff4a || op == 0xff4b || op == 0xff4c || op == 0xff4d ||
-        op == 0xff41 || op == 0xff60 || op == 0xff61) { return 6; }
+        (op >= 0xff40 && op <= 0xff43) || (op >= 0xff48 && op <= 0xff4d) ||
+        op == 0xff60 || op == 0xff61) { return 6; }
     return op >> 13 == 7 ? 4 : 2;
 }
 static uint32_t instruction_end(PiDisasContext *d, uint32_t here)
