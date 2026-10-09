@@ -46,10 +46,13 @@ Python is needed only to build and test.
 ## Status
 
 Unchanged Felucca passes boot, note/release, page navigation, audio-generation,
-and console checks. Headless, it runs about 1.5 times faster than real time on
+and console checks. Headless, it runs about 1.7 times faster than real time on
 an Apple silicon Mac.
-Package decoding is tested; stock FM-1 startup currently stops at an
-unimplemented CPU repeat instruction.
+The stock FM-1 firmware (`.fwsc` package) boots on both cores to its HOME
+screen with audio running. Headless it runs only slightly faster than real
+time, so windowed sessions can fall behind ("guest is late" warnings); its
+audio-rendering core is the bottleneck. Its Wi-Fi radio is modeled as
+inert hardware.
 Other firmware compatibility is limited. Linux and Windows are deferred.
 
 See [development](docs/development.md) for tests and

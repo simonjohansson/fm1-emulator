@@ -144,8 +144,35 @@ leaves about 7% (about 29.9 s) with identical `state.json` and `state.sram`.
 Without core-0 observers, both cores share translated code.
 
 Guest time still charges 8 ns per instruction across both cores, so two
-busy cores each run at half speed. Core 1 of the stock firmware busy-polls,
-so modelling both at full speed would double host work per guest second.
+busy cores each run at half speed, and the host must execute 125 million
+guest instructions per guest second whatever the cores do.
+
+## Stock firmware
+
+Stock FM-1 firmware keeps core 1 rendering audio and spends little time
+idle, so it needs that full instruction rate. Measured headless over 17.46
+guest seconds (core 0 430 million, core 1 1.5 billion instructions):
+
+| Change | Host seconds |
+| --- | --- |
+| HOME reached | 16.5 |
+| Re-arm timers lazily on counter rewrites | 15.5 |
+| Fast-forward pure polling loops | about 15.4 (noisy) |
+
+Core 1's render routine rewrites TIMER5's free-running counter constantly.
+Each write used to delete and re-arm the QEMU timer; now an armed timer
+whose deadline only moves later stays in place and re-arms on an early
+expiry. A short backward loop that only loads and branches, reaching its
+head eight times with identical registers, charges the rest of its
+round-robin slice at once: within a slice no other core runs and no device
+timer fires, so spinning on would read the same values. Core 1 polls only
+about a tenth of the time, so this gains little for stock; it applies to any
+firmware.
+
+Remaining cost is about 35% translated code, 10% indirect-jump TB lookups
+and much of the rest MMIO dispatch with BQL-held stores, mostly the timer
+accesses. Windowed sessions add display and audio work, so stock can fall
+behind real time there.
 
 ## Hardware timing
 

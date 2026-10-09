@@ -56,12 +56,18 @@ contacts, while keyboard and mouse holds are combined.
 
 ## Hardware and limits
 
-The model includes 512 KiB SRAM, NOR/SFC/SPI0, SPI1/LCD, GPIO/IOMAP, TIMER1/4/5,
-protection/P33/watchdog, ALNK0 audio, SAR/WLA, USB, and idle UART1 receiver
-initialization. Controllers own their registers, transfers, and IRQ outputs;
-the board owns composition and wiring.
-Unimplemented accesses or configurations fault explicitly.
-TIMER1 uses the existing functional timer clock; its IRQ remains unsupported.
+The model includes 512 KiB SRAM, NOR/SFC/SPI0, SPI1/LCD (DMA from SRAM or
+XIP), SPI2 driving the panel's 74HC595 chain, GPIO/IOMAP, TIMER1/4/5 with
+60 MHz and 24 MHz clock sources, the core tick timers, the LRC measurement
+timer, protection/P33/watchdog, ALNK0 audio, SAR/WLA with the measured
+internal channel, USB, UART1 transmit DMA (stock sends MIDI there) with an
+idle receiver, an idle SRC, a fixed-seed random number generator, and the
+single-precision FPU. Stock firmware's Wi-Fi/RF blocks are inert registers:
+they store values and complete calibration and timer commands immediately,
+with no radio behind them. Controllers own their registers, transfers, and IRQ
+outputs; the board owns composition and wiring.
+Unimplemented accesses or configurations fault explicitly. Values that were
+assumed rather than measured are marked as such in the source.
 The high-speed USB controller accepts only its disabled control value; its
 active SIE, endpoints and DMA remain unsupported.
 NOR page program and sector erase update SPI/XIP data after their modeled busy
