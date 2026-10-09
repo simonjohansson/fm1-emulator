@@ -457,6 +457,53 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         else if (mode == 2) { tcg_gen_shri_i32(gpr[x >> 12], read_gpr(d, (x >> 4) & 15), shift); }
         else { tcg_gen_shli_i32(gpr[x >> 12], read_gpr(d, (x >> 4) & 15), shift); }
         next = here + 4;
+    } else if (op == 0xe1c4) {
+        uint16_t x = fetch(d, here + 2);
+        /* Vendor "<>" with E1C0's immediate fields. Stock FM-1 SHA-256
+         * schedule code applies it with sigma's 7/18/17/19, so it rotates
+         * right. Only mode 0 occurs. */
+        if (x & 0x0c00) { goto illegal; }
+        tcg_gen_rotri_i32(gpr[x >> 12], read_gpr(d, (x >> 4) & 15),
+                          (x & 15) | ((x >> 8) & 3) * 16);
+        next = here + 4;
+    } else if (op == 0xe180) {
+        uint16_t x = fetch(d, here + 2);
+        /* Measured on an FM-1: clz(0) is 32. */
+        if (x & 255) { goto illegal; }
+        tcg_gen_clzi_i32(gpr[x >> 12], read_gpr(d, (x >> 8) & 15), 32);
+        next = here + 4;
+    } else if (op == 0xe1f6) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned pair = x >> 12, source = (x >> 4) & 15;
+        /* rD+1_rD = rS+1_rS / rT (u): a full 64-bit quotient. Measured on an
+         * FM-1, division by zero gives 0. Only the unsigned form occurs. */
+        if ((x & 15) || (pair & 1) || (source & 1)) { goto illegal; }
+        TCGv_i64 value = tcg_temp_new_i64();
+        tcg_gen_concat_i32_i64(value, read_gpr(d, source), read_gpr(d, source + 1));
+        gen_helper_pi32v2_divu64(value, value, read_gpr(d, (x >> 8) & 15));
+        tcg_gen_extr_i64_i32(gpr[pair], gpr[pair + 1], value);
+        next = here + 4;
+    } else if (op == 0xe1fc) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned pair = x >> 12;
+        /* rD+1_rD += rA * rB (u). Measured on an FM-1: C is the 64-bit carry
+         * out; V, Z and N are unchanged. Only the unsigned form occurs. */
+        if ((x & 15) || (pair & 1)) { goto illegal; }
+        TCGv_i64 sum = tcg_temp_new_i64(), product = tcg_temp_new_i64();
+        TCGv_i64 left = tcg_temp_new_i64(), right = tcg_temp_new_i64();
+        TCGv_i32 carry = tcg_temp_new_i32();
+        tcg_gen_extu_i32_i64(left, read_gpr(d, (x >> 4) & 15));
+        tcg_gen_extu_i32_i64(right, read_gpr(d, (x >> 8) & 15));
+        tcg_gen_mul_i64(product, left, right);
+        tcg_gen_concat_i32_i64(left, read_gpr(d, pair), read_gpr(d, pair + 1));
+        tcg_gen_add_i64(sum, left, product);
+        tcg_gen_setcond_i64(TCG_COND_LTU, product, sum, left);
+        tcg_gen_extrl_i64_i32(carry, product);
+        tcg_gen_extr_i64_i32(gpr[pair], gpr[pair + 1], sum);
+        tcg_gen_shli_i32(carry, carry, 1);
+        tcg_gen_andi_i32(spr[PSR], spr[PSR], ~2u);
+        tcg_gen_or_i32(spr[PSR], spr[PSR], carry);
+        next = here + 4;
     } else if (op == 0xe1d0) {
         uint16_t x = fetch(d, here + 2);
         unsigned pair = x >> 12, mode = (x >> 10) & 3;
@@ -1118,6 +1165,21 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         uint16_t x = fetch(d, here + 2);
         tcg_gen_addi_i32(gpr[x >> 12], spr[SP], x & 4095);
         next = here + 4;
+    } else if (op == 0xe8d9 || op == 0xe8d5) {
+        /* E8D8/E8D4 register lists with RETS pushed first, or popped last
+         * into PC as a return, like the 0470/0450 forms. */
+        uint16_t mask = fetch(d, here + 2);
+        next = here + 4;
+        if (op == 0xe8d9) {
+            push(d, spr[RETS]);
+            for (int i = 15; i >= 0; i--) { if (mask & (1 << i)) { push(d, read_gpr(d, i)); } }
+        } else {
+            gen_helper_pi32v2_return_end(tcg_env, tcg_constant_i32(next));
+            TCGv_i32 dest = tcg_temp_new_i32();
+            for (int i = 0; i < 16; i++) { if (mask & (1 << i)) { pop(d, gpr[i]); } }
+            pop(d, dest);
+            count(d); dynamic_jump(d, dest);
+        }
     } else if (op == 0xe8d8 || op == 0xe8d4) {
         uint16_t mask = fetch(d, here + 2);
         if (op == 0xe8d8) {
@@ -1145,8 +1207,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         TCGv_i32 dest = tcg_temp_new_i32();
         pop(d, dest);
         count(d); dynamic_jump(d, dest);
-    } else if ((op & 0xff00) == 0x0300) {
-        unsigned reg = op & 15;
+    } else if ((op & 0xff00) == 0x0300 || (op & 0xe00f) == 0x8000) {
+        /* The immediate form repeats ((op >> 8) & 31) + 1 times; the helper
+         * takes 16 + count in place of a register number. */
+        bool immediate = (op & 0xe00f) == 0x8000;
+        unsigned reg = immediate ? 16 + ((op >> 8) & 31) + 1 : op & 15;
         uint32_t end = next + (((op >> 4) & 15) + 1) * 2;
         /* REP snapshots its count, skips the byte span at zero, and writes
          * the remaining count back after each completed iteration. The body
@@ -1168,7 +1233,9 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             if (writes < 0 || after > end) { qualified = false; break; }
             at = after;
         }
-        if (!qualified) {
+        if (!qualified && immediate) {
+            gen_helper_pi32v2_illegal(tcg_env, tcg_constant_i32(op));
+        } else if (!qualified) {
             TCGLabel *zero = gen_new_label();
             tcg_gen_brcondi_i32(TCG_COND_EQ, gpr[reg], 0, zero);
             gen_helper_pi32v2_illegal(tcg_env, tcg_constant_i32(op));
@@ -1251,6 +1318,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xe008) == 0x4000) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
         count(d); branch(d, next + delta, next, read_gpr(d, a), op & 128);
+    } else if (op == 0xe840) {
+        /* IFEQ branches on PSR Z, as left by TESTSET in SDK spinlocks. */
+        TCGv_i32 zero = tcg_temp_new_i32();
+        tcg_gen_andi_i32(zero, spr[PSR], 4);
+        next = here + 4;
+        count(d); branch(d, next + (int16_t)fetch(d, here + 2) * 2, next, zero, true);
     } else if ((op & 0xfff0) == 0xe850) {
         uint16_t x = fetch(d, here + 2);
         TCGv_i32 masked = tcg_temp_new_i32();
@@ -1402,6 +1475,8 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if ((op & 0xfff0) == 0x00c0) {
         set_call_return(d, next);
         count(d); dynamic_jump(d, read_gpr(d, op & 15));
+    } else if ((op & 0xfff0) == 0x00d0) {
+        count(d); dynamic_jump(d, read_gpr(d, op & 15));
     } else if ((op & 0xfff0) == 0x0230) {
         gen_helper_pi32v2_flush(tcg_env, read_gpr(d, op & 15));
         db->is_jmp = DISAS_EXIT;
@@ -1420,6 +1495,19 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
          * synchronous accesses and no outstanding CPU write/cache queue.
          * Preserve full ordering without advancing virtual time or IRQs. */
         tcg_gen_mb(TCG_MO_ALL | TCG_BAR_SC);
+    } else if (op == 0x0040 || op == 0x0041) {
+        /* LOCKCLR/LOCKSET take the inter-core lock; with one core they only
+         * order memory. */
+        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_SC);
+    } else if ((op & 0xfff0) == 0x00b0) {
+        /* TESTSET b[rA], measured on an FM-1: writes 0xff and copies the old
+         * byte's low nibble into PSR N, Z, C and V. */
+        TCGv_i32 old = tcg_temp_new_i32(), addr = read_gpr(d, op & 15);
+        load(d, old, addr, MO_UB);
+        store(d, tcg_constant_i32(0xff), addr, MO_UB);
+        tcg_gen_andi_i32(old, old, 15);
+        tcg_gen_andi_i32(spr[PSR], spr[PSR], ~15u);
+        tcg_gen_or_i32(spr[PSR], spr[PSR], old);
     } else if (op != 0x0020 && op != 0x0000) {
         goto illegal;
     }
@@ -1501,6 +1589,14 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     }
     if (op == 0xe1c8 || op == 0xe1c0 || op == 0xe190 || op == 0xe0b4) {
         return 1u << (fetch(d, here + 2) >> 12);
+    }
+    if (op == 0xe1c4) {
+        uint16_t x = fetch(d, here + 2);
+        return x & 0x0c00 ? -1 : 1u << (x >> 12);
+    }
+    if (op == 0xe1f6) {
+        uint16_t x = fetch(d, here + 2);
+        return (x & 15) || (x & 0x1010) ? -1 : 3u << (x >> 12);
     }
     if (op == 0xe1f8) {
         uint16_t x = fetch(d, here + 2);

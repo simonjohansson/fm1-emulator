@@ -126,7 +126,10 @@ uint32_t HELPER(pi32v2_advance)(CPUPi32v2State *env, uint32_t next)
 {
     bool completed = false;
     if (env->repeat_end && next == env->repeat_end) {
-        env->gpr[env->repeat_register] = --env->repeat_remaining;
+        --env->repeat_remaining;
+        if (env->repeat_register < 16) {
+            env->gpr[env->repeat_register] = env->repeat_remaining;
+        }
         if (env->repeat_remaining) {
             return env->repeat_start;
         }
@@ -146,20 +149,28 @@ uint32_t HELPER(pi32v2_advance)(CPUPi32v2State *env, uint32_t next)
     return next;
 }
 
+/* reg 16 is the immediate form: count comes from the opcode and no register
+ * receives the remaining count. */
 uint32_t HELPER(pi32v2_repeat)(CPUPi32v2State *env, uint32_t reg,
                               uint32_t start, uint32_t end)
 {
     if (env->predicate_end || env->repeat_end) {
         helper_fail(env, "nested repeat block is unsupported");
     }
-    if (!env->gpr[reg]) { return end; }
+    uint32_t count = reg < 16 ? env->gpr[reg] : reg - 16;
+    if (!count) { return end; }
     env->repeat_start = start;
     env->repeat_end = end;
-    env->repeat_register = reg;
-    env->repeat_remaining = env->gpr[reg];
+    env->repeat_register = reg < 16 ? reg : 16;
+    env->repeat_remaining = count;
     /* As with conditional blocks, interrupt entry is deferred while this
      * qualified linear block is active. IRQ suspension remains unverified. */
     return start;
+}
+
+uint64_t HELPER(pi32v2_divu64)(uint64_t dividend, uint32_t divisor)
+{
+    return divisor ? dividend / divisor : 0;
 }
 
 uint32_t HELPER(pi32v2_call_return)(CPUPi32v2State *env, uint32_t next)

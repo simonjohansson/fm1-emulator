@@ -67,6 +67,24 @@ class RepeatTests(unittest.TestCase):
         self.assertEqual(state["registers"][3], 3)
         self.assertEqual(state["instructions"], guest.instructions + 2)
 
+    def test_immediate_count_leaves_registers_alone(self):
+        # Stock FM-1 firmware: 8a00 is "rep 2 11 {"; 9310 is "rep 4 20 {".
+        for op, count, body in ((0x8a00, 11, (0x05b2,)), (0x9310, 20, (0xe0e3, 0x3001))):
+            with self.subTest(op=hex(op)):
+                guest = Guest()
+                guest.literal(2, 7)
+                guest.literal(3, INSPECTION if len(body) == 1 else 0)
+                guest.emit(op)
+                guest.emit(*body)   # [r3++=4] = r2, or r3 = r3 + packed 1.
+                state = guest_state(self.directory, guest)
+                self.assertEqual(state["registers"][2], 7)
+                if len(body) == 1:
+                    self.assertEqual(state["registers"][3], INSPECTION + 4 * count)
+                    self.assertEqual(state["inspection"][:count], [7] * count)
+                else:
+                    self.assertEqual(state["registers"][3], count)
+                self.assertEqual(state["instructions"], guest.instructions + count - 1)
+
     def test_unqualified_bodies_fault_at_repeat_before_effects(self):
         bodies = [(0x0302,), (0x8000,), (0xe0e3, 0x3001)]
         for body in bodies:
