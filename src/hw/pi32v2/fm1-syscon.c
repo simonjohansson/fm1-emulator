@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Ownership extraction of existing register behavior only. No clock tree,
- * rates, reset behavior or new register fields are implemented here. */
+ * rates, reset behavior or new register fields are implemented here. Fields
+ * outside a word's mask keep their initial value. */
 #include "qemu/osdep.h"
 #include "fm1-syscon.h"
 
@@ -43,7 +44,7 @@ static void word_write(FM1PocSyscon *s, FM1SysconWord word, hwaddr offset,
                        uint64_t value, unsigned size)
 {
     if ((word != FM1_SYSCON_CLK_CON1 && (offset || size != 4)) ||
-        (value & ~masks[word])) {
+        ((value ^ s->words[word]) & ~masks[word])) {
         pi32v2_fail(&s->cpu->env, write_errors[word]);
     }
     /* A consumer may reject an otherwise valid field change while active.
@@ -85,6 +86,11 @@ void fm1_syscon_init(FM1PocSyscon *s, Object *owner, Pi32v2CPU *cpu)
     s->cpu = cpu;
     for (unsigned i = 0; i < FM1_SYSCON_WORD_COUNT; i++) {
         s->words[i] = 0;
+        if (i == FM1_SYSCON_CLK_CON2) {
+            /* As a real FM-1's SPL leaves it (measured). Stock FM-1 firmware
+             * derives its 360 MHz system clock from source select 6. */
+            s->words[i] = 6;
+        }
         s->validators[i] = NULL;
         s->validator_opaque[i] = NULL;
         memory_region_init_io(&s->mmio[i], owner, word_ops[i], s,

@@ -83,16 +83,18 @@ uint32_t fm1_timer_counter(FM1TimerState *t)
 }
 static void update_irq(FM1PocState *m)
 {
-    qemu_set_irq(m->irq, m->timers[1].pending || m->alnk_irq_level);
+    qemu_set_irq(m->irq, m->timers[1].pending || m->alnk_irq_level || m->ttmr.pending);
 }
+static void ttmr_irq(void *opaque) { update_irq(opaque); }
 /* Private source selection for the reached audio/timer pair. Raw device
  * levels remain pending until their guest acknowledgments. */
 static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *priority)
 {
     FM1PocState *m = PI32V2_CPU(env_cpu(e))->machine;
-    const unsigned sources[] = {11, 63};
-    const bool pending[] = {m->alnk_irq_level, m->timers[1].pending};
-    const unsigned config[] = {(m->irq_configs[1] >> 12) & 15,
+    const unsigned sources[] = {3, 11, 63};
+    const bool pending[] = {m->ttmr.pending, m->alnk_irq_level, m->timers[1].pending};
+    const unsigned config[] = {(m->irq_configs[0] >> 12) & 15,
+                               (m->irq_configs[1] >> 12) & 15,
                                e->irq_config >> 28};
     bool selected = false;
     for (unsigned i = 0; i < G_N_ELEMENTS(sources); i++) {
@@ -305,10 +307,9 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
 {
     FM1PocState *m = opaque;
     if (offset < 0x80 && !(offset & 3)) {
-        /* Implemented sources are fatal exception1, audio11 and TIMER5 63. */
-        uint32_t allowed = offset == 0 ? 0xf0 : offset == 0x1c ? 0xf0000000u :
-                           offset == 4 ? 0xf000 : 0;
-        if (value & ~allowed) { pi32v2_fail(&m->cpu->env, "unsupported IRQ source enable"); }
+        /* Any source may be configured; only exception 1, tick timer 3,
+         * audio 11 and TIMER5 63 are ever raised. Stock FM-1 firmware
+         * configures sources it never uses in this machine. */
         m->irq_configs[offset / 4] = value;
         if (offset == 0x1c) { m->cpu->env.irq_config = value; }
         update_irq(m);
@@ -433,6 +434,7 @@ static void machine_init(MachineState *ms)
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
     fm1_uart_init(&m->uart, OBJECT(m), m->cpu);
     fm1_crc_init(&m->crc, OBJECT(m), m->cpu);
+    fm1_ttmr_init(&m->ttmr, OBJECT(m), m->cpu, ttmr_irq, m);
     fm1_sfr_map(0x12100, &m->uart.mmio);
     fm1_lcd_init(&m->lcd, OBJECT(m), m->cpu);
     memory_region_init_io(&m->iomap_mmio, OBJECT(m), &iomap_ops, m, "fm1.iomap", 16);

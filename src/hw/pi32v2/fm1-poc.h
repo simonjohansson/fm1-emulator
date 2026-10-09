@@ -16,6 +16,7 @@
 #include "fm1-input.h"
 #include "fm1-uart.h"
 #include "fm1-crc.h"
+#include "fm1-ttmr.h"
 
 #define TYPE_FM1_POC_MACHINE MACHINE_TYPE_NAME("fm1-poc")
 #define FM1_POC_MAX_ALNK_RESETS 16
@@ -53,6 +54,7 @@ struct FM1PocState {
     FM1PocInput input;
     FM1PocUART uart;
     FM1PocCRC crc;
+    FM1PocTTMR ttmr;
     unsigned frames;
     const char *frame_dir;
     QEMUTimer *display_key_timer;

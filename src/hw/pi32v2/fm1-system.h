@@ -9,16 +9,25 @@
 /* Private state for the diagnostic application's explicit system interfaces.
  * Register addresses and wire operations come from tracked guest accesses;
  * no GPL-3 implementation is included or linked here. */
+/* Plain configuration words kept without effect (fm1-system.c). */
+enum { FM1_STORED_PMU, FM1_STORED_PLL, FM1_STORED_USB_PHY, FM1_STORED_OSA, FM1_STORED_DBG,
+       FM1_STORED_COUNT };
+#define FM1_STORED_WORDS 4
+
 typedef struct FM1PocSystem {
     Pi32v2CPU *cpu;
     MemoryRegion p33_mmio, reset_mmio, debug_mmio, emu_mmio, etm_mmio, cache_mmio;
     MemoryRegion sdr_mmio, psram_mmio;
+    MemoryRegion sys_div_mmio, chip_id_mmio;
     QEMUTimer *p33_timer, *watchdog_timer;
     uint32_t p33_control, reset_source;
+    MemoryRegion stored_mmio[FM1_STORED_COUNT];
+    uint32_t stored[FM1_STORED_COUNT][FM1_STORED_WORDS];   /* see stored_blocks */
     uint8_t p33_data, transfer_byte, command, phase;
     uint16_t address;
     bool p33_busy, debug_unlocked;
     uint8_t p3_reset_source, valid_keep, watchdog_control, power_control;
+    uint8_t p33_plain[3];                   /* see p33_plain in fm1-system.c */
     uint32_t debug_message, debug_enable, write_enable;
     uint32_t write_low[3], write_high[3], pc_low[2], pc_high[2];
     uint32_t emu_control, emu_message, stack_low[2], stack_high[2];

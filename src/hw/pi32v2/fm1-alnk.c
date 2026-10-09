@@ -111,7 +111,7 @@ static void check_configuration(FM1PocALNK *a)
     if (a->control0 != (0x0180u | DMA_ENABLE) ||
         a->control1 != 0x5000u || a->control3 != 0x83u ||
         (a->half_words != 256u && a->half_words != FM1_ALNK_HALF_WORDS) ||
-        fm1_syscon_get(a->syscon, FM1_SYSCON_CLK_CON2) ||
+        (fm1_syscon_get(a->syscon, FM1_SYSCON_CLK_CON2) & 0xf00) ||
         fm1_syscon_get(a->syscon, FM1_SYSCON_IOMAP_CON5)) {
         alnk_fail(a, "unsupported ALNK0 enabled configuration");
     }

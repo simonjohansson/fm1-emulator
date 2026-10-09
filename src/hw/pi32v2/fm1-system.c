@@ -12,8 +12,11 @@
 
 #define P33_CS 1u
 #define P33_BUSY 2u
+#define P33_DIVIDER 12u
+#define P33_RTC 0x100u
 #define P33_START 16u
 #define WDT_ENABLE 16u
+#define WDT_MODE 32u
 #define WDT_CLEAR 64u
 
 static G_NORETURN void system_fail(FM1PocSystem *s, const char *reason)
@@ -21,8 +24,26 @@ static G_NORETURN void system_fail(FM1PocSystem *s, const char *reason)
     pi32v2_fail(&s->cpu->env, reason);
 }
 
+/* Plain P33 bytes stock FM-1 firmware touches, as a real FM-1 holds them
+ * after its SPL (measured). Address bit 10 marks the RTC domain. */
+static const struct { uint16_t address; uint8_t handoff; } p33_plain[] = {
+    {0x31, 0x80},           /* written 0xc0 by stock firmware */
+    {0x93, 0xff},           /* P3_WKUP_PND */
+    {0x400 | 0xa8, 0x02},   /* R3_WKUP_SRC */
+};
+
+static int p33_plain_index(uint16_t address)
+{
+    for (unsigned i = 0; i < G_N_ELEMENTS(p33_plain); i++) {
+        if (p33_plain[i].address == address) { return i; }
+    }
+    return -1;
+}
+
 static uint8_t register_read(FM1PocSystem *s, uint16_t address)
 {
+    int plain = p33_plain_index(address);
+    if (plain >= 0) { return s->p33_plain[plain]; }
     switch (address) {
     case 0x12: return s->p3_reset_source;
     case 0x17: return s->valid_keep;
@@ -41,16 +62,19 @@ static void watchdog_expired(void *opaque)
 
 static void register_write(FM1PocSystem *s, uint16_t address, uint8_t value)
 {
+    int plain = p33_plain_index(address);
+    if (plain >= 0) { s->p33_plain[plain] = value; return; }
     switch (address) {
     case 0x17:
-        if (value & 0x40) {
-            system_fail(s, "P33 watchdog exception mode is unsupported");
-        }
+        /* Bit 6 (SDK WDT_EXPT_EN) selects an exception at watchdog expiry,
+         * which this machine refuses in either mode. */
         s->valid_keep = value;
         break;
     case 0x80: {
         uint8_t previous = s->watchdog_control;
-        if (value & ~(WDT_CLEAR | WDT_ENABLE | 15u)) {
+        /* Stock FM-1 firmware writes 0x2c. Bit 5 only matters at expiry,
+         * which this machine refuses either way, so it is kept unmodeled. */
+        if (value & ~(WDT_CLEAR | WDT_MODE | WDT_ENABLE | 15u)) {
             system_fail(s, "unsupported P33 watchdog control bits");
         }
         s->watchdog_control = value & ~WDT_CLEAR;
@@ -93,7 +117,7 @@ static void p33_complete(void *opaque)
             system_fail(s, "unsupported P33 transaction command");
         }
         s->command = byte;
-        s->address = (byte & 3u) << 8;
+        s->address = (byte & 3u) << 8 | (s->p33_control & P33_RTC ? 0x400 : 0);
         break;
     case 1:
         s->address |= byte;
@@ -141,7 +165,9 @@ static void p33_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         s->p33_data = value;
         return;
     }
-    if (offset != 0 || value & ~(P33_CS | P33_BUSY | P33_START)) {
+    /* Bits 2-3 are a clock divider (stock FM-1 firmware reads them back and
+     * changes them around transfers); transfer latency here ignores it. */
+    if (offset != 0 || value & ~(P33_CS | P33_BUSY | P33_DIVIDER | P33_START | P33_RTC)) {
         system_fail(s, "unsupported P33 control or RTC domain");
     }
     if (s->p33_busy) { system_fail(s, "P33 control changed during byte transfer"); }
@@ -152,7 +178,7 @@ static void p33_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         }
         s->phase = 0;
     }
-    s->p33_control = value & P33_CS;
+    s->p33_control = value & (P33_CS | P33_DIVIDER | P33_RTC);
     if (value & P33_START) {
         if (!selected || s->phase >= 3) {
             system_fail(s, "P33 transfer requires an active three-byte transaction");
@@ -222,6 +248,8 @@ static uint64_t sdr_read(void *opaque, hwaddr offset, unsigned size)
 
 static void sdr_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
+    /* Stock FM-1 firmware clears SDR word 14, which already reads 0. */
+    if (offset != 4 && value == sdr_handoff[offset / 4]) { return; }
     system_fail(opaque, "SDRAM controller configuration is unimplemented");
 }
 
@@ -234,6 +262,58 @@ static uint64_t psram_read(void *opaque, hwaddr offset, unsigned size)
 static void psram_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     system_fail(opaque, "PSRAM controller configuration is unimplemented");
+}
+
+/* JL_CLOCK SYS_DIV as a real FM-1's SPL leaves it (measured). Stock FM-1
+ * firmware reads its divider fields; changing them is unimplemented. */
+static uint64_t sys_div_read(void *opaque, hwaddr offset, unsigned size)
+{
+    return 0x00010200;
+}
+
+static void sys_div_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    system_fail(opaque, "system clock divider changes are unimplemented");
+}
+
+/* JL_INTEST CHIP_ID as a real FM-1 reads it. */
+static uint64_t chip_id_read(void *opaque, hwaddr offset, unsigned size)
+{
+    return 0x6f01;
+}
+
+static void chip_id_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    system_fail(opaque, "CHIP_ID is read-only");
+}
+
+/* Configuration words whose effects this machine does not model: clocks,
+ * rates and analog settings follow virtual time instead. Each starts as a
+ * real FM-1's SPL leaves it (measured; Felucca writes none of them) and
+ * keeps whatever firmware writes. Stock FM-1 firmware reads the PLLs to
+ * derive its clocks and reprograms the USB PHY PLL. */
+static const struct {
+    const char *name;
+    hwaddr address;
+    unsigned words;
+    uint32_t handoff[FM1_STORED_WORDS];
+} stored_blocks[FM1_STORED_COUNT] = {
+    [FM1_STORED_PMU] = {"fm1.p33-pmu", 0x13e00, 2, {0x100, 0xe0}},   /* PMU_CON, RTC_CON */
+    [FM1_STORED_PLL] = {"fm1.pll", 0x119a0, 4,                      /* PLL_CON0..PLL2_CON1 */
+                        {0x45400203, 0x3f503026, 0x0940022b, 0x0750310c}},
+    [FM1_STORED_USB_PHY] = {"fm1.usb-phy", 0x16a00, 4, {0, 0x008881c3}},
+    [FM1_STORED_OSA] = {"fm1.osa", 0x13400, 1, {0x80}},              /* JL_OSA CON */
+    [FM1_STORED_DBG] = {"fm1.dbg", 0x41c00, 4, {0}},                 /* JL_DBG; stock clears it */
+};
+
+static uint64_t stored_read(void *opaque, hwaddr offset, unsigned size)
+{
+    return ((uint32_t *)opaque)[offset / 4];
+}
+
+static void stored_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    ((uint32_t *)opaque)[offset / 4] = value;
 }
 
 static uint64_t debug_read(void *opaque, hwaddr offset, unsigned size)
@@ -364,11 +444,18 @@ SYSTEM_OPS(emu);
 SYSTEM_OPS(etm);
 SYSTEM_OPS(sdr);
 SYSTEM_OPS(psram);
+SYSTEM_OPS(stored);
+SYSTEM_OPS(sys_div);
+SYSTEM_OPS(chip_id);
 
 void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
 {
     s->cpu = cpu;
     s->p3_reset_source = 1; /* Cold power-on, rather than a synthetic warm reset. */
+    s->p33_control = P33_DIVIDER;   /* as a real FM-1's SPL leaves it (measured) */
+    for (unsigned i = 0; i < G_N_ELEMENTS(p33_plain); i++) {
+        s->p33_plain[i] = p33_plain[i].handoff;
+    }
     s->p33_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, p33_complete, s);
     s->watchdog_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, watchdog_expired, s);
 #define MAP(region, ops, label, address, length) \
@@ -382,10 +469,18 @@ void fm1_system_init(FM1PocSystem *s, Object *owner, Pi32v2CPU *cpu)
     MAP(etm_mmio, etm_ops, "fm1.branch-trace", 0x01eef1c0, 20);
     MAP(sdr_mmio, sdr_ops, "fm1.sdram-controller", 0x40400, 0x48);
     MAP(psram_mmio, psram_ops, "fm1.psram-controller", 0x40500, 12);
+    MAP(sys_div_mmio, sys_div_ops, "fm1.sys-div", 0x10008, 4);
+    MAP(chip_id_mmio, chip_id_ops, "fm1.chip-id", 0x10200, 4);
     /* Cache configuration as a real FM-1's SPL leaves it (measured). */
     s->cache_control = 0x302;
     s->cache_way[0] = 0x00ffffff;
     s->cache_way[1] = 0x0000ffff;
+    for (unsigned i = 0; i < FM1_STORED_COUNT; i++) {
+        memcpy(s->stored[i], stored_blocks[i].handoff, sizeof(s->stored[i]));
+        memory_region_init_io(&s->stored_mmio[i], owner, &stored_ops, s->stored[i],
+                              stored_blocks[i].name, stored_blocks[i].words * 4);
+        fm1_sfr_map(stored_blocks[i].address, &s->stored_mmio[i]);
+    }
 #undef MAP
     fm1_system_sync_guards(s);
 }

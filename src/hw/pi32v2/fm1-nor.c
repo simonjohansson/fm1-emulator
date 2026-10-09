@@ -284,6 +284,9 @@ static void spi_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
 static uint64_t sfc_read(void *opaque, hwaddr offset, unsigned size)
 {
     FM1PocNOR *nor = opaque;
+    /* BAUD is write-only in the SDK, yet stock FM-1 firmware reads it to
+     * derive the flash clock. A real FM-1 reads 1 after its SPL (measured). */
+    if (offset == 4 && size == 4) { return 1; }
     if (offset || size != 4) { nor_fail(nor, "unsupported SFC register read"); }
     return nor->sfc_control;
 }
@@ -436,7 +439,7 @@ void fm1_nor_init(FM1PocNOR *nor, Object *owner, Pi32v2CPU *cpu,
     nor->write_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, write_complete, nor);
     memory_region_init_io(&nor->spi_mmio, owner, &spi_ops, nor, "fm1.spi0", 20);
     fm1_sfr_map(SPI0_BASE, &nor->spi_mmio);
-    memory_region_init_io(&nor->sfc_mmio, owner, &sfc_ops, nor, "fm1.sfc", 4);
+    memory_region_init_io(&nor->sfc_mmio, owner, &sfc_ops, nor, "fm1.sfc", 8);
     fm1_sfr_map(SFC_BASE, &nor->sfc_mmio);
     memory_region_init_io(&nor->encryption_mmio, owner, &encryption_ops, nor,
                           "fm1.sfcenc", 16);
