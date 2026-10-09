@@ -10,11 +10,13 @@
 enum { RETI = 0, RETS = 3, PSR = 5, ICFG = 11, USP = 12, SSP = 13, SP = 14 };
 /* TB flags: bit 0 in_irq, bit 1 an active REP block, bit 2 XIP fetch enabled,
  * bit 3 an active IF arm, bit 4 core 1 while core 0 has translation
- * observers; otherwise both cores share translations.
+ * observers; otherwise both cores share translations; bit 5 logs stores
+ * for idle-loop detection (host-side, see helper_pi32v2_idle_loop).
  * cs_base carries the machine's fetch-guard
  * generation. */
 enum { PI32V2_TB_IRQ = 1, PI32V2_TB_REPEAT = 2, PI32V2_TB_XIP = 4,
-       PI32V2_TB_PREDICATE = 8, PI32V2_TB_CORE1 = 16 };
+       PI32V2_TB_PREDICATE = 8, PI32V2_TB_CORE1 = 16, PI32V2_TB_WATCH = 32 };
+#define PI32V2_IDLE_LOG 64
 /* Guard kinds reported through Pi32v2MachineOps.guard_fault. */
 enum { PI32V2_GUARD_STACK, PI32V2_GUARD_WRITE, PI32V2_GUARD_PC,
        PI32V2_GUARD_XIP_DISABLED, PI32V2_GUARD_XIP_BOUNDS };
@@ -35,6 +37,8 @@ typedef struct CPUArchState {
     uint32_t stack_low[2], stack_high[2];
     uint32_t write_low[3], write_high[3];
     uint32_t fetch_epoch;
+    /* Host-side idle-loop store logging (a TB flag), not guest state. */
+    bool idle_watch;
     bool xip_fetch;
     /* Branch trace written by translated code while the machine's ETM is
      * enabled: the PCs of the last four taken branches, newest first. */
@@ -83,6 +87,12 @@ struct ArchCPU {
     bool resume_requested;
     /* Host-side polling-loop detection, not architectural state. */
     uint32_t spin_pc, spin_iterations, spin_regs[16], spin_psr, spin_sp;
+    /* Host-side idle-loop detection: the head's registers and the stores
+     * of the last two watched iterations. */
+    uint32_t idle_pc, idle_regs[16], idle_psr, idle_sp, idle_rounds;
+    unsigned idle_count[2];
+    bool idle_have_prev, idle_overflow;
+    struct { uint32_t addr, value, size; } idle_log[2][PI32V2_IDLE_LOG];
 };
 struct Pi32v2CPUClass {
     CPUClass parent_class;

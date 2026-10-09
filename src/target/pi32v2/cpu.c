@@ -46,7 +46,8 @@ static TCGTBCPUState get_tb_state(CPUState *cs)
                            (env->repeat_end ? PI32V2_TB_REPEAT : 0) |
                            (env->xip_fetch ? PI32V2_TB_XIP : 0) |
                            (env->predicate_end ? PI32V2_TB_PREDICATE : 0) |
-                           (env_archcpu(env)->private_translation ? PI32V2_TB_CORE1 : 0) };
+                           (env_archcpu(env)->private_translation ? PI32V2_TB_CORE1 : 0) |
+                           (env->idle_watch ? PI32V2_TB_WATCH : 0) };
 }
 
 static void synchronize(CPUState *cs, const TranslationBlock *tb)
@@ -150,6 +151,7 @@ static void reset(Object *obj, ResetType type)
     memset(&cpu->env, 0, sizeof(cpu->env));
     cpu->lock_waiting = false;
     cpu->spin_pc = UINT32_MAX;
+    cpu->idle_pc = UINT32_MAX;
     cpu->core_paused = false;
     cpu->resume_requested = false;
     cpu->held_reset = CPU(cpu)->start_powered_off;

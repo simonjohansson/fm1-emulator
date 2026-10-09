@@ -171,6 +171,18 @@ timer fires, so spinning on would read the same values. Core 1 polls only
 about a tenth of the time, so this gains little for stock; it applies to any
 firmware.
 
+Stock's core 1 spends most of its time in a for(;;) loop that calls its
+render routine, which finds no block requested and returns; the call pushes
+registers and rewrites TIMER5's counter, so the polling fast-forward did not
+apply. A short unconditional backward GOTO now qualifies a loop for idle
+detection: once its head repeats with unchanged registers, iterations run
+in watch translations (a TB flag) that log every store, and two logged
+iterations with identical registers and identical stores (addresses, sizes,
+values, MMIO included) charge the rest of the slice. Thirty guest seconds of
+stock firmware with a held note went from 26.1 to 6.5 host seconds headless;
+core 1 executes 140 million instead of 2.8 billion instructions. Felucca's
+A/B is unchanged.
+
 Core 1 reads and rewrites TIMER5's counter about five million times a
 guest second each. Stores to the peripheral pages now skip the BQL in
 QEMU's TCG path; timer blocks take it only for CON writes, which may change

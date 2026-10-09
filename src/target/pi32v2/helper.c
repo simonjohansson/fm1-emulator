@@ -462,3 +462,88 @@ void HELPER(pi32v2_spin)(CPUPi32v2State *env, uint32_t head)
     cs->exception_index = EXCP_INTERRUPT;
     cpu_loop_exit(cs);
 }
+
+/* Idle-loop fast-forward, for a for(;;) loop closed by a short backward
+ * GOTO whose body may call and store (a firmware polling an empty work
+ * queue). Once its head is reached with unchanged registers, the next
+ * iterations run in watch translations that log every store (address,
+ * size, value, MMIO included). Two consecutive logged iterations that
+ * start and end with the same registers and store the same values in the
+ * same order are in a steady state: within the slice nothing else runs,
+ * so further iterations would repeat them exactly, and the rest of the
+ * slice is charged at once as for a polling loop. A repeated MMIO write
+ * is assumed idempotent, so a device counter it rewrites is, at most one
+ * slice later, as if written at the slice's start. */
+static void idle_leave_watch(CPUPi32v2State *env, uint32_t head)
+{
+    env->idle_watch = false;
+    env->pc = head;
+    cpu_loop_exit_noexc(env_cpu(env));
+}
+
+void HELPER(pi32v2_watch_store)(CPUPi32v2State *env, uint32_t addr, uint32_t value,
+                                uint32_t size)
+{
+    Pi32v2CPU *cpu = env_archcpu(env);
+    unsigned n = cpu->idle_count[0];
+    if (cpu->idle_overflow) { return; }
+    if (n == PI32V2_IDLE_LOG) {
+        /* Not a short idle iteration: stop logging. Translations looked up
+         * from now on are unwatched; chained watched ones log no more. */
+        cpu->idle_overflow = true;
+        env->idle_watch = false;
+        cpu->idle_pc = UINT32_MAX;
+        return;
+    }
+    cpu->idle_log[0][n].addr = addr;
+    cpu->idle_log[0][n].value = size == 4 ? value : value & ((1u << (size * 8)) - 1);
+    cpu->idle_log[0][n].size = size;
+    cpu->idle_count[0] = n + 1;
+}
+
+#define IDLE_ROUNDS 2
+void HELPER(pi32v2_idle_loop)(CPUPi32v2State *env, uint32_t head)
+{
+    Pi32v2CPU *cpu = env_archcpu(env);
+    CPUState *cs = env_cpu(env);
+    if (!icount_enabled()) { return; }
+    if (cpu->idle_pc != head || cpu->idle_psr != env->spr[PSR] ||
+        cpu->idle_sp != env->spr[SP] ||
+        memcmp(cpu->idle_regs, env->gpr, sizeof(cpu->idle_regs))) {
+        cpu->idle_pc = head;
+        cpu->idle_psr = env->spr[PSR];
+        cpu->idle_sp = env->spr[SP];
+        memcpy(cpu->idle_regs, env->gpr, sizeof(cpu->idle_regs));
+        cpu->idle_rounds = 0;
+        if (env->idle_watch) { idle_leave_watch(env, head); }
+        return;
+    }
+    if (!env->idle_watch) {
+        /* Same registers twice: log the following iterations. */
+        cpu->idle_count[0] = 0;
+        cpu->idle_have_prev = false;
+        cpu->idle_overflow = false;
+        env->idle_watch = true;
+        env->pc = head;
+        cpu_loop_exit_noexc(cs);
+    }
+    unsigned n = cpu->idle_count[0];
+    bool same = cpu->idle_have_prev && n == cpu->idle_count[1] &&
+                !memcmp(cpu->idle_log[0], cpu->idle_log[1], n * sizeof(cpu->idle_log[0][0]));
+    memcpy(cpu->idle_log[1], cpu->idle_log[0], n * sizeof(cpu->idle_log[0][0]));
+    cpu->idle_count[1] = n;
+    cpu->idle_count[0] = 0;
+    cpu->idle_have_prev = true;
+    if (!same) {
+        cpu->idle_rounds = 0;
+        return;
+    }
+    if (++cpu->idle_rounds < IDLE_ROUNDS) { return; }
+    cpu->idle_rounds = 0;
+    env->idle_watch = false;
+    env->pc = head;
+    cs->neg.icount_decr.u16.low = 0;
+    cs->icount_extra = 0;
+    cs->exception_index = EXCP_INTERRUPT;
+    cpu_loop_exit(cs);
+}

@@ -13,7 +13,7 @@ typedef struct PiDisasContext {
     DisasContextBase base;
     CPUPi32v2State *env;
     uint32_t stop;
-    bool count_enabled, repeating, predicated, in_irq;
+    bool count_enabled, repeating, predicated, in_irq, watch;
     TCGv_i32 inputs[16];
 } PiDisasContext;
 static TCGv_i32 gpr[16], spr[16], pc;
@@ -205,6 +205,9 @@ static void store(PiDisasContext *d, TCGv_i32 value, TCGv_i32 addr, MemOp op)
 {
     translator_io_start(&d->base);
     check_write(addr, memop_size(op));
+    if (d->watch) {
+        gen_helper_pi32v2_watch_store(tcg_env, addr, value, tcg_constant_i32(memop_size(op)));
+    }
     tcg_gen_qemu_st_i32(value, addr, 0, op);
 }
 /* A taken branch enters the ETM ring when the trace is enabled. */
@@ -306,6 +309,18 @@ static void spin_check(PiDisasContext *d, uint32_t dest)
         gen_helper_pi32v2_spin(tcg_env, tcg_constant_i32(dest));
     }
 }
+/* A short unconditional backward GOTO closes a for(;;) polling loop, whose
+ * body may call and store; helper_pi32v2_idle_loop checks at run time
+ * whether its iterations have reached a steady state. */
+static void goto_back(PiDisasContext *d, uint32_t dest)
+{
+    uint32_t here = d->base.pc_next;
+    if (!d->predicated && !d->repeating && dest < here && here - dest <= 64 &&
+        translator_is_same_page(&d->base, dest)) {
+        gen_helper_pi32v2_idle_loop(tcg_env, tcg_constant_i32(dest));
+    }
+    chain_jump(d, dest, 0);
+}
 static void branch(PiDisasContext *d, uint32_t dest, uint32_t next,
                    TCGv_i32 value, bool nonzero)
 {
@@ -339,6 +354,7 @@ static void init_disas(DisasContextBase *db, CPUState *cs)
     d->repeating = d->env->repeat_end != 0;
     d->predicated = d->env->predicate_end != 0;   /* part of the TB flags */
     d->in_irq = d->env->in_irq;          /* part of the TB flags */
+    d->watch = d->env->idle_watch;       /* part of the TB flags */
 }
 static void tb_start(DisasContextBase *db, CPUState *cs) {}
 static void insn_start(DisasContextBase *db, CPUState *cs)
@@ -1380,11 +1396,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         next = here + 4;
         /* The long GOTO shares CALL's displacement fields but preserves RETS. */
         retire_final_transfer(d, next);
-        count(d); record_branch(d); chain_jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
+        count(d); record_branch(d); goto_back(d, next + delta); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe00c) == 0x8004) {
         int32_t delta = sext(((op & 3) << 10) | (((op >> 4) & 15) << 6) | (((op >> 8) & 31) << 1), 12);
         retire_final_transfer(d, next);
-        count(d); record_branch(d); chain_jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
+        count(d); record_branch(d); goto_back(d, next + delta); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe08f) == 0x8001) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
         set_call_return(d, next);
