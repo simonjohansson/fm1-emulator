@@ -81,6 +81,8 @@ struct ArchCPU {
     bool held_reset;
     bool core_paused;
     bool resume_requested;
+    /* Host-side polling-loop detection, not architectural state. */
+    uint32_t spin_pc, spin_iterations, spin_regs[16], spin_psr, spin_sp;
 };
 struct Pi32v2CPUClass {
     CPUClass parent_class;

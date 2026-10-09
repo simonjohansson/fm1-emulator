@@ -426,3 +426,37 @@ void HELPER(pi32v2_idle)(CPUPi32v2State *env)
     cs->exception_index = EXCP_HLT;
     cpu_loop_exit(cs);
 }
+
+/* Polling-loop fast-forward. Translation calls this on the taken backward
+ * branch of a short loop whose body only loads and branches. Once the loop
+ * head is reached SPIN_ITERATIONS times in a row with identical registers,
+ * each further iteration reads the same values: within one round-robin
+ * slice no other core runs and no device timer fires, since icount ends
+ * the slice at the next deadline. Spinning to the slice's end is therefore
+ * indistinguishable from charging its remaining budget at once, which this
+ * does, resuming at the loop head in the next slice. Eight iterations keep
+ * loops that poll fast-moving counters running. */
+#define SPIN_ITERATIONS 8
+void HELPER(pi32v2_spin)(CPUPi32v2State *env, uint32_t head)
+{
+    Pi32v2CPU *cpu = env_archcpu(env);
+    CPUState *cs = env_cpu(env);
+    if (!icount_enabled()) { return; }
+    if (cpu->spin_pc != head || cpu->spin_psr != env->spr[PSR] ||
+        cpu->spin_sp != env->spr[SP] ||
+        memcmp(cpu->spin_regs, env->gpr, sizeof(cpu->spin_regs))) {
+        cpu->spin_pc = head;
+        cpu->spin_psr = env->spr[PSR];
+        cpu->spin_sp = env->spr[SP];
+        memcpy(cpu->spin_regs, env->gpr, sizeof(cpu->spin_regs));
+        cpu->spin_iterations = 0;
+        return;
+    }
+    if (++cpu->spin_iterations < SPIN_ITERATIONS) { return; }
+    cpu->spin_iterations = 0;
+    env->pc = head;
+    cs->neg.icount_decr.u16.low = 0;
+    cs->icount_extra = 0;
+    cs->exception_index = EXCP_INTERRUPT;
+    cpu_loop_exit(cs);
+}

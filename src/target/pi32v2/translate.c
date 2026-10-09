@@ -244,6 +244,33 @@ static void dynamic_jump(PiDisasContext *d, TCGv_i32 value)
     tcg_gen_lookup_and_goto_ptr();
     d->base.is_jmp = DISAS_NORETURN;
 }
+/* A short backward loop whose body only loads and branches: a polling
+ * loop that helper_pi32v2_spin may fast-forward. Loads have no side effects here
+ * except MMIO reads, whose values the identical-register test covers. */
+static bool spin_loop(PiDisasContext *d, uint32_t dest)
+{
+    uint32_t here = d->base.pc_next;
+    /* Translation may only read the TB's own pages. The body before the TB
+     * start is assumed stable: a stock polling loop is loaded once. */
+    if (d->predicated || d->repeating || dest >= here || here - dest > 32 ||
+        !translator_is_same_page(&d->base, dest)) {
+        return false;
+    }
+    for (uint32_t at = dest; at < here; at = instruction_end(d, at)) {
+        uint16_t op = fetch(d, at);
+        bool load = ((op & 0xe008) == 0x4008 || (op & 0xe000) == 0x6000) && !(op & 128);
+        bool compare = (op & 0xfc00) == 0xf800 || (op & 0xfe00) == 0xfc00 ||
+                       (op & 0xff00) == 0xfe00 || (op & 0xe008) == 0x4000;
+        if (!load && !compare) { return false; }
+    }
+    return true;
+}
+static void spin_check(PiDisasContext *d, uint32_t dest)
+{
+    if (spin_loop(d, dest)) {
+        gen_helper_pi32v2_spin(tcg_env, tcg_constant_i32(dest));
+    }
+}
 static void branch(PiDisasContext *d, uint32_t dest, uint32_t next,
                    TCGv_i32 value, bool nonzero)
 {
@@ -251,6 +278,7 @@ static void branch(PiDisasContext *d, uint32_t dest, uint32_t next,
     tcg_gen_brcondi_i32(nonzero ? TCG_COND_NE : TCG_COND_EQ, value, 0, taken);
     chain_jump(d, next, 0);
     gen_set_label(taken);
+    spin_check(d, dest);
     record_branch(d);
     chain_jump(d, dest, 1);
     d->base.is_jmp = DISAS_NORETURN;
@@ -262,6 +290,7 @@ static void compare_branch(PiDisasContext *d, uint32_t dest, uint32_t next,
     tcg_gen_brcond_i32(cond, left, right, taken);
     chain_jump(d, next, 0);
     gen_set_label(taken);
+    spin_check(d, dest);
     record_branch(d);
     chain_jump(d, dest, 1);
     d->base.is_jmp = DISAS_NORETURN;
