@@ -58,6 +58,38 @@ class StockFormTests(unittest.TestCase):
         self.assertEqual(state["registers"][1], INSPECTION + 1)
         self.assertEqual(state["registers"][6], 12)
 
+    def test_negative_stride_and_pre_index_family_members(self):
+        # Vendor readings: 0569 r1 = [r6++=-4]; 061B r3 = h[r1++=-2] (u);
+        # EDD3 3F0D h[r0++=-4] = r3; EED1 3F28 r3 = b[r2++=-8] (u);
+        # EE59 4F2F r4 = b[++r2=-1] (u); EC5C 8012 r9_r8 = d[++r1=r0].
+        base = INSPECTION + 8
+        cases = [
+            ((0x0569,), {6: base}, {1: 0x44332211, 6: base - 4}),
+            ((0x061b,), {1: base}, {3: 0x2211, 1: base - 2}),
+            ((0xeed1, 0x3f28), {2: base}, {3: 0x11, 2: base - 8}),
+            ((0xee59, 0x4f2f), {2: base + 1}, {4: 0x11, 2: base}),
+            ((0xec5c, 0x8012), {1: INSPECTION, 0: 8}, {8: 0x44332211, 9: 0x88776655, 1: base}),
+        ]
+        for code, setup, expected in cases:
+            with self.subTest(code=[hex(c) for c in code]):
+                guest = Guest()
+                guest.write(base, 0x44332211)
+                guest.write(base + 4, 0x88776655)
+                for reg, value in setup.items():
+                    guest.literal(reg, value)
+                guest.emit(*code)
+                state = guest_state(self.directory, guest)
+                for reg, value in expected.items():
+                    self.assertEqual(state["registers"][reg], value, f"r{reg}")
+        guest = Guest()
+        guest.write(INSPECTION, 0x11111111)
+        guest.literal(0, INSPECTION + 2)
+        guest.literal(3, 0x1234abcd)
+        guest.emit(0xedd3, 0x3f0d)
+        state = guest_state(self.directory, guest)
+        self.assertEqual(state["inspection"][0], 0xabcd1111)
+        self.assertEqual(state["registers"][0], INSPECTION - 2)
+
     def test_halfword_store_at_unscaled_register_sum(self):
         # EDD8 kind 1, stock EDD8/5431: h[r3+r4] = r5 without writeback.
         guest = Guest()
