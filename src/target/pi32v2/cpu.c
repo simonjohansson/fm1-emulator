@@ -108,7 +108,7 @@ static bool interrupt(CPUState *cs, int request)
         !cpu->ops->select_irq(e, &number, &priority)) {
         return false;
     }
-    if ((number != 3 && number != 5 && number != 11 && number != 24 && number != 37 &&
+    if ((number != 3 && number != 5 && number != 11 && number != 16 && number != 24 && number != 37 &&
          number != 44 &&
          number != 63 &&
          (number < 124 || number > 127)) || priority > 7) {

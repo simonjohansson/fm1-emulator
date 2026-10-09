@@ -4,11 +4,12 @@
  * decoder, peripheral implementation or guest drawing routine is copied.
  *
  * Scope: SPI1 master, BAUD 4 with a 60 MHz peripheral clock, PC7/PC8 CS/D/C,
- * SRAM DMA, and the ST7789 commands used by the 2700-byte display fixture.
+ * SRAM/XIP DMA, and the ST7789 commands used by Felucca and stock firmware.
  * Timing covers transfer duration, not bus arbitration or panel reset delays.
  */
 #include "qemu/osdep.h"
 #include "fm1-lcd.h"
+#include "fm1-nor.h"
 #include "fm1-sfr.h"
 #include "system/address-spaces.h"
 #include "ui/console.h"
@@ -22,11 +23,20 @@
 #define SPI_COMPLETE (1u << 15)
 #define SPI_ACK (1u << 14)
 #define SPI_MODE 0x21u
+#define SPI_IRQ_ENABLE 0x2000u
 #define SPI_CLOCK_HZ 60000000ull
 
 static void lcd_fail(FM1PocLCD *lcd, const char *reason)
 {
     pi32v2_fail(&lcd->cpu->env, reason);
+}
+
+static void lcd_update_irq(FM1PocLCD *lcd)
+{
+    /* SDK spi_wait_ok sets CON bit 13 before waiting for its ISR and clears
+     * it afterwards; hwi.h assigns SPI1 to interrupt source 16. */
+    lcd->irq_level = (lcd->control & SPI_IRQ_ENABLE) && lcd->pending;
+    lcd->update_irq(lcd->opaque);
 }
 
 static bool lcd_update_display(void *opaque)
@@ -66,6 +76,14 @@ static unsigned parameter_length(uint8_t command)
     switch (command) {
     case 0x2a: case 0x2b: return 4;
     case 0x3a: case 0x36: return 1;
+    /* ST7789V v1.3: porch, power, voltage, frame-rate and gamma controls.
+     * These analog settings do not transform the digital RGB565 capture.
+     * Stock sends only C2's first byte, leaving its fixed FF byte at reset. */
+    case 0xb2: return 5;
+    case 0xb7: case 0xbb: case 0xc0: case 0xc2: case 0xc3: case 0xc4:
+    case 0xc6: case 0xe7: case 0x51: return 1;
+    case 0xd0: return 2;
+    case 0xe0: case 0xe1: return 14;
     default: return 0;
     }
 }
@@ -82,7 +100,7 @@ static void panel_reset(FM1PocLCD *lcd)
     lcd->have_pixel_high = false;
     lcd->x0 = lcd->y0 = lcd->x = lcd->y = 0;
     lcd->x1 = FM1_LCD_WIDTH - 1;
-    lcd->y1 = FM1_LCD_HEIGHT - 1;
+    lcd->y1 = FM1_LCD_RAM_HEIGHT - 1;
     memset(lcd->pixels, 0, sizeof(lcd->pixels));
     lcd->redraw = true;
 }
@@ -101,9 +119,13 @@ static void panel_command(FM1PocLCD *lcd, uint8_t command)
     case 0x01: panel_reset(lcd); break;
     case 0x11: lcd->sleeping = false; break;
     case 0x13: break; /* Normal display mode; no partial/scroll modes modeled. */
+    case 0x20: lcd->inverted = false; break;
     case 0x21: lcd->inverted = true; break; /* IPS driving, not byte inversion. */
     case 0x29: lcd->display_on = true; break;
     case 0x2a: case 0x2b: case 0x3a: case 0x36: break;
+    case 0xb2: case 0xb7: case 0xbb: case 0xc0: case 0xc2: case 0xc3:
+    case 0xc4: case 0xc6: case 0xd0: case 0xe0: case 0xe1: case 0xe7:
+    case 0x51: break;
     case 0x2c:
         if (lcd->color_mode != 0x55 || lcd->address_mode != 0) {
             lcd_fail(lcd, "LCD pixel write needs RGB565 with top-left RGB order");
@@ -123,11 +145,16 @@ static void panel_data(FM1PocLCD *lcd, uint8_t byte)
             lcd->have_pixel_high = true;
             return;
         }
-        lcd->pixels[lcd->y * FM1_LCD_WIDTH + lcd->x] =
-            (lcd->pixel_high << 8) | byte;
+        /* CASET/RASET retain their inclusive endpoints. ST7789V ignores
+         * pixel data outside GRAM rather than clamping the window; stock's
+         * initial clear deliberately uses column endpoint 240. */
+        if (lcd->x < FM1_LCD_WIDTH && lcd->y < FM1_LCD_RAM_HEIGHT) {
+            lcd->pixels[lcd->y * FM1_LCD_WIDTH + lcd->x] =
+                (lcd->pixel_high << 8) | byte;
+            lcd->pixels_written++;
+            lcd->redraw = true;
+        }
         lcd->have_pixel_high = false;
-        lcd->pixels_written++;
-        lcd->redraw = true;
         if (lcd->x++ == lcd->x1) {
             lcd->x = lcd->x0;
             if (lcd->y++ == lcd->y1) {
@@ -148,9 +175,8 @@ static void panel_data(FM1PocLCD *lcd, uint8_t byte)
     case 0x2a: case 0x2b: {
         uint16_t first = (lcd->parameters[0] << 8) | lcd->parameters[1];
         uint16_t last = (lcd->parameters[2] << 8) | lcd->parameters[3];
-        unsigned bound = lcd->command == 0x2a ? FM1_LCD_WIDTH : FM1_LCD_HEIGHT;
-        if (first > last || last >= bound) {
-            lcd_fail(lcd, "LCD address window exceeds the 240x240 panel");
+        if (first > last) {
+            lcd_fail(lcd, "LCD address window has reversed endpoints");
         }
         if (lcd->command == 0x2a) {
             lcd->x0 = first; lcd->x1 = last;
@@ -167,6 +193,18 @@ static void panel_data(FM1PocLCD *lcd, uint8_t byte)
         if (byte != 0) { lcd_fail(lcd, "unsupported LCD address mode"); }
         lcd->address_mode = byte;
         break;
+    case 0xc0:
+        if (byte != 0x2c) { lcd_fail(lcd, "unsupported LCD scan control"); }
+        break; /* Reset LCMCTRL preserves the accepted MADCTL orientation. */
+    case 0xe7:
+        if (byte != 0) { lcd_fail(lcd, "unsupported LCD data-lane mode"); }
+        break;
+    case 0x51:
+        if (byte != 0xff) { lcd_fail(lcd, "unsupported LCD brightness"); }
+        break;
+    case 0xb2: case 0xb7: case 0xbb: case 0xc2: case 0xc3: case 0xc4:
+    case 0xc6: case 0xd0: case 0xe0: case 0xe1:
+        break; /* Analog drive parameters; capture retains digital pixels. */
     default: g_assert_not_reached();
     }
 }
@@ -175,7 +213,7 @@ static void transfer_complete(void *opaque)
 {
     FM1PocLCD *lcd = opaque;
     if (lcd->transfer_dma) {
-        /* Read actual guest SRAM when DMA completes. The bounded fixture keeps
+        /* Read actual guest memory when DMA completes. The bounded fixture keeps
          * its source stable until SPI pending is observed. */
         uint8_t bytes[256];
         uint32_t offset = 0;
@@ -184,7 +222,7 @@ static void transfer_complete(void *opaque)
             if (address_space_read(&address_space_memory,
                                    lcd->transfer_address + offset,
                                    MEMTXATTRS_UNSPECIFIED, bytes, length) != MEMTX_OK) {
-                lcd_fail(lcd, "SPI1 DMA could not read guest SRAM");
+                lcd_fail(lcd, "SPI1 DMA could not read guest memory");
             }
             for (uint32_t i = 0; i < length; i++) {
                 panel_data(lcd, bytes[i]);
@@ -199,12 +237,13 @@ static void transfer_complete(void *opaque)
     lcd->busy = false;
     lcd->pending = true;
     lcd->completed_transfers++;
+    lcd_update_irq(lcd);
 }
 
 static void transfer_start(FM1PocLCD *lcd, bool dma)
 {
     if (lcd->busy) { lcd_fail(lcd, "overlapping SPI1 transfer"); }
-    if (lcd->control != SPI_MODE || lcd->baud != 4 ||
+    if ((lcd->control & SPI_MODE) != SPI_MODE || lcd->baud != 4 ||
         !(lcd->iomap_con1 & 0x10) || (lcd->pc_out & LCD_CS)) {
         lcd_fail(lcd, "SPI1 transfer needs routed master mode and asserted LCD CS");
     }
@@ -215,14 +254,20 @@ static void transfer_start(FM1PocLCD *lcd, bool dma)
     lcd->transfer_count = dma ? lcd->count : 1;
     if (dma) {
         if (!lcd->transfer_data) { lcd_fail(lcd, "LCD command DMA is unsupported"); }
-        if (!lcd->count || lcd->address < SRAM_BASE ||
-            (uint64_t)lcd->address + lcd->count > SRAM_BASE + SRAM_SIZE) {
-            lcd_fail(lcd, "SPI1 DMA requires a nonempty source entirely in SRAM");
+        uint64_t end = (uint64_t)lcd->address + lcd->count;
+        bool sram = lcd->address >= SRAM_BASE && end <= SRAM_BASE + SRAM_SIZE;
+        bool xip = lcd->address >= FM1_NOR_XIP_BASE &&
+                   end <= FM1_NOR_XIP_BASE + FM1_NOR_XIP_SIZE;
+        /* Stock's LCD initialization table is in mapped XIP flash. Keep DMA
+         * away from MMIO and unmapped memory; XIP reads still use SFC routing. */
+        if (!lcd->count || (!sram && !xip)) {
+            lcd_fail(lcd, "SPI1 DMA requires a nonempty source entirely in SRAM or XIP");
         }
         lcd->dma_transfers++;
     }
     lcd->busy = true;
     lcd->pending = false;
+    lcd_update_irq(lcd);
     uint64_t ns = DIV_ROUND_UP((uint64_t)lcd->transfer_count * 8 *
                               (lcd->baud + 1) * 1000000000ull, SPI_CLOCK_HZ);
     timer_mod_ns(lcd->transfer_timer,
@@ -247,15 +292,16 @@ static void spi_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     FM1PocLCD *lcd = opaque;
     switch (offset) {
     case 0:
-        if (value & ~(uint64_t)(SPI_MODE | SPI_ACK | SPI_COMPLETE) ||
+        if (value & ~(uint64_t)(SPI_MODE | SPI_IRQ_ENABLE | SPI_ACK | SPI_COMPLETE) ||
             ((value & SPI_MODE) != SPI_MODE && (value & SPI_MODE) != 0)) {
             lcd_fail(lcd, "unsupported SPI1 control mode");
         }
-        if (lcd->busy && (value & SPI_MODE) != lcd->control) {
+        if (lcd->busy && (value & SPI_MODE) != (lcd->control & SPI_MODE)) {
             lcd_fail(lcd, "SPI1 mode changed during a transfer");
         }
-        lcd->control = value & SPI_MODE;
+        lcd->control = value & (SPI_MODE | SPI_IRQ_ENABLE);
         if (value & SPI_ACK) { lcd->pending = false; }
+        lcd_update_irq(lcd);
         break;
     case 4:
         if (lcd->busy || value != 4) {
@@ -286,9 +332,12 @@ static const MemoryRegionOps spi_ops = {
     .impl = {.min_access_size = 4, .max_access_size = 4},
 };
 
-void fm1_lcd_init(FM1PocLCD *lcd, Object *owner, Pi32v2CPU *cpu)
+void fm1_lcd_init(FM1PocLCD *lcd, Object *owner, Pi32v2CPU *cpu,
+                  void (*update_irq)(void *opaque), void *opaque)
 {
     lcd->cpu = cpu;
+    lcd->update_irq = update_irq;
+    lcd->opaque = opaque;
     panel_reset(lcd);
     lcd->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, transfer_complete, lcd);
     memory_region_init_io(&lcd->spi_mmio, owner, &spi_ops, lcd, "fm1.spi1", 20);
