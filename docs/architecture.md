@@ -41,7 +41,7 @@ released through C1_CON, using the SRAM entry vector at `0x01c7fff8` and an
 RTI startup handoff exercised on hardware. Its registers, interrupt
 configuration, tick timer and stack guards are independent. Both cores share
 SRAM, peripherals, XIP routing and the LOCKSET/LOCKCLR lock. Bank-0 software
-requests 124-127 route through each core's IRQ configuration and acknowledge
+requests 120-127 route through each core's IRQ configuration and acknowledge
 through bank 0. Pause/resume commands suspend and continue instruction execution
 without resetting registers; their status and self-clearing command bits were
 measured on hardware. Bank-1 requests remain unsupported. The boot-ROM reset sequence,
@@ -57,7 +57,8 @@ contacts, while keyboard and mouse holds are combined.
 ## Hardware and limits
 
 The model includes 512 KiB SRAM, NOR/SFC/SPI0, SPI1/LCD (DMA from SRAM or
-XIP), SPI2 driving the panel's 74HC595 chain, GPIO/IOMAP, TIMER1/4/5 with
+XIP), SPI2 driving the panel's 74HC595 chain (transfers stretched tenfold so
+stock's continuous scan fits the 8 ns instruction budget), GPIO/IOMAP, TIMER1/4/5 with
 60 MHz and 24 MHz clock sources, the core tick timers, the LRC measurement
 timer, protection/P33/watchdog, ALNK0 audio, SAR/WLA with the measured
 internal channel, USB, UART1 transmit DMA (stock sends MIDI there) with an

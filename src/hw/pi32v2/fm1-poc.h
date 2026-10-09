@@ -45,7 +45,7 @@ struct FM1PocState {
     MemoryRegion wla_mmio, wl_mmio, rf_mmio, spi2_mmio;
     QEMUTimer *spi2_timer;
     uint32_t spi2_con, spi2_baud, spi2_adr, spi2_cnt;
-    bool spi2_busy, spi2_pending;
+    bool spi2_busy, spi2_pending, spi2_cnt_pending;
     uint32_t wla[39], wl[64], rf[0x4800];     /* rf: 0x20000-0x31fff */
     uint32_t core_control[2], irq1_configs[32];
     int lock_owner;

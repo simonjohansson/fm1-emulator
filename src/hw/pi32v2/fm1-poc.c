@@ -95,16 +95,17 @@ uint32_t fm1_timer_counter(FM1TimerState *t)
 {
     return (t->counter + elapsed_ticks(t)) % period_ticks(t);
 }
-/* Bank-0 ILAT bits 4-7 are sources 124-127. Hardware observes the request
+/* Bank-0 ILAT bits 0-7 are sources 120-127. Hardware observes the request
  * through each running core's enabled-source configuration; bank-1 clear
- * does not acknowledge a bank-0 request. SET reads as zero (measured).
- * Bits 0-3 and bank-1 SET remain unqualified. */
+ * does not acknowledge a bank-0 request. SET reads as zero (measured for
+ * bits 4-7). Bits 0-3 follow the same layout; stock's panel scan raises
+ * source 122 after each pass. Bank-1 SET remains unqualified. */
 static uint32_t software_pending(FM1PocState *m, bool core1)
 {
     if (core1 && (!m->cpu1 || m->cpu1->held_reset)) { return 0; }
     uint32_t config = (core1 ? m->irq1_configs : m->irq_configs)[15];
     uint32_t enabled = 0;
-    for (unsigned bit = 4; bit < 8; bit++) {
+    for (unsigned bit = 0; bit < 8; bit++) {
         enabled |= (config >> (bit * 4) & 1) << bit;
     }
     return m->software_latch & enabled;
@@ -131,12 +132,14 @@ static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *pr
     bool core1 = CPU(env_archcpu(e))->cpu_index != 0;
     const uint32_t *configs = core1 ? m->irq1_configs : m->irq_configs;
     uint32_t soft = software_pending(m, core1);
-    const unsigned sources[] = {3, 5, 11, 16, 20, 24, 37, 44, 62, 63, 124, 125, 126, 127};
+    const unsigned sources[] = {3, 5, 11, 16, 20, 24, 37, 44, 62, 63,
+                                120, 121, 122, 123, 124, 125, 126, 127};
     const bool pending[] = {core1 ? m->ttmr1.pending : m->ttmr.pending,
                             m->timer1.pending, m->alnk_irq_level, m->lcd.irq_level,
                             m->uart.irq_level, m->adc_irq_level,
                             spi2_irq_level(m), m->lrct.done,
                             m->timers[0].pending, m->timers[1].pending,
+                            soft & 1, soft & 2, soft & 4, soft & 8,
                             soft & 16, soft & 32, soft & 64, soft & 128};
     const unsigned config[] = {(configs[0] >> 12) & 15,
                                (configs[0] >> 20) & 15,
@@ -148,6 +151,8 @@ static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *pr
                                (configs[5] >> 16) & 15,
                                (configs[7] >> 24) & 15,
                                e->irq_config >> 28,
+                               configs[15] & 15, (configs[15] >> 4) & 15,
+                               (configs[15] >> 8) & 15, (configs[15] >> 12) & 15,
                                (configs[15] >> 16) & 15,
                                (configs[15] >> 20) & 15,
                                (configs[15] >> 24) & 15,
@@ -267,12 +272,13 @@ static void timer_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
 }
 
 /* Digital GPIO and the board's 2x74HC595 chain. A shift/latch edge only
- * reaches the chain when its PA pin is configured as a digital output.
+ * reaches the chain when its PA pin is configured as an output (input
+ * enable does not gate an output; stock leaves it clear on PA1).
  * Matrix closures pull an enabled input low while a latched column is low.
  * These are wiring/register facts from the guest HAL, not copied driver code. */
 static uint32_t gpio_pins(FM1PocState *m)
 {
-    return m->gpio[0][0] & ~m->gpio[0][2] & m->gpio[0][3];
+    return m->gpio[0][0] & ~m->gpio[0][2];
 }
 static uint64_t gpio_read(void *opaque, hwaddr offset, unsigned size)
 {
@@ -342,8 +348,13 @@ static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
  * transmit of CNT bytes from ADR, shifted MSB first through PA3/PA4 when
  * IOMAP_CON1 bit 17 routes it there. CON uses the SPI0/1 layout (enable
  * bit 0, receive 0x1000, pending 0x8000 cleared by 0x4000); 0x2000 enables
- * the IRQ, as stock relies on. A byte takes 8 x (BAUD + 1) periods of the
- * 60 MHz peripheral clock, the SPI1 timing measured on an FM-1. */
+ * the IRQ, as stock relies on. On an FM-1 a byte takes 8 x (BAUD + 1)
+ * periods of the 60 MHz peripheral clock, as for SPI1 (measured), so
+ * stock's 2-byte scan transfer takes 8 us and its ISR restarts the next one.
+ * At 8 ns per instruction across both cores that interrupt load starves
+ * stock's boot (it never initializes the LCD), so the model stretches each
+ * transfer by SPI2_STRETCH: a scan pass takes about 0.9 ms instead. */
+#define SPI2_STRETCH 10
 #define SPI2_ENABLE 1u
 #define SPI2_RECEIVE 0x1000u
 #define SPI2_IRQ_ENABLE 0x2000u
@@ -381,31 +392,42 @@ static uint64_t spi2_read(void *opaque, hwaddr offset, unsigned size)
                          "unsupported SPI2 register read");
     }
 }
+static void spi2_start(FM1PocState *m, CPUPi32v2State *env)
+{
+    if (!(m->iomap_con1 & 0x20000) || m->spi2_busy) {
+        pi32v2_fail(env, "SPI2 transfer needs an idle, PA-routed controller");
+    }
+    m->spi2_cnt_pending = false;
+    m->spi2_busy = true;
+    m->spi2_pending = false;
+    timer_mod_ns(m->spi2_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+                 DIV_ROUND_UP((uint64_t)m->spi2_cnt * 8 * (m->spi2_baud + 1) *
+                              1000 * SPI2_STRETCH, 60));
+}
 static void spi2_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     FM1PocState *m = opaque;
     CPUPi32v2State *env = current_cpu ? cpu_env(current_cpu) : &m->cpu->env;
     switch (offset) {
-    case 0:
+    case 0: {
         if (value & SPI2_RECEIVE || value & ~0xffffull) {
             pi32v2_fail(env, "unsupported SPI2 control");
         }
+        bool enabling = (value & SPI2_ENABLE) && !(m->spi2_con & SPI2_ENABLE);
         if (value & SPI2_ACK) { m->spi2_pending = false; }
         m->spi2_con = value & ~(SPI2_ACK | SPI2_PENDING);
+        /* Stock writes ADR and CNT, then enables SPI2, and otherwise starts
+         * transfers only from its completion ISR: enabling starts the
+         * pending transfer. Inferred from that sequence, not measured. */
+        if (enabling && m->spi2_cnt_pending) { spi2_start(m, env); }
         break;
+    }
     case 4: m->spi2_baud = value; break;
     case 12: m->spi2_adr = value; break;
     case 16:
         m->spi2_cnt = value;
-        /* Stock writes CNT before enabling; only an enabled write starts. */
-        if (!(m->spi2_con & SPI2_ENABLE)) { break; }
-        if (!(m->iomap_con1 & 0x20000) || m->spi2_busy) {
-            pi32v2_fail(env, "SPI2 transfer needs an idle, PA-routed controller");
-        }
-        m->spi2_busy = true;
-        m->spi2_pending = false;
-        timer_mod_ns(m->spi2_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
-                     DIV_ROUND_UP((uint64_t)value * 8 * (m->spi2_baud + 1) * 1000, 60));
+        m->spi2_cnt_pending = value != 0;
+        if (m->spi2_con & SPI2_ENABLE) { spi2_start(m, env); }
         break;
     default: pi32v2_fail(env, "unsupported SPI2 register write");
     }
@@ -470,6 +492,7 @@ static uint64_t irq_read(void *opaque, hwaddr offset, unsigned size)
                       (m->timers[1].pending ? 0x80000000u : 0);
     case 0x8c: return software_pending(m, CPU(cpu)->cpu_index != 0) << 24;
     case 0xa0: return 0;
+    case 0xa4: return 0;    /* CLR, read by stock's |= acknowledge; as SET (assumed) */
     case 0xa8: return cpu->env.priority_mask;
     default: pi32v2_fail(&cpu->env, "unsupported IRQ register");
     }
@@ -482,8 +505,7 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     if (offset < 0x80 && !(offset & 3)) {
         /* Any source may be configured; only exception 1, tick timer 3,
          * TIMER1 5, audio 11, SPI1 16, SAR ADC 24, SPI2 37, LRCT 44, TIMER4 62,
-         * TIMER5 63 and software
-         * 124-127 are raised. Stock FM-1 firmware
+         * TIMER5 63 and software 120-127 are raised. Stock FM-1 firmware
          * configures sources it never uses in this machine. */
         configs[offset / 4] = value;
         if (offset == 0x1c) { cpu->env.irq_config = value; }
@@ -492,7 +514,7 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     }
     switch (offset) {
     case 0xa0:
-        if (CPU(cpu)->cpu_index || (value & ~0xf0ull)) {
+        if (CPU(cpu)->cpu_index || (value & ~0xffull)) {
             pi32v2_fail(&cpu->env, "unsupported software IRQ request bank or source");
         }
         m->software_latch |= value;
@@ -501,7 +523,7 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         if (value > 7) { pi32v2_fail(&cpu->env, "invalid priority mask"); }
         cpu->env.priority_mask = value; break;
     case 0xa4:
-        if (value != 255 && (value & ~0xf0ull)) {
+        if (value & ~0xffull) {
             pi32v2_fail(&cpu->env, "unsupported IRQ pending clear");
         }
         if (value == 255 && (m->timers[0].pending || m->timers[1].pending ||
