@@ -35,14 +35,13 @@ through the existing SRAM handoff.
 Other SPL parameters remain unknown; no firmware identity selects defaults.
 ROM/SPL execution and ELF loading are unsupported.
 
-The development command line accepts `--qemu -smp 2` with
-`-accel tcg,thread=single` for an experimental second CPU; normal launches
-still use one. Core 1 starts in reset and is
+Launches create both FM-1 cores (`-smp 2`, which requires
+`-accel tcg,thread=single`); the second is experimental. Core 1 starts in reset and is
 released through C1_CON, using the SRAM entry vector at `0x01c7fff8` and an
 RTI startup handoff exercised on hardware. Its registers, interrupt
 configuration, tick timer and stack guards are independent. Both cores share
 SRAM, peripherals, XIP routing and the LOCKSET/LOCKCLR lock. Bank-0 software
-requests 124/125 route through each core's IRQ configuration and acknowledge
+requests 124-127 route through each core's IRQ configuration and acknowledge
 through bank 0. Pause/resume commands suspend and continue instruction execution
 without resetting registers; their status and self-clearing command bits were
 measured on hardware. Bank-1 requests remain unsupported. The boot-ROM reset sequence,

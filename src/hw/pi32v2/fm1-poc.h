@@ -17,6 +17,7 @@
 #include "fm1-uart.h"
 #include "fm1-crc.h"
 #include "fm1-ttmr.h"
+#include "fm1-lrct.h"
 
 #define TYPE_FM1_POC_MACHINE MACHINE_TYPE_NAME("fm1-poc")
 #define FM1_POC_MAX_ALNK_RESETS 16
@@ -46,6 +47,7 @@ struct FM1PocState {
     FM1TimerState timer1;
     qemu_irq irq, alnk_irq;
     qemu_irq irq1;
+    bool adc_irq_level;
     uint32_t irq_configs[32];
     uint32_t software_latch;
     uint32_t gpio[8][8], iomap_con0, iomap_con1;
@@ -64,6 +66,7 @@ struct FM1PocState {
     FM1PocCRC crc;
     FM1PocTTMR ttmr;
     FM1PocTTMR ttmr1;
+    FM1PocLRCT lrct;
     unsigned frames;
     const char *frame_dir;
     QEMUTimer *display_key_timer;

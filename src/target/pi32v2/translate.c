@@ -13,7 +13,7 @@ typedef struct PiDisasContext {
     DisasContextBase base;
     CPUPi32v2State *env;
     uint32_t stop;
-    bool count_enabled, repeating, in_irq;
+    bool count_enabled, repeating, predicated, in_irq;
     TCGv_i32 inputs[16];
 } PiDisasContext;
 static TCGv_i32 gpr[16], spr[16], pc;
@@ -60,6 +60,15 @@ static uint16_t fetch(PiDisasContext *d, uint32_t addr)
 static void count(PiDisasContext *d)
 {
     if (d->count_enabled) { tcg_gen_addi_i64(instructions, instructions, 1); }
+}
+/* A final selected RTS, pop PC or GOTO retires its IF arm (or REP body) at
+ * its sequential boundary before leaving it. Outside such blocks there is
+ * nothing to retire. */
+static void retire_final_transfer(PiDisasContext *d, uint32_t next)
+{
+    if (d->predicated || d->repeating) {
+        gen_helper_pi32v2_return_end(tcg_env, tcg_constant_i32(next));
+    }
 }
 static void set_call_return(PiDisasContext *d, uint32_t next)
 {
@@ -264,6 +273,7 @@ static void init_disas(DisasContextBase *db, CPUState *cs)
     d->stop = PI32V2_CPU(cs)->stop_pc;
     d->count_enabled = true;
     d->repeating = d->env->repeat_end != 0;
+    d->predicated = d->env->predicate_end != 0;   /* part of the TB flags */
     d->in_irq = d->env->in_irq;          /* part of the TB flags */
 }
 static void tb_start(DisasContextBase *db, CPUState *cs) {}
@@ -331,6 +341,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0x1442) {
         /* Vendor 1442: USP = SP in stock's initial task handoff. */
         tcg_gen_mov_i32(spr[USP], spr[SP]);
+    } else if (op == 0x1440 || op == 0x1441) {
+        /* Vendor 1440/1441: SP = USP or SSP in stock's task switch. */
+        tcg_gen_mov_i32(spr[SP], spr[op & 1 ? SSP : USP]);
+        check_stack(d);
     } else if ((op & 0xfff8) == 0x14c0) {
         tcg_gen_movi_i32(gpr[8 + (op & 7)], 0);
     } else if ((op & 0xfff0) == 0x1480) {
@@ -766,14 +780,17 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         next = here + 4;
     } else if (op == 0xe86c) {
         uint16_t x = fetch(d, here + 2);
-        if (x & 3) { goto illegal; }
+        if ((x & 3) != 0 && (x & 3) != 2) { goto illegal; }
         /* Vendor E86C 3704 and separate executable probes establish an
-         * immediate left shift; the pinned SLEIGH has no exact constructor. */
+         * immediate left shift; the pinned SLEIGH has no exact constructor.
+         * Kind 2 is the vendor's ">>=", its logical right-shift operator as
+         * in register shifts; ">>>=" and "<<<=" (kinds 3 and 1) stay open. */
         translator_io_start(db);
         TCGv_i32 addr = tcg_temp_new_i32(), value = tcg_temp_new_i32();
         tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), x & 252);
         load(d, value, addr, MO_LEUL | MO_ALIGN);
-        tcg_gen_shli_i32(value, value, (x >> 8) & 15);
+        if (x & 2) { tcg_gen_shri_i32(value, value, (x >> 8) & 15); }
+        else { tcg_gen_shli_i32(value, value, (x >> 8) & 15); }
         /* Count zero still performs both accesses; a failed write does not
          * undo any preceding MMIO read effect. */
         store(d, value, addr, MO_LEUL | MO_ALIGN);
@@ -1212,6 +1229,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0x0400) {
         TCGv_i32 dest = tcg_temp_new_i32();
         pop(d, dest);
+        retire_final_transfer(d, next);
         count(d); dynamic_jump(d, dest);
     } else if ((op & 0xff00) == 0x0300 || (op & 0xe00f) == 0x8000) {
         /* The immediate form repeats ((op >> 8) & 31) + 1 times; the helper
@@ -1288,14 +1306,19 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             pop(d, dest);
             count(d); dynamic_jump(d, dest);
         }
-    } else if (op == 0x04e9 || op == 0x04e8) {
-        push(d, spr[PSR]); push(d, spr[RETS]);
-        if (op & 1) { push(d, spr[RETI]); }
-    } else if (op == 0x04a9 || op == 0x04a8) {
-        /* Stock's first task restore uses 04A8: the same special-register
-         * stack ordering as 04A9, without RETI. */
-        if (op & 1) { pop(d, spr[RETI]); }
-        pop(d, spr[RETS]); pop(d, spr[PSR]);
+    } else if (((op & 0xffc0) == 0x04c0 || (op & 0xffc0) == 0x0480) &&
+               (op & 63) && !(op & 63 & ~0x29)) {
+        /* Special-register list: bits 0, 3 and 5 name RETI, RETS and PSR
+         * (their register numbers). Push stores PSR, RETS, RETI in that
+         * order; pop reverses it. Stock uses 04E9/04A9, 04E8/04A8 and the
+         * RETI-only 04C1/0481. */
+        static const unsigned order[] = {PSR, RETS, RETI};
+        bool is_push = (op & 0xffc0) == 0x04c0;
+        for (unsigned i = 0; i < 3; i++) {
+            unsigned reg = order[is_push ? i : 2 - i];
+            if (!(op & (1u << reg))) { continue; }
+            if (is_push) { push(d, spr[reg]); } else { pop(d, spr[reg]); }
+        }
     } else if ((op & 0xfff0) == 0xea00) {
         int32_t delta = (int16_t)fetch(d, here + 2) * 2;
         next = here + 4;
@@ -1318,9 +1341,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
         next = here + 4;
         /* The long GOTO shares CALL's displacement fields but preserves RETS. */
+        retire_final_transfer(d, next);
         count(d); record_branch(d); chain_jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe00c) == 0x8004) {
         int32_t delta = sext(((op & 3) << 10) | (((op >> 4) & 15) << 6) | (((op >> 8) & 31) << 1), 12);
+        retire_final_transfer(d, next);
         count(d); record_branch(d); chain_jump(d, next + delta, 0); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe08f) == 0x8001) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
@@ -1495,7 +1520,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         gen_helper_pi32v2_flush(tcg_env, read_gpr(d, op & 15));
         db->is_jmp = DISAS_EXIT;
     } else if (op == 0x0080) {
-        gen_helper_pi32v2_return_end(tcg_env, tcg_constant_i32(next));
+        retire_final_transfer(d, next);
         count(d); dynamic_jump(d, spr[RETS]);
     } else if (op == 0x0081) {
         count(d); record_branch(d); gen_helper_pi32v2_rti(tcg_env); tcg_gen_exit_tb(NULL, 0);
@@ -1568,6 +1593,7 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
         if (!(x & 1) && base == reg) { return -1; }
         return (1u << base) | (x & 1 ? 0 : 1u << reg);
     }
+    if (op == 0xeed2) { return 1u << ((fetch(d, here + 2) >> 4) & 15); }
     if ((op & 0xe008) == 0x6000) { return op & 128 ? 0 : 1u << (op & 7); }
     if ((op & 0xe088) == 0x6008) { return 1u << (op & 7); }
     /* Reached F101/3020 + 60B9 stores the incoming low halfword,

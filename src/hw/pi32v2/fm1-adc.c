@@ -8,25 +8,45 @@
  * restart. Enable alone does not start; identical no-kick writes preserve
  * phase, busy reconfiguration without a kick fails. Disable cancels while
  * retaining result/pending until a kick. Local reset clears only SAR state.
- * Only divider6/bit3/startupF and polling are supported when enabled. The
- * source clock, bit3 meaning, physical latency/resolution and IRQ24 behavior
- * remain unknown/unimplemented. Shared WLA state is owned elsewhere. */
+ * Only divider6/bit3/startupF are supported when enabled. IRQ24 follows
+ * pending while bit5 enables it, as the other device sources do; stock sets
+ * bit5 and polls. The source clock, bit3 meaning and physical
+ * latency/resolution remain unknown. Shared WLA state is owned elsewhere. */
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "hw/core/resettable.h"
+#include "hw/core/irq.h"
 #include "fm1-adc.h"
 
 #define ADC_ENABLE 0x10u
 #define ADC_IRQ_ENABLE 0x20u
 #define ADC_KICK 0x40u
 #define ADC_PENDING 0x80u
-#define ADC_TIMING_MASK 0xf00fu
+#define ADC_TIMING_MASK 0xf00eu    /* bit 0, divider 6 or 7: same functional timing */
 #define ADC_TIMING_SUPPORTED 0xf00eu
+#define ADC_INTERNAL_CHANNEL 15u
+
+/* Channel 15 is the chip's internal analog input, measured on a real FM-1
+ * with stock's bias setup (WLA_CON0 bias enable, IGEN_SEL 2): 217-220
+ * with TEST_TO_ADC_EN clear, 246-247 through the test route with
+ * TEST_TO_ADC_S 4. Other test sources remain unmeasured. */
+static bool internal_raw(FM1PocADC *a, uint32_t *raw)
+{
+    uint32_t wla = fm1_analog_get_wla_con0(a->analog);
+    if (!(wla & FM1_ANALOG_TEST_TO_ADC)) { *raw = 218; return true; }
+    if (((wla >> 15) & 7) == 4) { *raw = 246; return true; }
+    return false;
+}
 
 static G_NORETURN void adc_fail(FM1PocADC *a, const char *reason)
 {
     pi32v2_fail(&a->cpu->env, reason);
+}
+
+static void adc_update_irq(FM1PocADC *a)
+{
+    qemu_set_irq(a->irq, (a->control & ADC_IRQ_ENABLE) && a->pending);
 }
 
 static void adc_completed(void *opaque)
@@ -41,6 +61,7 @@ static void adc_completed(void *opaque)
     a->pending = true;
     a->busy = false;
     a->deadline = 0;
+    adc_update_irq(a);
 }
 
 static uint64_t adc_read(void *opaque, hwaddr offset, unsigned size)
@@ -68,9 +89,6 @@ static void adc_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     if (value & ~0xffffull) {
         adc_fail(a, "unsupported SAR ADC control fields");
     }
-    if (value & ADC_IRQ_ENABLE) {
-        adc_fail(a, "SAR ADC IRQ24 is unimplemented");
-    }
     /* Status copied by a guest RMW is ignored. The command is recognized
      * from this payload, independent of previous control/readback bits. */
     uint32_t control = value & ~(ADC_KICK | ADC_PENDING);
@@ -82,19 +100,25 @@ static void adc_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         if ((control & ADC_TIMING_MASK) != ADC_TIMING_SUPPORTED) {
             adc_fail(a, "unsupported SAR ADC enabled timing configuration");
         }
-        if (!(a->raw_channels & (1u << channel))) {
+        if (channel != ADC_INTERNAL_CHANNEL && !(a->raw_channels & (1u << channel))) {
             adc_fail(a, "SAR ADC channel has no board raw input");
         }
         if (a->busy && !kick && control != a->control) {
             adc_fail(a, "SAR ADC configuration changed while busy without a kick");
         }
-        if (kick) {
+        if (kick && channel == ADC_INTERNAL_CHANNEL) {
+            if (!internal_raw(a, &raw)) {
+                adc_fail(a, "unsupported SAR ADC analog-test input routing");
+            }
+        } else if (kick) {
             if (fm1_analog_get_wla_con0(a->analog) & FM1_ANALOG_TEST_TO_ADC) {
                 adc_fail(a, "unsupported SAR ADC analog-test input routing");
             }
             if (!a->read_raw(a->raw_opaque, channel, &raw)) {
                 adc_fail(a, "SAR ADC board raw input is unavailable");
             }
+        }
+        if (kick) {
             int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
             if (now < 0 || now > INT64_MAX - FM1_ADC_CONVERSION_NS) {
                 adc_fail(a, "SAR ADC virtual completion deadline overflow");
@@ -120,6 +144,7 @@ static void adc_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         a->deadline = deadline;
         timer_mod_ns(a->timer, deadline);
     }
+    adc_update_irq(a);
 }
 
 static void validate_analog_write(void *opaque, uint32_t old_value,
@@ -149,6 +174,7 @@ static void adc_reset_enter(Object *obj, ResetType type)
     a->control = a->result = a->latched_raw = 0;
     a->pending = a->busy = false;
     a->deadline = 0;
+    adc_update_irq(a);
     /* Keep board providers, shared analog word/validator and QOM wiring. */
 }
 
@@ -160,6 +186,7 @@ static void adc_instance_init(Object *obj)
     a->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, adc_completed, a);
     memory_region_init_io(&a->mmio, obj, &adc_ops, a, "fm1.sar-adc", 8);
     sysbus_init_mmio(sbd, &a->mmio);
+    sysbus_init_irq(sbd, &a->irq);
 }
 
 static void adc_realize(DeviceState *dev, Error **errp)

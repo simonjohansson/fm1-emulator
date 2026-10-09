@@ -23,6 +23,21 @@ static bool has_work(CPUState *cs)
            cpu_test_interrupt(cs, CPU_INTERRUPT_HARD);
 }
 
+/* The writing vCPU leaves its TB chain at the next TB entry but keeps its
+ * round-robin slice, as tcg_handle_interrupt does for its own CPU. Its
+ * single-threaded peers are not executing and look up afresh when they
+ * run; kicking one would end the writer's slice instead. That would let a
+ * peer run against half-updated guard registers, which the other hardware
+ * core never observes between adjacent stores. */
+void pi32v2_leave_chain(CPUState *cs)
+{
+    if (cs == current_cpu) {
+        qatomic_set(&cs->neg.icount_decr.u16.high, -1);
+    } else if (!current_cpu) {
+        cpu_exit(cs);
+    }
+}
+
 static TCGTBCPUState get_tb_state(CPUState *cs)
 {
     CPUPi32v2State *env = cpu_env(cs);
@@ -93,8 +108,9 @@ static bool interrupt(CPUState *cs, int request)
         !cpu->ops->select_irq(e, &number, &priority)) {
         return false;
     }
-    if ((number != 3 && number != 11 && number != 63 &&
-         number != 124 && number != 125) || priority > 7) {
+    if ((number != 3 && number != 5 && number != 11 && number != 24 && number != 44 &&
+         number != 63 &&
+         (number < 124 || number > 127)) || priority > 7) {
         pi32v2_fail(e, "unsupported selected IRQ source or priority");
     }
     uint32_t vector = 0x01c7fe00 + number * 4;

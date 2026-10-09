@@ -186,8 +186,8 @@ uint32_t HELPER(pi32v2_call_return)(CPUPi32v2State *env, uint32_t next)
 
 void HELPER(pi32v2_return_end)(CPUPi32v2State *env, uint32_t next)
 {
-    /* A final selected RTS retires the arm at its sequential boundary before
-     * transferring to RETS. Match CALL's bounded policy; THEN with ELSE stays
+    /* A final selected RTS, "pc = [sp++]" or GOTO retires the arm at its
+     * sequential boundary before transferring to its target. Match CALL's bounded policy; THEN with ELSE stays
      * explicit until that control-transfer contract is established. */
     if (next == env->predicate_end && env->predicate_from) {
         helper_fail(env, "final THEN return with ELSE is unsupported");

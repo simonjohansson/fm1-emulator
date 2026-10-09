@@ -94,4 +94,6 @@ void pi32v2_check_stack(CPUPi32v2State *env);
 G_NORETURN void pi32v2_guard_fault(CPUPi32v2State *env, unsigned kind,
                                    uint32_t address, unsigned size);
 G_NORETURN void pi32v2_fail(CPUPi32v2State *env, const char *reason);
+/* Look up cs's next TB afresh after fetch-guard state changed. */
+void pi32v2_leave_chain(CPUState *cs);
 #endif

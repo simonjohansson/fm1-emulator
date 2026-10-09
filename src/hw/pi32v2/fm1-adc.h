@@ -25,6 +25,7 @@ struct FM1PocADC {
     uint16_t raw_channels;
     MemoryRegion mmio;
     QEMUTimer *timer;
+    qemu_irq irq;
     uint32_t control, result, latched_raw;
     bool pending, busy, validator_registered;
     int64_t deadline;

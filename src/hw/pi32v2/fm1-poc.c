@@ -87,24 +87,27 @@ uint32_t fm1_timer_counter(FM1TimerState *t)
 {
     return (t->counter + elapsed_ticks(t)) % period_ticks(t);
 }
-/* Bank-0 ILAT bits 4/5 are sources 124/125. Hardware observes the request
+/* Bank-0 ILAT bits 4-7 are sources 124-127. Hardware observes the request
  * through each running core's enabled-source configuration; bank-1 clear
- * does not acknowledge a bank-0 request. Bank-1 SET remains unqualified. */
+ * does not acknowledge a bank-0 request. SET reads as zero (measured).
+ * Bits 0-3 and bank-1 SET remain unqualified. */
 static uint32_t software_pending(FM1PocState *m, bool core1)
 {
     if (core1 && (!m->cpu1 || m->cpu1->held_reset)) { return 0; }
     uint32_t config = (core1 ? m->irq1_configs : m->irq_configs)[15];
-    uint32_t enabled = ((config & 0x00010000) ? 16 : 0) |
-                       ((config & 0x00100000) ? 32 : 0);
+    uint32_t enabled = 0;
+    for (unsigned bit = 4; bit < 8; bit++) {
+        enabled |= (config >> (bit * 4) & 1) << bit;
+    }
     return m->software_latch & enabled;
 }
 static void update_irq(FM1PocState *m)
 {
-    qemu_set_irq(m->irq, m->timers[1].pending || m->alnk_irq_level ||
-                 m->ttmr.pending || software_pending(m, false));
+    bool shared = m->timer1.pending || m->timers[1].pending || m->alnk_irq_level ||
+                  m->adc_irq_level || m->lrct.done;
+    qemu_set_irq(m->irq, shared || m->ttmr.pending || software_pending(m, false));
     if (m->cpu1) {
-        qemu_set_irq(m->irq1, m->timers[1].pending || m->alnk_irq_level ||
-                     m->ttmr1.pending || software_pending(m, true));
+        qemu_set_irq(m->irq1, shared || m->ttmr1.pending || software_pending(m, true));
     }
 }
 static void ttmr_irq(void *opaque) { update_irq(opaque); }
@@ -116,24 +119,31 @@ static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *pr
     bool core1 = CPU(env_archcpu(e))->cpu_index != 0;
     const uint32_t *configs = core1 ? m->irq1_configs : m->irq_configs;
     uint32_t soft = software_pending(m, core1);
-    const unsigned sources[] = {3, 11, 63, 124, 125};
+    const unsigned sources[] = {3, 5, 11, 24, 44, 63, 124, 125, 126, 127};
     const bool pending[] = {core1 ? m->ttmr1.pending : m->ttmr.pending,
-                            m->alnk_irq_level, m->timers[1].pending,
-                            soft & 16, soft & 32};
+                            m->timer1.pending, m->alnk_irq_level, m->adc_irq_level,
+                            m->lrct.done,
+                            m->timers[1].pending,
+                            soft & 16, soft & 32, soft & 64, soft & 128};
     const unsigned config[] = {(configs[0] >> 12) & 15,
+                               (configs[0] >> 20) & 15,
                                (configs[1] >> 12) & 15,
+                               configs[3] & 15,
+                               (configs[5] >> 16) & 15,
                                e->irq_config >> 28,
                                (configs[15] >> 16) & 15,
-                               (configs[15] >> 20) & 15};
+                               (configs[15] >> 20) & 15,
+                               (configs[15] >> 24) & 15,
+                               (configs[15] >> 28) & 15};
     bool selected = false;
     for (unsigned i = 0; i < G_N_ELEMENTS(sources); i++) {
         unsigned level = config[i] >> 1;
         if (!pending[i] || !(config[i] & 1) || level < e->priority_mask) {
             continue;
         }
-        if (selected && level == *priority) {
-            pi32v2_fail(e, "equal-priority IRQ arbitration is unsupported");
-        }
+        /* Equal priorities take the lower source number first. This is the
+         * usual convention, assumed rather than measured on an FM-1;
+         * sources[] is in ascending order. */
         if (!selected || level > *priority) {
             *number = sources[i];
             *priority = level;
@@ -141,6 +151,12 @@ static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *pr
         }
     }
     return selected;
+}
+static void adc_irq_input(void *opaque, int number, int level)
+{
+    FM1PocState *m = opaque;
+    m->adc_irq_level = level;
+    update_irq(m);
 }
 static void alnk_irq_input(void *opaque, int number, int level)
 {
@@ -150,11 +166,9 @@ static void alnk_irq_input(void *opaque, int number, int level)
 }
 static void timer_irq(FM1TimerState *t)
 {
-    if (t->number == 5) { update_irq(t->machine); }
+    if (t->number != 4) { update_irq(t->machine); }
     else if (t->pending) {
-        g_autofree char *reason = g_strdup_printf("TIMER%u IRQ%u is unimplemented",
-                                                  t->number, t->number == 1 ? 5 : 62);
-        pi32v2_fail(&t->machine->cpu->env, reason);
+        pi32v2_fail(&t->machine->cpu->env, "TIMER4 IRQ62 is unimplemented");
     }
 }
 static void fm1_timer_expired(void *opaque)
@@ -332,9 +346,11 @@ static uint64_t irq_read(void *opaque, hwaddr offset, unsigned size)
     switch (offset) {
     case 0x80:
         return ((CPU(cpu)->cpu_index ? m->ttmr1.pending : m->ttmr.pending) ? 1u << 3 : 0) |
-               (m->alnk_irq_level ? 1u << 11 : 0);
-    case 0x84: return m->timers[1].pending ? 0x80000000u : 0;
+               (m->timer1.pending ? 1u << 5 : 0) | (m->alnk_irq_level ? 1u << 11 : 0) |
+               (m->adc_irq_level ? 1u << 24 : 0);
+    case 0x84: return (m->lrct.done ? 1u << 12 : 0) | (m->timers[1].pending ? 0x80000000u : 0);
     case 0x8c: return software_pending(m, CPU(cpu)->cpu_index != 0) << 24;
+    case 0xa0: return 0;
     case 0xa8: return cpu->env.priority_mask;
     default: pi32v2_fail(&cpu->env, "unsupported IRQ register");
     }
@@ -346,7 +362,8 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     uint32_t *configs = CPU(cpu)->cpu_index ? m->irq1_configs : m->irq_configs;
     if (offset < 0x80 && !(offset & 3)) {
         /* Any source may be configured; only exception 1, tick timer 3,
-         * audio 11, TIMER5 63 and software 124/125 are raised. Stock FM-1 firmware
+         * TIMER1 5, audio 11, SAR ADC 24, LRCT 44, TIMER5 63 and software 124-127 are
+         * raised. Stock FM-1 firmware
          * configures sources it never uses in this machine. */
         configs[offset / 4] = value;
         if (offset == 0x1c) { cpu->env.irq_config = value; }
@@ -355,7 +372,7 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     }
     switch (offset) {
     case 0xa0:
-        if (CPU(cpu)->cpu_index || (value & ~0x30ull)) {
+        if (CPU(cpu)->cpu_index || (value & ~0xf0ull)) {
             pi32v2_fail(&cpu->env, "unsupported software IRQ request bank or source");
         }
         m->software_latch |= value;
@@ -364,11 +381,12 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
         if (value > 7) { pi32v2_fail(&cpu->env, "invalid priority mask"); }
         cpu->env.priority_mask = value; break;
     case 0xa4:
-        if (value != 255 && (value & ~0x30ull)) {
+        if (value != 255 && (value & ~0xf0ull)) {
             pi32v2_fail(&cpu->env, "unsupported IRQ pending clear");
         }
-        if (value == 255 && m->timers[1].pending) {
-            pi32v2_fail(&cpu->env, "IRQ clear requires TIMER5 device acknowledgment");
+        if (value == 255 && (m->timers[1].pending || m->timer1.pending || m->lrct.done ||
+                             m->adc_irq_level)) {
+            pi32v2_fail(&cpu->env, "IRQ clear requires a device acknowledgment");
         }
         if (!CPU(cpu)->cpu_index) { m->software_latch &= ~value; }
         break;
@@ -593,11 +611,13 @@ static void machine_init(MachineState *ms)
     fm1_adc_bind(&m->adc, m->cpu, &m->analog, (1u << 3) | (1u << 4),
                  board_adc_raw, m);
     sysbus_realize(SYS_BUS_DEVICE(&m->adc), &error_fatal);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&m->adc), 0, qemu_allocate_irq(adc_irq_input, m, 24));
     fm1_sfr_map(0x13100, sysbus_mmio_get_region(SYS_BUS_DEVICE(&m->adc), 0));
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
     fm1_uart_init(&m->uart, OBJECT(m), m->cpu);
     fm1_crc_init(&m->crc, OBJECT(m), m->cpu);
     fm1_ttmr_init(&m->ttmr, OBJECT(m), m->cpu, ttmr_irq, m);
+    fm1_lrct_init(&m->lrct, OBJECT(m), &m->system, ttmr_irq, m);
     if (m->cpu1) {
         fm1_ttmr_init(&m->ttmr1, OBJECT(m), m->cpu1, ttmr_irq, m);
     }

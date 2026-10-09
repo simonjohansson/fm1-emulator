@@ -21,18 +21,42 @@
 
 static G_NORETURN void system_fail(FM1PocSystem *s, const char *reason)
 {
-    pi32v2_fail(current_cpu ? cpu_env(current_cpu) : &s->cpu->env, reason);
+    /* A P33 byte completes on a timer that may run while the peer core is
+     * current; attribute its fault to the core that started the byte. */
+    pi32v2_fail(s->completing_transfer ? &s->transfer_cpu->env :
+                current_cpu ? cpu_env(current_cpu) : &s->cpu->env, reason);
 }
 
 /* Plain P33 bytes stock FM-1 firmware touches, as a real FM-1 holds them
- * after its SPL (measured). Address bit 10 marks the RTC domain. */
+ * after its SPL (measured). Address bit 10 marks the RTC domain. Analog,
+ * PMU, low-power timer and wake-up configuration is stored only: sleep,
+ * low-power timers and wake-up events are not modeled. */
 static const struct { uint16_t address; uint8_t handoff; } p33_plain[] = {
+    {0x00, 0x77}, {0x01, 0x60}, {0x02, 0x18},   /* P3_ANA_CON0-2 */
+    {0x03, 0x00}, {0x04, 0x00}, {0x05, 0x47},   /* P3_ANA_CON3-5 */
+    {0x06, 0x0b}, {0x07, 0x00}, {0x08, 0x00},   /* P3_ANA_CON6-8 */
+    {0x09, 0x1b},                               /* P3_ANA_CON9 */
     {0x11, 0x05},           /* P3_VLVD_CON; no supply-voltage events */
+    {0x13, 0x00}, {0x14, 0x00}, /* P3_LRC_CON0/1; CON0 bit 0 runs RC32K (fm1-lrct.c) */
+    {0x16, 0x00},           /* P3_ANA_KEEP */
+    {0x30, 0x80},           /* P3_PMU_CON0 */
     {0x31, 0x80},           /* written 0xc0 by stock firmware */
+    {0x32, 0x00}, {0x33, 0x00},                 /* P3_PMU_CON2-3 */
+    {0x36, 0x00}, {0x37, 0x00},                 /* P3_LP_PRP0-1 */
+    {0x38, 0x00}, {0x39, 0x00}, {0x3a, 0x00}, {0x3b, 0x00}, /* P3_LP_STB0..6 timing */
+    {0x54, 0x00},           /* P3_LP_TMR0_CLK */
+    {0x58, 0x00}, {0x59, 0x00},                 /* P3_LP_TMR0/1_CON */
+    {0x72, 0x00},           /* P3_IVS_SET */
+    {0x74, 0x00},           /* P3_WLDO12_AUTO */
+    {0x90, 0x00},           /* P3_WKUP_EN */
+    {0x92, 0x00},           /* P3_WKUP_CPND; no modeled wake-up pending to clear */
     {0x93, 0xff},           /* P3_WKUP_PND */
     {0x94, 0x08},           /* P3_PINR_CON; no external reset-pin events */
+    {0x9b, 0x01},           /* P3_PR_DIE */
     {0x400 | 0xa8, 0x02},   /* R3_WKUP_SRC */
+    {0x400 | 0xab, 0xa0},
 };
+QEMU_BUILD_BUG_ON(ARRAY_SIZE(p33_plain) != FM1_P33_PLAIN_COUNT);
 
 static int p33_plain_index(uint16_t address)
 {
@@ -48,6 +72,11 @@ static bool p33_latch(uint16_t address)
            (address >= 0xd0 && address <= 0xdf);
 }
 
+bool fm1_system_lrc_enabled(FM1PocSystem *s)
+{
+    return s->p33_plain[p33_plain_index(0x13)] & 1;
+}
+
 static uint8_t register_read(FM1PocSystem *s, uint16_t address)
 {
     int plain = p33_plain_index(address);
@@ -59,7 +88,11 @@ static uint8_t register_read(FM1PocSystem *s, uint16_t address)
     case 0x17: return s->valid_keep;
     case 0x80: return s->watchdog_control;
     case 0xa0: return s->power_control;
-    default: system_fail(s, "unsupported P33 register address");
+    default: {
+        g_autofree char *reason = g_strdup_printf("unsupported P33 register address 0x%03x",
+                                                  address);
+        system_fail(s, reason);
+    }
     }
 }
 
@@ -127,6 +160,7 @@ static void p33_complete(void *opaque)
 {
     FM1PocSystem *s = opaque;
     uint8_t byte = s->transfer_byte;
+    s->completing_transfer = true;
     switch (s->phase) {
     case 0:
         if ((byte & 0x1c) || ((byte & 0x80) && (byte & 0x60))) {
@@ -139,7 +173,12 @@ static void p33_complete(void *opaque)
         s->address |= byte;
         register_read(s, s->address); /* Reject unknown addresses explicitly. */
         break;
-    case 2: {
+    default: {
+        /* Stock writes P3_LP_STB0..6 (0x38-0x3b) as one transaction: the
+         * address, then a data byte per register. The address therefore
+         * advances after each data byte; inferred from stock, not measured.
+         * Read bursts remain unsupported (refused at transfer start). */
+        if (s->phase > 2) { s->address = (s->address & 0x400) | ((s->address + 1) & 0x3ff); }
         uint8_t old = register_read(s, s->address);
         if (s->command & 0x80) {
             byte = old;
@@ -152,11 +191,11 @@ static void p33_complete(void *opaque)
             }
             register_write(s, s->address, byte);
         }
-        s->p33_transactions++;
+        if (s->phase == 2) { s->p33_transactions++; }
         break;
     }
-    default: system_fail(s, "P33 transaction exceeds three bytes");
     }
+    s->completing_transfer = false;
     s->phase++;
     s->p33_data = byte;
     s->p33_busy = false;
@@ -189,17 +228,19 @@ static void p33_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
     if (s->p33_busy) { system_fail(s, "P33 control changed during byte transfer"); }
     bool selected = value & P33_CS;
     if (selected != !!(s->p33_control & P33_CS)) {
-        if (!selected && s->phase != 3) {
+        if (!selected && s->phase < 3) {
             system_fail(s, "P33 chip select ends an incomplete transaction");
         }
         s->phase = 0;
     }
     s->p33_control = value & (P33_CS | P33_DIVIDER | P33_RTC);
     if (value & P33_START) {
-        if (!selected || s->phase >= 3) {
+        /* Writes may continue with further data bytes (see p33_complete). */
+        if (!selected || (s->phase >= 3 && (s->command & 0x80))) {
             system_fail(s, "P33 transfer requires an active three-byte transaction");
         }
         s->transfer_byte = s->p33_data;
+        s->transfer_cpu = current_cpu ? PI32V2_CPU(current_cpu) : s->cpu;
         s->p33_busy = true;
         timer_mod_ns(s->p33_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000);
     }
@@ -406,7 +447,7 @@ static void debug_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
         CPUState *cs;
         CPU_FOREACH(cs) {
             cpu_env(cs)->fetch_epoch = s->fetch_epoch;
-            cpu_exit(cs);
+            pi32v2_leave_chain(cs);
         }
         return;
     }

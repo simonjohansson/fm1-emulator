@@ -138,6 +138,9 @@ static void fm1_launcher_arguments(int *argc, char ***argv)
     FM1_LAUNCHER_ARG("FM-1");
     FM1_LAUNCHER_ARG("-M");
     FM1_LAUNCHER_ARG("fm1-poc");
+    /* Both FM-1 cores; core 1 stays in reset until firmware releases it. */
+    FM1_LAUNCHER_ARG("-smp");
+    FM1_LAUNCHER_ARG("2");
     FM1_LAUNCHER_ARG("-accel");
     FM1_LAUNCHER_ARG("tcg,thread=single");
     FM1_LAUNCHER_ARG("-icount");

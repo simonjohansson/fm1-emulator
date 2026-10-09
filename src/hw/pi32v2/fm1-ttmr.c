@@ -62,7 +62,9 @@ static void ttmr_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
     t->counter = counter(t);
     switch (offset) {
     case 0:
-        if (value & ~(uint64_t)(TTMR_ENABLE | TTMR_CLEAR)) {
+        /* Bit 7 is read-only status: stock acknowledges with CON |= 0x40,
+         * writing back the pending bit it just read. */
+        if (value & ~(uint64_t)(TTMR_ENABLE | TTMR_CLEAR | TTMR_PENDING)) {
             pi32v2_fail(&t->cpu->env, "unsupported TTMR control bits");
         }
         if (value & TTMR_CLEAR) {

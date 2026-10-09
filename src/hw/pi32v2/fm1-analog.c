@@ -1,6 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* Fresh interface model from pinned SDK register/field facts. Only WLA_CON0
- * bit14 changes are supported. Preserve all other initial fields rather than
+/* Fresh interface model from pinned SDK register/field facts. WLA_CON0
+ * bit14 (TEST_TO_ADC_EN), its source TEST_TO_ADC_S in bits 15-17, and the
+ * RWF bias fields in bits 0-7 (enable, IGEN_SEL, test output and
+ * selection), which stock configures and nothing modeled observes, may
+ * change. The ADC validator freezes routing during conversions, and a
+ * conversion through the test route still faults. Preserve all other initial fields rather than
  * claiming ADC ownership or inventing analog-block reset behavior. */
 #include "qemu/osdep.h"
 #include "fm1-analog.h"
@@ -23,7 +27,7 @@ static void analog_write(void *opaque, hwaddr offset, uint64_t value,
     if (offset || size != 4) {
         pi32v2_fail(&a->cpu->env, "unsupported WLA_CON0 register write or width");
     }
-    if ((value ^ a->wla_con0) & ~(uint64_t)FM1_ANALOG_TEST_TO_ADC) {
+    if ((value ^ a->wla_con0) & ~(uint64_t)(FM1_ANALOG_TEST_TO_ADC | 0x380ff)) {
         pi32v2_fail(&a->cpu->env, "unsupported WLA_CON0 field change");
     }
     /* Consumers may reject a supported field change while active. Both the

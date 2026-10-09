@@ -70,7 +70,7 @@ static void update_xip(FM1PocNOR *nor)
     CPU_FOREACH(cs) {
         if (cpu_env(cs)->xip_fetch != on) {
             cpu_env(cs)->xip_fetch = on;
-            cpu_exit(cs);
+            pi32v2_leave_chain(cs);
         }
     }
 }
@@ -106,12 +106,12 @@ static void command_start(FM1PocNOR *nor, uint8_t command)
     switch (command) {
     case 0x9f: nor->jedec_commands++; break;
     case 0x05: case 0x35: nor->status_commands++; break;
-    case 0x0b: nor->read_commands++; break;
+    case 0x03: case 0x0b: nor->read_commands++; break;
     case 0x02:
         memset(nor->page_buffer, 0xff, sizeof(nor->page_buffer));
         nor->program_data = false;
         break;
-    case 0x04: case 0x06: case 0x20: break;
+    case 0x04: case 0x06: case 0x20: case 0x4b: break;
     default: {
         g_autofree char *reason = g_strdup_printf("unsupported NOR command 0x%02x", command);
         nor_fail(nor, reason);
@@ -126,8 +126,8 @@ static uint8_t transfer_byte(FM1PocNOR *nor)
             command_start(nor, nor->transfer_byte);
         } else if (nor->ignore_command) {
             return 0xff;
-        } else if ((nor->command == 0x0b || nor->command == 0x02 ||
-                    nor->command == 0x20) && nor->phase < 3) {
+        } else if ((nor->command == 0x03 || nor->command == 0x0b ||
+                    nor->command == 0x02 || nor->command == 0x20) && nor->phase < 3) {
             nor->address = (nor->address << 8) | nor->transfer_byte;
             nor->phase++;
             if (nor->phase == 3) {
@@ -136,6 +136,9 @@ static uint8_t transfer_byte(FM1PocNOR *nor)
             }
         } else if (nor->command == 0x0b && nor->phase == 3) {
             /* Fast read has one dummy byte after the 24-bit address. */
+            nor->phase++;
+        } else if (nor->command == 0x4b && nor->phase < 4) {
+            /* P25Q80H unique-ID read: four dummy bytes precede the ID. */
             nor->phase++;
         } else if (nor->command == 0x02 && nor->phase == 3) {
             /* Page wrap retains only the last byte supplied for each slot;
@@ -163,9 +166,19 @@ static uint8_t transfer_byte(FM1PocNOR *nor)
     case 0x35:
         nor->phase = 1;
         return 0; /* No modeled SR2 configuration bits. */
-    case 0x0b:
-        if (nor->phase != 4) {
-            nor_fail(nor, "NOR fast read before address/dummy completion");
+    case 0x4b: {
+        /* The 128-bit unique ID read twice identically from a real FM-1. */
+        static const uint8_t uid[] = {0x41, 0x50, 0x35, 0x44, 0x33, 0x33, 0x36, 0x0f,
+                                      0x00, 0x36, 0xea, 0x5c, 0x07, 0x20, 0xdc, 0x78};
+        if (nor->phase < 4 || nor->phase >= 4 + ARRAY_SIZE(uid)) {
+            nor_fail(nor, "NOR unique-ID read outside its four dummy and 16 ID bytes");
+        }
+        return uid[nor->phase++ - 4];
+    }
+    case 0x03: case 0x0b:
+        /* Read Data has no dummy byte; fast read has one. */
+        if (nor->phase != (nor->command == 0x03 ? 3 : 4)) {
+            nor_fail(nor, "NOR read before address/dummy completion");
         }
         nor->read_bytes++;
         /* This 1 MiB part ignores the upper bits of the 24-bit address. */
