@@ -305,9 +305,9 @@ void HELPER(pi32v2_lock)(CPUPi32v2State *env, uint32_t acquire)
 
 /* Single-precision FPU (E53F), measured on a real FM-1: arithmetic rounds to
  * nearest even, multiply-accumulate rounds the product before the sum, int
- * conversions round to nearest and float-to-int truncates. NaN, infinity,
- * denormal operands or results, underflow and out-of-range conversions are
- * unmeasured and fault rather than being guessed. */
+ * conversions round to nearest and float-to-int truncates; subnormals are
+ * produced and consumed (gradual underflow). NaN, infinity and out-of-range
+ * conversions are unmeasured and fault rather than being guessed. */
 static float_status fpu_status(void)
 {
     float_status s = {};
@@ -319,8 +319,10 @@ static float_status fpu_status(void)
 static void fpu_check(CPUPi32v2State *env, uintptr_t ra, float32 value,
                       const float_status *s, const char *what)
 {
-    if (!float32_is_zero_or_normal(value) ||
-        (get_float_exception_flags(s) & float_flag_underflow)) {
+    /* Subnormals are measured on an FM-1: they are produced (min normal x
+     * 0.5 = 0x00400000) and consumed without flushing (0x00400000 x 2 =
+     * 0x00800000), as softfloat's IEEE default does. */
+    if (!float32_is_zero_or_normal(value) && !float32_is_denormal(value)) {
         g_autofree char *reason = g_strdup_printf(
             "unmeasured floating-point %s 0x%08x", what, float32_val(value));
         stop_at(env, ra);

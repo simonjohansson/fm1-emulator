@@ -35,6 +35,10 @@ class FloatTests(unittest.TestCase):
             (0x3213, 0x3fc00000, 0x40100000, 0x3f2aaaab),  # 1.5 / 2.25
             (0x3211, 0x80000000, 0x00000000, 0x80000000),  # -0 - 0
             (0x3212, 0x00000000, 0x80000000, 0x80000000),  # 0 * -0
+            (0x3212, 0x00800000, 0x3f000000, 0x00400000),  # subnormal result
+            (0x3211, 0x00800001, 0x00800000, 0x00000001),
+            (0x3212, 0x00400000, 0x40000000, 0x00800000),  # subnormal operand
+            (0x3211, 0x00000000, 0x00000001, 0x80000001),
         ]
         for operand, a, b, expected in cases:
             with self.subTest(operand=hex(operand), a=hex(a), b=hex(b)):
