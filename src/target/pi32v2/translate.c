@@ -1432,7 +1432,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         count(d); compare_branch(d, next + (int16_t)displacement * 2, next, cond,
                                  read_gpr(d, x >> 12), tcg_constant_i32(packed_mask(x)));
     } else if (op == 0xff0a || op == 0xff0b || op == 0xff0d || op == 0xff40 ||
-               op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff49 || op == 0xff4a) {
+               op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff49 || op == 0xff4a || op == 0xff4b) {
         uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
         TCGCond cond;
         TCGv_i32 right;
@@ -1450,9 +1450,12 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             case 0xff43: cond = TCG_COND_LTU; break;
             case 0xff48: cond = TCG_COND_GTU; break;
             case 0xff49: cond = TCG_COND_LEU; break;
-            default: cond = TCG_COND_GE; break; /* Exact FF4A. */
+            case 0xff4a: cond = TCG_COND_GE; break;
+            default: cond = TCG_COND_LT; break; /* Exact FF4B. */
             }
             /* Vendor FF4A uses C bits8:11; the primary B field is contradicted. */
+            /* Vendor objdump decodes captured stock SRAM FF4B/5100/FD67
+             * at 0x01c022e4 as ifs (r5 < r1) goto -1330, also using C. */
             right = read_gpr(d, (x >> 8) & 15);
         }
         next = here + 6;
@@ -1732,7 +1735,7 @@ static unsigned operation_size(uint16_t op)
         op == 0xff0a || op == 0xff0b || op == 0xff0d ||
         op == 0xff20 || op == 0xff21 || op == 0xff23 || op == 0xff28 || op == 0xff29 ||
         op == 0xff2a || op == 0xff2b || op == 0xff2d ||
-        op == 0xff40 || op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff49 || op == 0xff4a ||
+        op == 0xff40 || op == 0xff42 || op == 0xff43 || op == 0xff48 || op == 0xff49 || op == 0xff4a || op == 0xff4b ||
         op == 0xff41 || op == 0xff60 || op == 0xff61) { return 6; }
     return op >> 13 == 7 ? 4 : 2;
 }
