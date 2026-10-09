@@ -115,7 +115,10 @@ def reachable(code, app):
             if m and ("goto" in text or text.startswith("call")):
                 work.append(int(m.group(1), 16))
             words = text.split()
-            if (text.startswith(("goto", "rts", "rti", "pc =")) or "{pc" in text) and "if" not in words[:1]:
+            # Unconditional transfers end a path; a table branch (tbb, tbh) is
+            # followed by its table, which is data.
+            if (text.startswith(("goto", "rts", "rti", "pc =", "tbb", "tbh")) or "{pc" in text) \
+                    and "if" not in words[:1]:
                 break
             address += len(raw)
     return seen

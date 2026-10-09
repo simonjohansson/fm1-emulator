@@ -45,33 +45,31 @@ also appear here when firmware contains them.
 
 ## FM-1
 
-`FM-1.fwsc`, application SHA-256 `91f1aa3f18ecbe02...`, 1,015,018 bytes, 218,185 decoded instructions of which 76,667 statically reachable.
+`FM-1.fwsc`, application SHA-256 `91f1aa3f18ecbe02...`, 1,015,018 bytes, 218,185 decoded instructions of which 75,771 statically reachable.
 
-2986 rejected opcodes (14874 occurrences), 135 of them in statically reachable code.
+2986 rejected opcodes (14874 occurrences), 95 of them in statically reachable code.
 
 | Opcode | Occurrences | Reachable | Example | Vendor disassembly |
 | --- | --- | --- | --- | --- |
-| `0040` | 495 | 320 | `02000834` | `lockclr` |
-| `0041` | 346 | 215 | `02000804` | `lockset` |
+| `0040` | 495 | 262 | `02000834` | `lockclr` |
+| `0041` | 346 | 214 | `02000804` | `lockset` |
 | `e840` | 78 | 57 | `0200351e` | `ifeq goto -6 <_start+0x33FC : 200351c >` |
 | `8a10` | 42 | 36 | `0201db5c` | `rep 4 11 {` |
 | `9f10` | 37 | 35 | `0202a350` | `rep 4 32 {` |
-| `8510` | 78 | 26 | `0202d474` | `rep 4 6 {` |
 | `00b0` | 99 | 25 | `0200351c` | `testset b[r0]` |
+| `8510` | 78 | 23 | `0202d474` | `rep 4 6 {` |
 | `8f10` | 45 | 18 | `02000a34` | `rep 4 16 {` |
 | `8310` | 82 | 16 | `02006738` | `rep 4 4 {` |
 | `8710` | 70 | 16 | `0201dd50` | `rep 4 8 {` |
 | `00b1` | 21 | 13 | `020037f0` | `testset b[r1]` |
 | `8910` | 20 | 12 | `02007c62` | `rep 4 10 {` |
 | `ed53` | 16 | 12 | `02041d66` | `h[r3+-4] = r13` |
-| `8810` | 20 | 11 | `02007c4e` | `rep 4 9 {` |
 | `e1c4` | 11 | 11 | `0201eaa8` | `r0 = r0 <> 1` |
 | `8b10` | 16 | 9 | `02005aa2` | `rep 4 12 {` |
 | `e180` | 9 | 9 | `020448f0` | `r0 = clz(r0)` |
-| `ee59` | 9 | 9 | `0202c580` | `r4 = b[++r2=-1] (u)` |
 | `e1f6` | 14 | 8 | `020021e4` | `r3_r2 = r1_r0 / r4 (u)` |
 | `8210` | 13 | 8 | `0202d560` | `rep 4 3 {` |
-| `00e6` | 19 | 7 | `0200dc9e` | `cli r6` |
+| `ee59` | 9 | 8 | `0202c5a6` | `r4 = b[++r2=-1] (u)` |
 | `8400` | 19 | 7 | `0202adf0` | `rep 2 5 {` |
 | `8a00` | 16 | 7 | `0202c5d8` | `rep 2 11 {` |
 | `edd8` | 11 | 7 | `020278d0` | `h[r3+r4] = r5` |
@@ -79,6 +77,7 @@ also appear here when firmware contains them.
 | `9f00` | 77 | 6 | `02027b42` | `rep 2 32 {` |
 | `e1d8` | 7 | 6 | `02044a56` | `r13_r12 >>= r6` |
 | `8f00` | 78 | 5 | `02027a3e` | `rep 2 16 {` |
+| `8810` | 20 | 5 | `02007c4e` | `rep 4 9 {` |
 | `e1fc` | 14 | 5 | `02044f5c` | `r11_r10 += r6 * r14 (u)` |
 | `00ba` | 12 | 5 | `0203f4f6` | `testset b[r10]` |
 | `8900` | 9 | 5 | `0202a67c` | `rep 2 10 {` |
@@ -90,70 +89,44 @@ also appear here when firmware contains them.
 | `8610` | 13 | 4 | `02007cbe` | `rep 4 7 {` |
 | `8410` | 10 | 4 | `02000a4c` | `rep 4 5 {` |
 | `8c00` | 5 | 4 | `0202e320` | `rep 2 13 {` |
-| `0b0b` | 19 | 3 | `02019b82` | `[r0++=r14] = r3` |
 | `00b3` | 12 | 3 | `02003caa` | `testset b[r3]` |
 | `8600` | 11 | 3 | `0205f0f6` | `rep 2 7 {` |
 | `8500` | 10 | 3 | `0201e232` | `rep 2 6 {` |
 | `9300` | 10 | 3 | `02005af0` | `rep 2 20 {` |
-| `0c21` | 9 | 3 | `020326c2` | `r1 = h[r2++=r8] (u)` |
 | `8e00` | 6 | 3 | `0202c768` | `rep 2 15 {` |
 | `ff4d` | 6 | 3 | `0200abba` | `ifs (r0 <= r1) goto -1248 <_start+0xA5C0 : 200a6e0 >` |
 | `9600` | 4 | 3 | `020287e4` | `rep 2 23 {` |
 | `e870` | 4 | 3 | `0201f6ba` | `trigger` |
 | `8a20` | 3 | 3 | `0202d2e8` | `rep 6 11 {` |
-| `0f0b` | 24 | 2 | `02019b88` | `h[r0++=r14] = r3` |
 | `8800` | 13 | 2 | `02034ad4` | `rep 2 9 {` |
 | `9a00` | 9 | 2 | `02020ac2` | `rep 2 27 {` |
-| `00bd` | 7 | 2 | `020666a6` | `testset b[r13]` |
-| `0a03` | 7 | 2 | `0207d0f2` | `r3 = [r0++=r12]` |
-| `0c03` | 7 | 2 | `020625d0` | `r3 = h[r0++=r8] (u)` |
 | `079c` | 5 | 2 | `0207cb2e` | `b[r1++=-1] = r4` |
-| `0c0a` | 5 | 2 | `020109cc` | `h[r0++=r8] = r2` |
 | `9d10` | 4 | 2 | `0202c6a0` | `rep 4 30 {` |
-| `0609` | 3 | 2 | `0207f74e` | `r1 = h[r0++=-2] (u)` |
 | `8820` | 3 | 2 | `02007ca4` | `rep 6 9 {` |
 | `ed90` | 3 | 2 | `02018fce` | `ifs (r0 < r2) {` |
 | `9010` | 2 | 2 | `0202a454` | `rep 4 17 {` |
 | `f1c4` | 2 | 2 | `0202c94c` | `r2 = r15 <> 3  #` |
-| `002e` | 35 | 1 | `02079992` | `ssync` |
 | `00be` | 15 | 1 | `0203d95c` | `testset b[r14]` |
-| `0c62` | 15 | 1 | `020326ba` | `r2 = h[r6++=r8] (u)` |
 | `00b9` | 14 | 1 | `0203ed4e` | `testset b[r9]` |
-| `0f05` | 14 | 1 | `0201eab2` | `r5 = h[r0++=r14] (u)` |
 | `00d6` | 13 | 1 | `020001b6` | `goto r6` |
 | `ff4c` | 13 | 1 | `02010484` | `ifs (r5 > r2) goto 624 <_start+0x105DA : 20106fa >` |
 | `00b7` | 11 | 1 | `0203e008` | `testset b[r7]` |
 | `00b8` | 11 | 1 | `020389aa` | `testset b[r8]` |
-| `0f02` | 11 | 1 | `0202bb66` | `r2 = h[r0++=r14] (u)` |
 | `ff4b` | 11 | 1 | `0201048e` | `ifs (r3 < r2) goto 614 <_start+0x105DA : 20106fa >` |
 | `00b2` | 10 | 1 | `02003e36` | `testset b[r2]` |
-| `00dd` | 10 | 1 | `0203d71a` | `goto r13` |
 | `00bc` | 9 | 1 | `0203f1f6` | `testset b[r12]` |
-| `009d` | 8 | 1 | `02064636` | `callns r13` |
-| `00a3` | 8 | 1 | `0201eafc` | `swi 3` |
 | `00b6` | 8 | 1 | `0203f692` | `testset b[r6]` |
-| `0c09` | 7 | 1 | `020832ac` | `h[r0++=r8] = r1` |
-| `0808` | 6 | 1 | `02061b9a` | `[r0++=r8] = r0` |
-| `0806` | 5 | 1 | `020109ca` | `r6 = [r0++=r8]` |
-| `0b60` | 5 | 1 | `02019b8c` | `r0 = [r6++=r14]` |
-| `1206` | 5 | 1 | `020109c8` | `r6 = b[r0++=r12] (u)` |
 | `8700` | 5 | 1 | `020296aa` | `rep 2 8 {` |
 | `078a` | 4 | 1 | `0207efda` | `b[r0++=-1] = r2` |
-| `0a08` | 4 | 1 | `02040df0` | `[r0++=r12] = r0` |
-| `0e21` | 4 | 1 | `02061ba4` | `r1 = h[r2++=r12] (u)` |
-| `0f35` | 4 | 1 | `0201f924` | `r5 = h[r3++=r14] (u)` |
 | `8320` | 4 | 1 | `02056cc2` | `rep 6 4 {` |
 | `9000` | 4 | 1 | `0202a566` | `rep 2 17 {` |
-| `020d` | 3 | 1 | `0202c95c` | `pfetch [r13]` |
 | `13c0` | 3 | 1 | `0200de98` | `r0 = b[r4++=r15] (u)` |
 | `8300` | 3 | 1 | `02002118` | `rep 2 4 {` |
 | `9500` | 3 | 1 | `0202d9d4` | `rep 2 22 {` |
 | `9800` | 3 | 1 | `02036274` | `rep 2 25 {` |
 | `e86c` | 3 | 1 | `02038f8e` | `[r0+0] >>= 6` |
 | `ff22` | 3 | 1 | `0203a308` | `if (r6 >= 65280) goto 6 <_start+0x3A1F4 : 203a314 >` |
-| `062c` | 2 | 1 | `0207f0e6` | `r4 = h[r2++=-2] (u)` |
 | `079b` | 2 | 1 | `0201948a` | `b[r1++=-1] = r3` |
-| `1a1d` | 2 | 1 | `0201eaba` | `r5 <<<= r1` |
 | `9400` | 2 | 1 | `0202da70` | `rep 2 21 {` |
 | `9510` | 2 | 1 | `02063244` | `rep 4 22 {` |
 | `9d00` | 2 | 1 | `02077f36` | `rep 2 30 {` |
@@ -161,24 +134,11 @@ also appear here when firmware contains them.
 | `ed96` | 2 | 1 | `02018330` | `ifs (r6 < r5) {` |
 | `f1f6` | 2 | 1 | `0205c580` | `r7_r6 = r9_r8 / r1 (u)  #` |
 | `0569` | 1 | 1 | `02080dfa` | `r1 = [r6++=-4]` |
-| `056b` | 1 | 1 | `0200b2a8` | `r3 = [r6++=-4]` |
 | `061b` | 1 | 1 | `0204068a` | `r3 = h[r1++=-2] (u)` |
-| `080e` | 1 | 1 | `020109ce` | `[r0++=r8] = r6` |
-| `0905` | 1 | 1 | `0202d93a` | `r5 = [r0++=r10]` |
-| `094e` | 1 | 1 | `0207f74c` | `[r4++=r10] = r6` |
-| `0b27` | 1 | 1 | `02019b80` | `r7 = [r2++=r14]` |
-| `0b6b` | 1 | 1 | `02019b8e` | `[r6++=r14] = r3` |
-| `0e61` | 1 | 1 | `02061ba2` | `r1 = h[r6++=r12] (u)` |
-| `0f1b` | 1 | 1 | `0201f958` | `h[r1++=r14] = r3` |
-| `100e` | 1 | 1 | `0202d93c` | `b[r0++=r8] = r6` |
-| `1113` | 1 | 1 | `0202c95e` | `r3 = b[r1++=r10] (u)` |
-| `120f` | 1 | 1 | `02017744` | `b[r0++=r12] = r7` |
 | `8520` | 1 | 1 | `0205faa6` | `rep 6 6 {` |
 | `8530` | 1 | 1 | `02002792` | `rep 8 6 {` |
 | `8b20` | 1 | 1 | `0202d002` | `rep 6 12 {` |
 | `9610` | 1 | 1 | `0207ff72` | `rep 4 23 {` |
-| `a63c` | 1 | 1 | `020645f8` | `r4 = r3 <<< 6` |
-| `a93c` | 1 | 1 | `0200827c` | `r4 = r3 <<< 9` |
 | `d646` | 1 | 1 | `02019488` | `r6 = r4  #` |
 | `ec5c` | 1 | 1 | `0200940e` | `r9_r8 = d[++r1=r0]` |
 | `ecd0` | 1 | 1 | `02056b9a` | `[++r0=8] = r0` |
@@ -187,11 +147,11 @@ also appear here when firmware contains them.
 | `edd3` | 1 | 1 | `0204068c` | `h[r0++=-4] = r3` |
 | `f120` | 1 | 1 | `020006d6` | `r0 = r8 + -6401  #` |
 
-2851 further opcodes (12491 occurrences) appear only outside reachable code, mostly data decoded as instructions; they are not listed.
+2891 further opcodes (12752 occurrences) appear only outside reachable code, mostly data decoded as instructions; they are not listed.
 
 ### `0040`
 
-495 occurrences, 320 reachable; 2 bytes.
+495 occurrences, 262 reachable; 2 bytes.
 
 | Address | Reachable | Halfwords | Vendor disassembly |
 | --- | --- | --- | --- |
@@ -199,7 +159,7 @@ also appear here when firmware contains them.
 
 ### `0041`
 
-346 occurrences, 215 reachable; 2 bytes.
+346 occurrences, 214 reachable; 2 bytes.
 
 | Address | Reachable | Halfwords | Vendor disassembly |
 | --- | --- | --- | --- |
@@ -233,16 +193,6 @@ Accepted forms with the same top 12 bits: `8a14` `goto 84 <_start+0x4372 : 20044
 
 Accepted forms with the same top 12 bits: `9f14` `goto 126 <_start+0x13CD2 : 2013df2 >`; `9f19` `r1 = r1 + 31`.
 
-### `8510`
-
-78 occurrences, 26 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202d474` | yes | `8510` | `rep 4 6 {` |
-
-Accepted forms with the same top 12 bits: `8514` `goto 74 <_start+0x14D6 : 20015f6 >`; `8517` `goto -950 <_start+0x7BFC0 : 207c0e0 >`; `8518` `r0 = r1 + 5`; `851a` `r2 = r1 + 5`; `851b` `r3 = r1 + 5`; `851f` `r7 = r1 + 5`.
-
 ### `00b0`
 
 99 occurrences, 25 reachable; 2 bytes.
@@ -250,6 +200,16 @@ Accepted forms with the same top 12 bits: `8514` `goto 74 <_start+0x14D6 : 20015
 | Address | Reachable | Halfwords | Vendor disassembly |
 | --- | --- | --- | --- |
 | `0200351c` | yes | `00b0` | `testset b[r0]` |
+
+### `8510`
+
+78 occurrences, 23 reachable; 2 bytes.
+
+| Address | Reachable | Halfwords | Vendor disassembly |
+| --- | --- | --- | --- |
+| `0202d474` | yes | `8510` | `rep 4 6 {` |
+
+Accepted forms with the same top 12 bits: `8514` `goto 74 <_start+0x14D6 : 20015f6 >`; `8517` `goto -950 <_start+0x7BFC0 : 207c0e0 >`; `8518` `r0 = r1 + 5`; `851a` `r2 = r1 + 5`; `851b` `r3 = r1 + 5`; `851f` `r7 = r1 + 5`.
 
 ### `8f10`
 
@@ -316,16 +276,6 @@ Accepted forms with the same top 12 bits: `8914` `goto 82 <_start+0x39D8 : 2003a
 
 Accepted forms with the same top 12 bits: `ed50 142b` `h[r2+74] = r1`; `ed51 0550` `r0 = h[r5+336] (u)`; `ed54 3046` `r3 = h[r4+6] (s)`; `ed55 231a` `r2 = h[r1+314] (s)`; `ed57 0f54` `r0 = h[r5+-12] (s)`; `ed58 4409` `h[++r0=72] = r4`.
 
-### `8810`
-
-20 occurrences, 11 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02007c4e` | yes | `8810` | `rep 4 9 {` |
-
-Accepted forms with the same top 12 bits: `8814` `goto 80 <_start+0xAC2 : 2000be2 >`; `8818` `r0 = r1 + 8`; `881a` `r2 = r1 + 8`; `881b` `r3 = r1 + 8`; `881c` `r4 = r1 + 8`; `881e` `r6 = r1 + 8`.
-
 ### `e1c4`
 
 11 occurrences, 11 reachable; 4 bytes.
@@ -366,21 +316,6 @@ Accepted forms with the same top 12 bits: `8b14` `goto 86 <_start+0x1122 : 20012
 | `02045200` | yes | `e180 4000` | `r4 = clz(r0)` |
 | `0204523a` | yes | `e180 2000` | `r2 = clz(r0)` |
 
-### `ee59`
-
-9 occurrences, 9 reachable; 4 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202c580` | yes | `ee59 4f2f` | `r4 = b[++r2=-1] (u)` |
-| `02040b06` | yes | `ee59 0e4c` | `r0 = b[++r4=-20] (u)` |
-| `02040b9a` | yes | `ee59 0ecc` | `r0 = b[++r12=-20] (u)` |
-| `020445d2` | yes | `ee59 6f1f` | `r6 = b[++r1=-1] (u)` |
-| `0206289a` | yes | `ee59 1f08` | `r1 = b[++r0=-8] (u)` |
-| `0207955c` | yes | `ee59 3f1e` | `r3 = b[++r1=-2] (u)` |
-
-Accepted forms with the same top 12 bits: `ee50 0858` `r0 = b[r5+136] (u)`; `ee51 3e3e` `r3 = b[r3+-18] (u)`; `ee52 3200` `b[r0+32] = r3`; `ee53 5d07` `b[r0+-41] = r5`; `ee54 2050` `r2 = b[r5+0] (s)`; `ee55 1f2c` `r1 = b[r2+-4] (s)`.
-
 ### `e1f6`
 
 14 occurrences, 8 reachable; 4 bytes.
@@ -408,13 +343,20 @@ Accepted forms with the same top 12 bits: `e1f0 e500` `r14 = r0 * r5`; `e1f4 151
 
 Accepted forms with the same top 12 bits: `8214` `goto 68 <_start+0x2CD2 : 2002df2 >`; `8218` `r0 = r1 + 2`; `821a` `r2 = r1 + 2`; `821b` `r3 = r1 + 2`; `821c` `r4 = r1 + 2`; `821d` `r5 = r1 + 2`.
 
-### `00e6`
+### `ee59`
 
-19 occurrences, 7 reachable; 2 bytes.
+9 occurrences, 8 reachable; 4 bytes.
 
 | Address | Reachable | Halfwords | Vendor disassembly |
 | --- | --- | --- | --- |
-| `0200dc9e` | yes | `00e6` | `cli r6` |
+| `0202c5a6` | yes | `ee59 4f2f` | `r4 = b[++r2=-1] (u)` |
+| `02040b06` | yes | `ee59 0e4c` | `r0 = b[++r4=-20] (u)` |
+| `02040b9a` | yes | `ee59 0ecc` | `r0 = b[++r12=-20] (u)` |
+| `020445d2` | yes | `ee59 6f1f` | `r6 = b[++r1=-1] (u)` |
+| `0206289a` | yes | `ee59 1f08` | `r1 = b[++r0=-8] (u)` |
+| `0207955c` | yes | `ee59 3f1e` | `r3 = b[++r1=-2] (u)` |
+
+Accepted forms with the same top 12 bits: `ee50 0858` `r0 = b[r5+136] (u)`; `ee51 3e3e` `r3 = b[r3+-18] (u)`; `ee52 3200` `b[r0+32] = r3`; `ee53 5d07` `b[r0+-41] = r5`; `ee54 2050` `r2 = b[r5+0] (s)`; `ee55 1f2c` `r1 = b[r2+-4] (s)`.
 
 ### `8400`
 
@@ -498,6 +440,16 @@ Accepted forms with the same top 12 bits: `e1d0 280c` `r3_r2 >>= 12`; `e1d8 0600
 | `02027a3e` | yes | `8f00` | `rep 2 16 {` |
 
 Accepted forms with the same top 12 bits: `8f01` `call 30 <_start+0x494FE : 204961e >`; `8f02` `sp += 60`; `8f04` `goto 30 <_start+0x4D9A : 2004eba >`; `8f07` `goto -994 <_start+0x2B5E6 : 202b706 >`.
+
+### `8810`
+
+20 occurrences, 5 reachable; 2 bytes.
+
+| Address | Reachable | Halfwords | Vendor disassembly |
+| --- | --- | --- | --- |
+| `02007c4e` | yes | `8810` | `rep 4 9 {` |
+
+Accepted forms with the same top 12 bits: `8814` `goto 80 <_start+0xAC2 : 2000be2 >`; `8818` `r0 = r1 + 8`; `881a` `r2 = r1 + 8`; `881b` `r3 = r1 + 8`; `881c` `r4 = r1 + 8`; `881e` `r6 = r1 + 8`.
 
 ### `e1fc`
 
@@ -621,14 +573,6 @@ Accepted forms with the same top 12 bits: `8414` `goto 72 <_start+0x2AC6 : 2002b
 
 Accepted forms with the same top 12 bits: `8c01` `call 24 <_start+0x4CDFC : 204cf1c >`; `8c02` `sp += 48`; `8c04` `goto 24 <_start+0x693A : 2006a5a >`; `8c06` `goto -2024 <_start+0x6C6D8 : 206c7f8 >`; `8c09` `r1 = r0 + 12`; `8c0a` `r2 = r0 + 12`.
 
-### `0b0b`
-
-19 occurrences, 3 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02019b82` | yes | `0b0b` | `[r0++=r14] = r3` |
-
 ### `00b3`
 
 12 occurrences, 3 reachable; 2 bytes.
@@ -666,14 +610,6 @@ Accepted forms with the same top 12 bits: `8502` `sp += 20`; `8504` `goto 10 <_s
 | `02005af0` | yes | `9300` | `rep 2 20 {` |
 
 Accepted forms with the same top 12 bits: `9302` `sp += 76`; `9304` `goto 38 <_start+0x1AB4 : 2001bd4 >`; `9309` `r1 = r0 + 19`; `930a` `r2 = r0 + 19`.
-
-### `0c21`
-
-9 occurrences, 3 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020326c2` | yes | `0c21` | `r1 = h[r2++=r8] (u)` |
 
 ### `8e00`
 
@@ -728,14 +664,6 @@ Accepted forms with the same top 12 bits: `9602` `sp += 88`; `9604` `goto 44 <_s
 
 Accepted forms with the same top 12 bits: `8a22` `sp += 168`; `8a24` `goto 148 <_start+0xAA90 : 200abb0 >`; `8a25` `goto 1172 <_start+0x6E612 : 206e732 >`; `8a26` `goto -1900 <_start+0x4FAD8 : 204fbf8 >`; `8a28` `r0 = r2 + 10`.
 
-### `0f0b`
-
-24 occurrences, 2 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02019b88` | yes | `0f0b` | `h[r0++=r14] = r3` |
-
 ### `8800`
 
 13 occurrences, 2 reachable; 2 bytes.
@@ -756,30 +684,6 @@ Accepted forms with the same top 12 bits: `8802` `sp += 32`; `8804` `goto 16 <_s
 
 Accepted forms with the same top 12 bits: `9a02` `sp += 104`; `9a04` `goto 52 <_start+0x2130 : 2002250 >`; `9a05` `goto 1076 <_start+0x6922E : 206934e >`; `9a06` `goto -1996 <_start+0x53DDA : 2053efa >`; `9a08` `r0 = r0 + 26`.
 
-### `00bd`
-
-7 occurrences, 2 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020666a6` | yes | `00bd` | `testset b[r13]` |
-
-### `0a03`
-
-7 occurrences, 2 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0207d0f2` | yes | `0a03` | `r3 = [r0++=r12]` |
-
-### `0c03`
-
-7 occurrences, 2 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020625d0` | yes | `0c03` | `r3 = h[r0++=r8] (u)` |
-
 ### `079c`
 
 5 occurrences, 2 reachable; 2 bytes.
@@ -790,14 +694,6 @@ Accepted forms with the same top 12 bits: `9a02` `sp += 104`; `9a04` `goto 52 <_
 
 Accepted forms with the same top 12 bits: `0790` `b[r1++=1] = r0`; `0791` `b[r1++=1] = r1`; `0792` `b[r1++=1] = r2`; `0793` `b[r1++=1] = r3`; `0794` `b[r1++=1] = r4`; `0795` `b[r1++=1] = r5`.
 
-### `0c0a`
-
-5 occurrences, 2 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020109cc` | yes | `0c0a` | `h[r0++=r8] = r2` |
-
 ### `9d10`
 
 4 occurrences, 2 reachable; 2 bytes.
@@ -807,16 +703,6 @@ Accepted forms with the same top 12 bits: `0790` `b[r1++=1] = r0`; `0791` `b[r1+
 | `0202c6a0` | yes | `9d10` | `rep 4 30 {` |
 
 Accepted forms with the same top 12 bits: `9d14` `goto 122 <_start+0x7792 : 20078b2 >`; `9d15` `goto 1146 <_start+0x4614C : 204626c >`; `9d16` `goto -1926 <_start+0x50B70 : 2050c90 >`; `9d1f` `r7 = r1 + 29`.
-
-### `0609`
-
-3 occurrences, 2 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0207f74e` | yes | `0609` | `r1 = h[r0++=-2] (u)` |
-
-Accepted forms with the same top 12 bits: `0601` `r1 = h[r0++=2] (u)`; `0602` `r2 = h[r0++=2] (u)`; `0603` `r3 = h[r0++=2] (u)`; `0604` `r4 = h[r0++=2] (u)`; `0605` `r5 = h[r0++=2] (u)`; `0606` `r6 = h[r0++=2] (u)`.
 
 ### `8820`
 
@@ -859,16 +745,6 @@ Accepted forms with the same top 12 bits: `9014` `goto 96 <_start+0x2CD2 : 2002d
 
 Accepted forms with the same top 12 bits: `f1c0 0083` `r0 = r8 << 3  #`; `f1c8 1162` `r1 = r6 >> r1  #`.
 
-### `002e`
-
-35 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02079992` | yes | `002e` | `ssync` |
-
-Accepted forms with the same top 12 bits: `0020` `csync`; `0022` `ssync`.
-
 ### `00be`
 
 15 occurrences, 1 reachable; 2 bytes.
@@ -877,14 +753,6 @@ Accepted forms with the same top 12 bits: `0020` `csync`; `0022` `ssync`.
 | --- | --- | --- | --- |
 | `0203d95c` | yes | `00be` | `testset b[r14]` |
 
-### `0c62`
-
-15 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020326ba` | yes | `0c62` | `r2 = h[r6++=r8] (u)` |
-
 ### `00b9`
 
 14 occurrences, 1 reachable; 2 bytes.
@@ -892,14 +760,6 @@ Accepted forms with the same top 12 bits: `0020` `csync`; `0022` `ssync`.
 | Address | Reachable | Halfwords | Vendor disassembly |
 | --- | --- | --- | --- |
 | `0203ed4e` | yes | `00b9` | `testset b[r9]` |
-
-### `0f05`
-
-14 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0201eab2` | yes | `0f05` | `r5 = h[r0++=r14] (u)` |
 
 ### `00d6`
 
@@ -942,14 +802,6 @@ Accepted forms with the same top 12 bits: `ff40 3100 0106` `if (r3 == r1) goto 5
 | --- | --- | --- | --- |
 | `020389aa` | yes | `00b8` | `testset b[r8]` |
 
-### `0f02`
-
-11 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202bb66` | yes | `0f02` | `r2 = h[r0++=r14] (u)` |
-
 ### `ff4b`
 
 11 occurrences, 1 reachable; 6 bytes.
@@ -975,14 +827,6 @@ Accepted forms with the same top 12 bits: `ff40 3100 0106` `if (r3 == r1) goto 5
 | --- | --- | --- | --- |
 | `02003e36` | yes | `00b2` | `testset b[r2]` |
 
-### `00dd`
-
-10 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0203d71a` | yes | `00dd` | `goto r13` |
-
 ### `00bc`
 
 9 occurrences, 1 reachable; 2 bytes.
@@ -991,22 +835,6 @@ Accepted forms with the same top 12 bits: `ff40 3100 0106` `if (r3 == r1) goto 5
 | --- | --- | --- | --- |
 | `0203f1f6` | yes | `00bc` | `testset b[r12]` |
 
-### `009d`
-
-8 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02064636` | yes | `009d` | `callns r13` |
-
-### `00a3`
-
-8 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0201eafc` | yes | `00a3` | `swi 3` |
-
 ### `00b6`
 
 8 occurrences, 1 reachable; 2 bytes.
@@ -1014,46 +842,6 @@ Accepted forms with the same top 12 bits: `ff40 3100 0106` `if (r3 == r1) goto 5
 | Address | Reachable | Halfwords | Vendor disassembly |
 | --- | --- | --- | --- |
 | `0203f692` | yes | `00b6` | `testset b[r6]` |
-
-### `0c09`
-
-7 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020832ac` | yes | `0c09` | `h[r0++=r8] = r1` |
-
-### `0808`
-
-6 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02061b9a` | yes | `0808` | `[r0++=r8] = r0` |
-
-### `0806`
-
-5 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020109ca` | yes | `0806` | `r6 = [r0++=r8]` |
-
-### `0b60`
-
-5 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02019b8c` | yes | `0b60` | `r0 = [r6++=r14]` |
-
-### `1206`
-
-5 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020109c8` | yes | `1206` | `r6 = b[r0++=r12] (u)` |
 
 ### `8700`
 
@@ -1075,30 +863,6 @@ Accepted forms with the same top 12 bits: `8702` `sp += 28`; `8704` `goto 14 <_s
 
 Accepted forms with the same top 12 bits: `0780` `b[r0++=1] = r0`; `0781` `b[r0++=1] = r1`; `0782` `b[r0++=1] = r2`; `0783` `b[r0++=1] = r3`; `0784` `b[r0++=1] = r4`; `0785` `b[r0++=1] = r5`.
 
-### `0a08`
-
-4 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02040df0` | yes | `0a08` | `[r0++=r12] = r0` |
-
-### `0e21`
-
-4 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02061ba4` | yes | `0e21` | `r1 = h[r2++=r12] (u)` |
-
-### `0f35`
-
-4 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0201f924` | yes | `0f35` | `r5 = h[r3++=r14] (u)` |
-
 ### `8320`
 
 4 occurrences, 1 reachable; 2 bytes.
@@ -1118,14 +882,6 @@ Accepted forms with the same top 12 bits: `8322` `sp += 140`; `8324` `goto 134 <
 | `0202a566` | yes | `9000` | `rep 2 17 {` |
 
 Accepted forms with the same top 12 bits: `9002` `sp += 64`; `9004` `goto 32 <_start+0x1616 : 2001736 >`; `9009` `r1 = r0 + 16`; `900a` `r2 = r0 + 16`; `900b` `r3 = r0 + 16`; `900c` `r4 = r0 + 16`.
-
-### `020d`
-
-3 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202c95c` | yes | `020d` | `pfetch [r13]` |
 
 ### `13c0`
 
@@ -1188,16 +944,6 @@ Accepted forms with the same top 12 bits: `e864 1000` `[r1+0] /= r0`; `e868 4608
 
 Accepted forms with the same top 12 bits: `ff20 0600 0017` `if (r0 == 134217728) goto 46 <_start+0x1A66 : 2001b86 >`; `ff21 6c00 ffee` `if (r6 != 32768) goto -36 <_start+0x4442 : 2004562 >`; `ff23 4d80 001d` `if (r4 < 4096) goto 58 <_start+0x29256 : 2029376 >`; `ff28 7c80 000b` `if (r7 > 16384) goto 22 <_start+0x24F4C : 202506c >`; `ff29 0780 002a` `if (r0 <= 16777216) goto 84 <_start+0x37FE : 200391e >`; `ff2a ef40 0090` `ifs (r14 >= 768) goto 288 <_start+0x48DF2 : 2048f12 >`.
 
-### `062c`
-
-2 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0207f0e6` | yes | `062c` | `r4 = h[r2++=-2] (u)` |
-
-Accepted forms with the same top 12 bits: `0620` `r0 = h[r2++=2] (u)`; `0621` `r1 = h[r2++=2] (u)`; `0623` `r3 = h[r2++=2] (u)`; `0624` `r4 = h[r2++=2] (u)`; `0625` `r5 = h[r2++=2] (u)`; `0626` `r6 = h[r2++=2] (u)`.
-
 ### `079b`
 
 2 occurrences, 1 reachable; 2 bytes.
@@ -1207,16 +953,6 @@ Accepted forms with the same top 12 bits: `0620` `r0 = h[r2++=2] (u)`; `0621` `r
 | `0201948a` | yes | `079b` | `b[r1++=-1] = r3` |
 
 Accepted forms with the same top 12 bits: `0790` `b[r1++=1] = r0`; `0791` `b[r1++=1] = r1`; `0792` `b[r1++=1] = r2`; `0793` `b[r1++=1] = r3`; `0794` `b[r1++=1] = r4`; `0795` `b[r1++=1] = r5`.
-
-### `1a1d`
-
-2 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0201eaba` | yes | `1a1d` | `r5 <<<= r1` |
-
-Accepted forms with the same top 12 bits: `1a10` `r0 <<= r1`; `1a11` `r1 <<= r1`; `1a12` `r2 <<= r1`; `1a13` `r3 <<= r1`; `1a14` `r4 <<= r1`; `1a15` `r5 <<= r1`.
 
 ### `9400`
 
@@ -1287,16 +1023,6 @@ Accepted forms with the same top 12 bits: `f1f0 0570` `r0 = r7 * r5  #`; `f1f4 0
 
 Accepted forms with the same top 12 bits: `0560` `r0 = [r6++=4]`; `0561` `r1 = [r6++=4]`; `0563` `r3 = [r6++=4]`; `0564` `r4 = [r6++=4]`; `0565` `r5 = [r6++=4]`; `0567` `r7 = [r6++=4]`.
 
-### `056b`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0200b2a8` | yes | `056b` | `r3 = [r6++=-4]` |
-
-Accepted forms with the same top 12 bits: `0560` `r0 = [r6++=4]`; `0561` `r1 = [r6++=4]`; `0563` `r3 = [r6++=4]`; `0564` `r4 = [r6++=4]`; `0565` `r5 = [r6++=4]`; `0567` `r7 = [r6++=4]`.
-
 ### `061b`
 
 1 occurrences, 1 reachable; 2 bytes.
@@ -1306,86 +1032,6 @@ Accepted forms with the same top 12 bits: `0560` `r0 = [r6++=4]`; `0561` `r1 = [
 | `0204068a` | yes | `061b` | `r3 = h[r1++=-2] (u)` |
 
 Accepted forms with the same top 12 bits: `0610` `r0 = h[r1++=2] (u)`; `0612` `r2 = h[r1++=2] (u)`; `0613` `r3 = h[r1++=2] (u)`; `0614` `r4 = h[r1++=2] (u)`; `0615` `r5 = h[r1++=2] (u)`; `0617` `r7 = h[r1++=2] (u)`.
-
-### `080e`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020109ce` | yes | `080e` | `[r0++=r8] = r6` |
-
-### `0905`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202d93a` | yes | `0905` | `r5 = [r0++=r10]` |
-
-### `094e`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0207f74c` | yes | `094e` | `[r4++=r10] = r6` |
-
-### `0b27`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02019b80` | yes | `0b27` | `r7 = [r2++=r14]` |
-
-### `0b6b`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02019b8e` | yes | `0b6b` | `[r6++=r14] = r3` |
-
-### `0e61`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02061ba2` | yes | `0e61` | `r1 = h[r6++=r12] (u)` |
-
-### `0f1b`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0201f958` | yes | `0f1b` | `h[r1++=r14] = r3` |
-
-### `100e`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202d93c` | yes | `100e` | `b[r0++=r8] = r6` |
-
-### `1113`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202c95e` | yes | `1113` | `r3 = b[r1++=r10] (u)` |
-
-### `120f`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02017744` | yes | `120f` | `b[r0++=r12] = r7` |
 
 ### `8520`
 
@@ -1426,26 +1072,6 @@ Accepted forms with the same top 12 bits: `8b22` `sp += 172`; `8b24` `goto 150 <
 | `0207ff72` | yes | `9610` | `rep 4 23 {` |
 
 Accepted forms with the same top 12 bits: `9614` `goto 108 <_start+0x82AE : 20083ce >`; `9618` `r0 = r1 + 22`; `961e` `r6 = r1 + 22`; `961f` `r7 = r1 + 22`.
-
-### `a63c`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020645f8` | yes | `a63c` | `r4 = r3 <<< 6` |
-
-Accepted forms with the same top 12 bits: `a630` `r0 = r3 << 6`; `a633` `r3 = r3 << 6`; `a636` `r6 = r3 << 6`.
-
-### `a93c`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0200827c` | yes | `a93c` | `r4 = r3 <<< 9` |
-
-Accepted forms with the same top 12 bits: `a931` `r1 = r3 << 9`; `a932` `r2 = r3 << 9`.
 
 ### `d646`
 
@@ -1519,62 +1145,30 @@ Accepted, but fault for some register values (a bit index of 32 or more, a REP b
 
 | Opcode | Occurrences | Reachable | Example | Vendor disassembly |
 | --- | --- | --- | --- | --- |
-| `0313` | 5 | 1 | `020832aa` | `rep 4 r3 {` |
-| `0326` | 1 | 1 | `0206684e` | `rep 6 r6 {` |
 | `0332` | 5 | 1 | `020445f0` | `rep 8 r2 {` |
 | `0335` | 3 | 1 | `020445e0` | `rep 8 r5 {` |
 | `0336` | 1 | 1 | `020445d0` | `rep 8 r6 {` |
-| `033d` | 1 | 1 | `02008326` | `rep 8 r13 {` |
-| `034d` | 2 | 1 | `02066850` | `rep 10 r13 {` |
-| `03a5` | 2 | 1 | `02066852` | `rep 22 r5 {` |
-| `03a6` | 2 | 2 | `020666a4` | `rep 22 r6 {` |
 | `03b5` | 5 | 1 | `020445fe` | `rep 24 r5 {` |
-| `03d2` | 3 | 1 | `02066854` | `rep 28 r2 {` |
-| `03e1` | 1 | 1 | `02066856` | `rep 30 r1 {` |
-| `03ee` | 1 | 1 | `02066858` | `rep 30 r14 {` |
-| `03f8` | 2 | 1 | `0206685a` | `rep 32 r8 {` |
 | `e194` | 152 | 83 | `020009f6` | `r1 = r2 & (1 << r1)` |
 | `e866` | 39 | 33 | `02004014` | `[r0+8] /= 1 << r2` |
 | `f194` | 3 | 1 | `0205f5d8` | `r4 = r0 & (1 << r1)  #` |
 
 ## felucca-1.1.5.1-app
 
-`felucca-1.1.5.1-app.bin`, application SHA-256 `f075afa030d3da40...`, 447,580 bytes, 161,524 decoded instructions of which 33,532 statically reachable.
+`felucca-1.1.5.1-app.bin`, application SHA-256 `f075afa030d3da40...`, 447,580 bytes, 161,524 decoded instructions of which 33,230 statically reachable.
 
-4914 rejected opcodes (20502 occurrences), 39 of them in statically reachable code.
+4914 rejected opcodes (20502 occurrences), 17 of them in statically reachable code.
 
 | Opcode | Occurrences | Reachable | Example | Vendor disassembly |
 | --- | --- | --- | --- | --- |
 | `e1f6` | 17 | 17 | `0202a262` | `r3_r2 = r3_r2 / r6 (s)` |
 | `e1fc` | 23 | 16 | `0202a610` | `r5_r4 += r10 * r0 (s)` |
 | `f1fc` | 5 | 5 | `0202a618` | `r5_r4 += r0 * r3 (s)  #` |
-| `0907` | 53 | 1 | `02013cf8` | `r7 = [r0++=r10]` |
-| `1212` | 35 | 1 | `020175a6` | `r2 = b[r1++=r12] (u)` |
-| `0906` | 27 | 1 | `02013d00` | `r6 = [r0++=r10]` |
-| `0c03` | 24 | 1 | `02032b62` | `r3 = h[r0++=r8] (u)` |
-| `0909` | 19 | 1 | `02013cfa` | `[r0++=r10] = r1` |
-| `0807` | 12 | 1 | `020169d2` | `r7 = [r0++=r8]` |
-| `0904` | 9 | 1 | `0202b4d4` | `r4 = [r0++=r10]` |
-| `0b07` | 9 | 1 | `020169d4` | `r7 = [r0++=r14]` |
-| `1203` | 9 | 1 | `02029068` | `r3 = b[r0++=r12] (u)` |
-| `0d07` | 7 | 1 | `020169d6` | `r7 = h[r0++=r10] (u)` |
-| `0473` | 6 | 1 | `0202fcb8` | `[--sp] = {rets, r3}` |
-| `0d0d` | 6 | 1 | `02031364` | `h[r0++=r10] = r5` |
-| `1247` | 6 | 1 | `020175aa` | `r7 = b[r4++=r12] (u)` |
-| `0b19` | 5 | 1 | `0202b4d6` | `[r1++=r14] = r1` |
 | `058b` | 3 | 1 | `02002a1a` | `[r0++=-4] = r3` |
-| `0803` | 3 | 1 | `02016a00` | `r3 = [r0++=r8]` |
-| `0497` | 2 | 1 | `02019370` | `{sr4, retx, rete, reti} = [sp++]` |
-| `05ea` | 2 | 1 | `0202fcbc` | `[r6++=-4] = r2` |
-| `0932` | 2 | 1 | `02013cfe` | `r2 = [r3++=r10]` |
-| `0f03` | 2 | 1 | `0202ab9a` | `r3 = h[r0++=r14] (u)` |
-| `1206` | 2 | 1 | `020175a4` | `r6 = b[r0++=r12] (u)` |
-| `125f` | 2 | 1 | `020175ac` | `b[r5++=r12] = r7` |
 | `ec58` | 2 | 1 | `0202d64c` | `d[r0++=8] = r3_r2` |
 | `ee23` | 2 | 1 | `02031726` | `ifs (r3 > 16384) {` |
 | `f434` | 2 | 1 | `02026dba` | `r0 = umax(r0, r1)  #` |
 | `ff2c` | 2 | 1 | `02031a60` | `ifs (r10 > 16384) goto 14 <_start+0x31954 : 2031a74 >` |
-| `110e` | 1 | 1 | `0202b4d8` | `b[r0++=r10] = r6` |
 | `e1d8` | 1 | 1 | `0202cbda` | `r1_r0 >>= r2` |
 | `e825` | 1 | 1 | `0202d99a` | `if (r5 == 1073741824) {` |
 | `e8d5` | 1 | 1 | `0202cbde` | `{pc, r11, r10, r8-r4} = [sp++]` |
@@ -1585,7 +1179,7 @@ Accepted, but fault for some register values (a bit index of 32 or more, a REP b
 | `f0b8` | 1 | 1 | `0202d064` | `r13 = r3 + r3 + c  #` |
 | `f194` | 1 | 1 | `0200c012` | `r3 = r3 / (1 << r6)  #` |
 
-4875 further opcodes (20194 occurrences) appear only outside reachable code, mostly data decoded as instructions; they are not listed.
+4897 further opcodes (20437 occurrences) appear only outside reachable code, mostly data decoded as instructions; they are not listed.
 
 ### `e1f6`
 
@@ -1635,120 +1229,6 @@ Accepted forms with the same top 12 bits: `e1f0 7800` `r7 = r0 * r8`; `e1f4 0800
 
 Accepted forms with the same top 12 bits: `f1f0 0560` `r0 = r6 * r5  #`; `f1f4 2230` `r2 = r3 / r2 (u)  #`; `f1f8 5440` `r5_r4 = r4 * r4 (s)  #`.
 
-### `0907`
-
-53 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02013cf8` | yes | `0907` | `r7 = [r0++=r10]` |
-
-### `1212`
-
-35 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020175a6` | yes | `1212` | `r2 = b[r1++=r12] (u)` |
-
-### `0906`
-
-27 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02013d00` | yes | `0906` | `r6 = [r0++=r10]` |
-
-### `0c03`
-
-24 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02032b62` | yes | `0c03` | `r3 = h[r0++=r8] (u)` |
-
-### `0909`
-
-19 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02013cfa` | yes | `0909` | `[r0++=r10] = r1` |
-
-### `0807`
-
-12 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020169d2` | yes | `0807` | `r7 = [r0++=r8]` |
-
-### `0904`
-
-9 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202b4d4` | yes | `0904` | `r4 = [r0++=r10]` |
-
-### `0b07`
-
-9 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020169d4` | yes | `0b07` | `r7 = [r0++=r14]` |
-
-### `1203`
-
-9 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02029068` | yes | `1203` | `r3 = b[r0++=r12] (u)` |
-
-### `0d07`
-
-7 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020169d6` | yes | `0d07` | `r7 = h[r0++=r10] (u)` |
-
-### `0473`
-
-6 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202fcb8` | yes | `0473` | `[--sp] = {rets, r3}` |
-
-Accepted forms with the same top 12 bits: `0474` `[--sp] = {rets, r4}`; `0475` `[--sp] = {rets, r5, r4}`; `0476` `[--sp] = {rets, r6-r4}`; `0477` `[--sp] = {rets, r7-r4}`; `0478` `[--sp] = {rets, r8-r4}`; `0479` `[--sp] = {rets, r9-r4}`.
-
-### `0d0d`
-
-6 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02031364` | yes | `0d0d` | `h[r0++=r10] = r5` |
-
-### `1247`
-
-6 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020175aa` | yes | `1247` | `r7 = b[r4++=r12] (u)` |
-
-### `0b19`
-
-5 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202b4d6` | yes | `0b19` | `[r1++=r14] = r1` |
-
 ### `058b`
 
 3 occurrences, 1 reachable; 2 bytes.
@@ -1758,64 +1238,6 @@ Accepted forms with the same top 12 bits: `0474` `[--sp] = {rets, r4}`; `0475` `
 | `02002a1a` | yes | `058b` | `[r0++=-4] = r3` |
 
 Accepted forms with the same top 12 bits: `0580` `[r0++=4] = r0`; `0582` `[r0++=4] = r2`; `0583` `[r0++=4] = r3`; `0584` `[r0++=4] = r4`; `0587` `[r0++=4] = r7`.
-
-### `0803`
-
-3 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02016a00` | yes | `0803` | `r3 = [r0++=r8]` |
-
-### `0497`
-
-2 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02019370` | yes | `0497` | `{sr4, retx, rete, reti} = [sp++]` |
-
-### `05ea`
-
-2 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202fcbc` | yes | `05ea` | `[r6++=-4] = r2` |
-
-Accepted forms with the same top 12 bits: `05e0` `[r6++=4] = r0`; `05e1` `[r6++=4] = r1`; `05e2` `[r6++=4] = r2`; `05e3` `[r6++=4] = r3`; `05e4` `[r6++=4] = r4`; `05e5` `[r6++=4] = r5`.
-
-### `0932`
-
-2 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `02013cfe` | yes | `0932` | `r2 = [r3++=r10]` |
-
-### `0f03`
-
-2 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202ab9a` | yes | `0f03` | `r3 = h[r0++=r14] (u)` |
-
-### `1206`
-
-2 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020175a4` | yes | `1206` | `r6 = b[r0++=r12] (u)` |
-
-### `125f`
-
-2 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `020175ac` | yes | `125f` | `b[r5++=r12] = r7` |
 
 ### `ec58`
 
@@ -1858,14 +1280,6 @@ Accepted forms with the same top 12 bits: `f430 7600` `r7 = abs(r6)  #`; `f434 0
 | `02058d36` | no | `ff2c dd00 017d` | `ifs (r13 > 8192) goto 762 <_start+0x58F16 : 2059036 >` |
 
 Accepted forms with the same top 12 bits: `ff20 0c00 0005` `if (r0 == 32768) goto 10 <_start+0x442C : 200454c >`; `ff21 1c00 000a` `if (r1 != 32768) goto 20 <_start+0x5E80 : 2005fa0 >`; `ff23 1d80 000e` `if (r1 < 4096) goto 28 <_start+0xCFAC : 200d0cc >`; `ff28 2d00 fffb` `if (r2 > 8192) goto -10 <_start+0x4A92 : 2004bb2 >`; `ff29 1b97 0001` `if (r1 <= 77312) goto 2 <_start+0x9FEE : 200a10e >`; `ff2a 0d7c 0002` `ifs (r0 >= 16128) goto 4 <_start+0x5EC4 : 2005fe4 >`.
-
-### `110e`
-
-1 occurrences, 1 reachable; 2 bytes.
-
-| Address | Reachable | Halfwords | Vendor disassembly |
-| --- | --- | --- | --- |
-| `0202b4d8` | yes | `110e` | `b[r0++=r10] = r6` |
 
 ### `e1d8`
 
@@ -1957,8 +1371,6 @@ Accepted, but fault for some register values (a bit index of 32 or more, a REP b
 
 | Opcode | Occurrences | Reachable | Example | Vendor disassembly |
 | --- | --- | --- | --- | --- |
-| `0303` | 18 | 1 | `02017cf6` | `rep 2 r3 {` |
-| `03eb` | 1 | 1 | `0202fcb6` | `rep 30 r11 {` |
 | `e194` | 128 | 76 | `02001260` | `r1 = r2 & (1 << r1)` |
 | `e866` | 11 | 8 | `020036b6` | `[r0+120] /= 1 << r2` |
 | `f194` | 3 | 3 | `02010aac` | `r0 = r4 & (1 << r1)  #` |
