@@ -351,14 +351,13 @@ static void pads_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
     if (offset) { usb_fail(usb, "unsupported USB pad sensing write"); }
     /* Stock's GPIO helper maps USB pins 148/149 to bits 13/14; like the
      * other accepted bits they are stored, with no modeled pad effect. */
-    if (value & ~0x7efeull) { usb_fail(usb, "unsupported USB pad configuration"); }
-    /* SDK DMOUT is bit 1; IO_MODE bit 11 selects GPIO mode. Two attached
-     * FM-1 probe runs measured 164C -> 164E -> 164C readback with IO_MODE
-     * clear. Only the USB-mode output latch is qualified; its relation to
-     * live CON1 pad sensing and GPIO output drive remains unmodeled. */
-    if ((value & 0x802) == 0x802) {
-        usb_fail(usb, "unsupported USB pad GPIO output configuration");
-    }
+    if (value & ~0x7ffeull) { usb_fail(usb, "unsupported USB pad configuration"); }
+    /* SDK DMOUT is bit 1, PU_MODE bit 8 and IO_MODE bit 11. Two FM-1
+     * captures measured stock's 6636 -> 6F36 -> 6F3E -> 663E sequence,
+     * including GPIO-mode DMOUT storage and returning DM to input. CON1
+     * samples varied during these transitions; stored flags do not define
+     * a general sensing dependency or GPIO electrical waveform here.
+     * DPOUT bit 0 remains unqualified and rejected. */
     usb->pads = value;
 }
 

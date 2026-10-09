@@ -51,7 +51,7 @@ class USBEndpointTests(unittest.TestCase):
         # Boot and attached-board CON0 values, plus the full accepted mask.
         # CON1 retains the captured attached-board input, rather than echoing
         # CON0 or inventing an unmeasured dependency on its configuration.
-        for configuration in (0, 0xe0c, 0x164c, 0x7efc, 0x6636):
+        for configuration in (0, 0xe0c, 0x164c, 0x7ffe, 0x6636):
             with self.subTest(configuration=hex(configuration)):
                 guest = Guest()
                 guest.write(PADS, configuration)
@@ -99,17 +99,75 @@ class USBEndpointTests(unittest.TestCase):
                 self.assertEqual(json.loads(result.stdout)["inspection"][:8],
                                  [initial, 2, initial | 2, 2, initial, 2, initial, 2])
 
-    def test_gpio_output_mode_and_dp_output_bit_remain_rejected(self):
-        for configuration, reason in (
-                (0x6636 | 0x800, "unsupported USB pad GPIO output configuration"),
-                (0x6636 | 1, "unsupported USB pad configuration")):
-            with self.subTest(configuration=hex(configuration)):
+    def test_mode_flags_store_and_clear_independently(self):
+        for flag, configured in ((0x100, 0x174c), (0x800, 0x1e4c)):
+            with self.subTest(flag=hex(flag)):
                 guest = Guest()
-                guest.write(PADS, 0x6634)
-                fault_pc = guest.write(PADS, configuration)
+                guest.write(PADS, 0x164c)
+                guest.literal(2, PADS)
+                guest.literal(4, flag)
+                guest.emit(0xe864, 0x2400)  # CON0 |= flag.
+                guest.load(3, 2)
+                guest.literal(1, INSPECTION)
+                guest.store(3, 1)
+                guest.load(3, 2, 4)
+                guest.store(3, 1, 4)
+                guest.load(3, 2)
+                guest.literal(4, (~flag) & 0xffffffff)
+                guest.emit(0x19c3)
+                guest.store(3, 2)
+                guest.load(3, 2)
+                guest.store(3, 1, 8)
+                guest.load(3, 2, 4)
+                guest.store(3, 1, 12)
+                result = run_guest(self.directory, guest)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["inspection"][:4],
+                                 [configured, 2, 0x164c, 2])
+
+    def test_stock_mode_entry_direction_and_exit_preserve_latched_fields(self):
+        # Twice captured: 6636 -> 6f36 -> 6f3e -> 663e -> 164c.
+        # CON1 is live traffic on hardware; this checks only stored CON0
+        # transitions while retaining the model's prior sensing snapshot.
+        guest = Guest()
+        guest.write(PADS, 0x6636)
+        guest.literal(2, PADS)
+
+        def record(slot):
+            guest.literal(1, INSPECTION + slot * 8)
+            guest.load(3, 2)
+            guest.store(3, 1)
+            guest.load(3, 2, 4)
+            guest.store(3, 1, 4)
+
+        record(0)
+        guest.literal(4, 0x900)
+        guest.emit(0xe864, 0x2400)  # Enter paired modes with stock OR 0x900.
+        record(1)
+        guest.literal(4, 8)
+        guest.emit(0xe864, 0x2400)  # Set the input-direction bit.
+        record(2)
+        guest.load(3, 2)
+        guest.literal(4, 0xfffff6ff)
+        guest.emit(0x19c3)
+        guest.store(3, 2)  # Clear 0x900, retaining the direction and DM latch.
+        record(3)
+        guest.write(PADS, 0x164c)
+        record(4)
+        result = run_guest(self.directory, guest)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["inspection"][:10],
+                         [0x6636, 2, 0x6f36, 2, 0x6f3e, 2, 0x663e, 2, 0x164c, 2])
+
+    def test_dp_output_bit_remains_rejected(self):
+        for initial in (0x6636, 0x6f3e):
+            with self.subTest(initial=hex(initial)):
+                guest = Guest()
+                guest.write(PADS, initial)
+                fault_pc = guest.write(PADS, initial | 1)
                 result = run_guest(self.directory, guest)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn(reason, result.stderr)
+                self.assertIn("unsupported USB pad configuration", result.stderr)
                 self.assertIn(f"at PC 0x{fault_pc:08x} after 5 instructions", result.stderr)
 
     def test_pad_sensing_write_is_rejected(self):
