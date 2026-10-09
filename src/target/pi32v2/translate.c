@@ -873,9 +873,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (a == b) { goto illegal; }
         load(d, gpr[a], read_gpr(d, b), MO_UB);
         tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 1);
-    } else if ((op & 0xff88) == 0x0780) {
+    } else if ((op & 0xff88) == 0x0780 || (op & 0xff88) == 0x0788) {
+        /* Vendor stock 079B at 0x0201948a is b[r1++=-1] = r3,
+         * bundled with r6 = r4. Store at the incoming base before updating. */
         store(d, read_gpr(d, a), read_gpr(d, b), MO_UB);
-        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), 1);
+        tcg_gen_addi_i32(gpr[b], read_gpr(d, b), op & 8 ? -1 : 1);
     } else if ((op & 0xff80) == 0x0680) {
         store(d, read_gpr(d, a), read_gpr(d, b), MO_LEUW | MO_ALIGN);
         tcg_gen_addi_i32(gpr[b], read_gpr(d, b), op & 8 ? -2 : 2);
@@ -1632,7 +1634,8 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
         if ((op & 7) == ((op >> 4) & 7)) { return -1; }
         return (1u << ((op >> 4) & 7)) | (1u << (op & 7));
     }
-    if ((op & 0xff88) == 0x0780 || (op & 0xff88) == 0x0680) {
+    if ((op & 0xff88) == 0x0780 || (op & 0xff88) == 0x0788 ||
+        (op & 0xff88) == 0x0680) {
         return 1u << ((op >> 4) & 7);
     }
     if ((op & 0xfff8) == 0xecd8 && (fetch(d, here + 2) & 3) < 2) {
