@@ -39,7 +39,9 @@ struct FM1PocState {
     Pi32v2CPU *cpu;
     Pi32v2CPU *cpu1;
     MemoryRegion irq_mmio, gpio_mmio, iomap_mmio;
-    MemoryRegion irq1_mmio, core_control_mmio;
+    MemoryRegion irq1_mmio, core_control_mmio, src_mmio, rand_mmio;
+    uint32_t src[9];
+    uint64_t rand_state;
     uint32_t core_control[2], irq1_configs[32];
     int lock_owner;
     MemoryRegion cache_ram[5];

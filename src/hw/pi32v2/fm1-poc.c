@@ -490,6 +490,52 @@ static void core_control_write(void *opaque, hwaddr offset, uint64_t value, unsi
     update_irq(m);
 }
 
+/* JL_SRC sample-rate converter (IRQ 58): stock's startup clears CON0 and
+ * stores the remaining configuration. Conversion is unimplemented, so any
+ * other CON0 value faults instead of silently producing no output. */
+static uint64_t src_read(void *opaque, hwaddr offset, unsigned size)
+{
+    return ((FM1PocState *)opaque)->src[offset / 4];
+}
+static void src_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    FM1PocState *m = opaque;
+    if (offset == 0 && (value & ~0x40ull)) {
+        pi32v2_fail(current_cpu ? cpu_env(current_cpu) : &m->cpu->env,
+                    "SRC conversion is unimplemented");
+    }
+    m->src[offset / 4] = offset ? value : 0;
+}
+static const MemoryRegionOps src_ops = {
+    .read = src_read, .write = src_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {.min_access_size = 4, .max_access_size = 4},
+    .impl = {.min_access_size = 4, .max_access_size = 4},
+};
+
+/* JL_RAND R64L/R64H. Hardware entropy would make runs irreproducible, so
+ * each read returns the next word of a fixed-seed xorshift64 sequence. */
+static uint64_t rand_read(void *opaque, hwaddr offset, unsigned size)
+{
+    FM1PocState *m = opaque;
+    m->rand_state ^= m->rand_state << 13;
+    m->rand_state ^= m->rand_state >> 7;
+    m->rand_state ^= m->rand_state << 17;
+    return (uint32_t)m->rand_state;
+}
+static void rand_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
+{
+    FM1PocState *m = opaque;
+    pi32v2_fail(current_cpu ? cpu_env(current_cpu) : &m->cpu->env,
+                "write to read-only random number generator");
+}
+static const MemoryRegionOps rand_ops = {
+    .read = rand_read, .write = rand_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {.min_access_size = 4, .max_access_size = 4},
+    .impl = {.min_access_size = 4, .max_access_size = 4},
+};
+
 static const MemoryRegionOps core_control_ops = {
     .read = core_control_read, .write = core_control_write,
     .endianness = DEVICE_LITTLE_ENDIAN,
@@ -585,6 +631,11 @@ static void machine_init(MachineState *ms)
     memory_region_init_io(&m->core_control_mmio, OBJECT(m), &core_control_ops,
                           m, "fm1.core-control", 8);
     fm1_sfr_map(0x01eee000, &m->core_control_mmio);
+    memory_region_init_io(&m->src_mmio, OBJECT(m), &src_ops, m, "fm1.src", 36);
+    fm1_sfr_map(0x14300, &m->src_mmio);
+    m->rand_state = 0x464d312d454d55ull;     /* any fixed nonzero seed */
+    memory_region_init_io(&m->rand_mmio, OBJECT(m), &rand_ops, m, "fm1.rand", 8);
+    fm1_sfr_map(0x13b00, &m->rand_mmio);
     if (m->cpu1) {
         m->irq1 = qdev_get_gpio_in(DEVICE(m->cpu1), 0);
         memory_region_init_io(&m->irq1_mmio, OBJECT(m), &irq_ops, m->cpu1,
