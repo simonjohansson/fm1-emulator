@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""USB endpoint four retains the bridge's buffer and packet-size checks."""
+"""USB endpoint bounds and distinct pad configuration/sensing registers."""
 import json
 from pathlib import Path
 import subprocess
@@ -7,6 +7,8 @@ import tempfile
 import unittest
 
 from support import COMMAND, INSPECTION, ROOT, USB, Guest, environment, run_guest
+
+PADS = 0x51000
 
 
 class USBEndpointTests(unittest.TestCase):
@@ -44,6 +46,30 @@ class USBEndpointTests(unittest.TestCase):
         result = run_guest(self.directory, guest)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("USB endpoint buffer must be aligned and entirely in SRAM", result.stderr)
+
+    def test_pad_sensing_is_distinct_from_stored_configuration(self):
+        # Boot and attached-board CON0 values, plus the full accepted mask.
+        # CON1 retains the captured attached-board input, rather than echoing
+        # CON0 or inventing an unmeasured dependency on its configuration.
+        for configuration in (0, 0xe0c, 0x164c, 0x7efc):
+            with self.subTest(configuration=hex(configuration)):
+                guest = Guest()
+                guest.write(PADS, configuration)
+                guest.literal(2, PADS)
+                guest.load(3, 2)
+                guest.load(4, 2, 4)
+                result = run_guest(self.directory, guest)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["registers"][3:5],
+                                 [configuration, 2])
+
+    def test_pad_sensing_write_is_rejected(self):
+        guest = Guest()
+        guest.write(PADS, 0x164c)
+        guest.write(PADS + 4, 0)
+        result = run_guest(self.directory, guest)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsupported USB pad sensing write", result.stderr)
 
 
 if __name__ == "__main__":

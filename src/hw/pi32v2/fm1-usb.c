@@ -335,12 +335,20 @@ static void usb_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
 
 static uint64_t pads_read(void *opaque, hwaddr offset, unsigned size)
 {
-    return ((FM1PocUSB *)opaque)->pads;
+    FM1PocUSB *usb = opaque;
+    if (!offset) { return usb->pads; }
+    /* USB_IO_CON1 senses the pads separately from CON0 configuration.
+     * The usb-io board capture and a fresh attached-probe read both measured
+     * CON0=0x164c, CON1=2. Retain that captured attached-board sensing state;
+     * no general dependency on stored CON0 bits has been measured. */
+    if (offset == 4) { return 2; }
+    usb_fail(usb, "unsupported USB pad register read");
 }
 
 static void pads_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)
 {
     FM1PocUSB *usb = opaque;
+    if (offset) { usb_fail(usb, "unsupported USB pad sensing write"); }
     /* Stock's GPIO helper maps USB pins 148/149 to bits 13/14; like the
      * other accepted bits they are stored, with no modeled pad effect. */
     if (value & ~0x7efcull) { usb_fail(usb, "unsupported USB pad configuration"); }
@@ -387,7 +395,7 @@ void fm1_usb_init(FM1PocUSB *usb, Object *owner, Pi32v2CPU *cpu)
     memory_region_init_io(&usb->mmio, owner, &usb_ops, usb, "fm1.usb0-cold", 0x40);
     /* The host side (character backend) runs in the main loop. */
     fm1_sfr_map_locked(USB_BASE, &usb->mmio);
-    memory_region_init_io(&usb->pads_mmio, owner, &pads_ops, usb, "fm1.usb-pads", 4);
+    memory_region_init_io(&usb->pads_mmio, owner, &pads_ops, usb, "fm1.usb-pads", 8);
     fm1_sfr_map_locked(USB_PADS_BASE, &usb->pads_mmio);
     memory_region_init_io(&usb->high_speed_mmio, owner, &high_speed_ops, usb,
                           "fm1.husb-disabled", 4);
