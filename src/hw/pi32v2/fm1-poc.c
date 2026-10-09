@@ -109,7 +109,8 @@ static bool spi2_irq_level(FM1PocState *m);
 static void update_irq(FM1PocState *m)
 {
     bool shared = m->timer1.pending || m->timers[1].pending || m->alnk_irq_level ||
-                  m->adc_irq_level || m->lcd.irq_level || m->lrct.done || spi2_irq_level(m);
+                  m->adc_irq_level || m->lcd.irq_level || m->uart.irq_level ||
+                  m->lrct.done || spi2_irq_level(m);
     qemu_set_irq(m->irq, shared || m->ttmr.pending || software_pending(m, false));
     if (m->cpu1) {
         qemu_set_irq(m->irq1, shared || m->ttmr1.pending || software_pending(m, true));
@@ -124,10 +125,10 @@ static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *pr
     bool core1 = CPU(env_archcpu(e))->cpu_index != 0;
     const uint32_t *configs = core1 ? m->irq1_configs : m->irq_configs;
     uint32_t soft = software_pending(m, core1);
-    const unsigned sources[] = {3, 5, 11, 16, 24, 37, 44, 63, 124, 125, 126, 127};
+    const unsigned sources[] = {3, 5, 11, 16, 20, 24, 37, 44, 63, 124, 125, 126, 127};
     const bool pending[] = {core1 ? m->ttmr1.pending : m->ttmr.pending,
                             m->timer1.pending, m->alnk_irq_level, m->lcd.irq_level,
-                            m->adc_irq_level,
+                            m->uart.irq_level, m->adc_irq_level,
                             spi2_irq_level(m), m->lrct.done,
                             m->timers[1].pending,
                             soft & 16, soft & 32, soft & 64, soft & 128};
@@ -135,6 +136,7 @@ static bool fm1_poc_select_irq(CPUPi32v2State *e, unsigned *number, unsigned *pr
                                (configs[0] >> 20) & 15,
                                (configs[1] >> 12) & 15,
                                configs[2] & 15,
+                               (configs[2] >> 16) & 15,
                                configs[3] & 15,
                                (configs[4] >> 20) & 15,
                                (configs[5] >> 16) & 15,
@@ -436,7 +438,8 @@ static uint64_t irq_read(void *opaque, hwaddr offset, unsigned size)
     case 0x80:
         return ((CPU(cpu)->cpu_index ? m->ttmr1.pending : m->ttmr.pending) ? 1u << 3 : 0) |
                (m->timer1.pending ? 1u << 5 : 0) | (m->alnk_irq_level ? 1u << 11 : 0) |
-               (m->lcd.irq_level ? 1u << 16 : 0) | (m->adc_irq_level ? 1u << 24 : 0);
+               (m->lcd.irq_level ? 1u << 16 : 0) | (m->uart.irq_level ? 1u << 20 : 0) |
+               (m->adc_irq_level ? 1u << 24 : 0);
     case 0x84: return (spi2_irq_level(m) ? 1u << 5 : 0) | (m->lrct.done ? 1u << 12 : 0) |
                       (m->timers[1].pending ? 0x80000000u : 0);
     case 0x8c: return software_pending(m, CPU(cpu)->cpu_index != 0) << 24;
@@ -475,7 +478,8 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
             pi32v2_fail(&cpu->env, "unsupported IRQ pending clear");
         }
         if (value == 255 && (m->timers[1].pending || m->timer1.pending || m->lrct.done ||
-                             m->adc_irq_level || m->lcd.irq_level || spi2_irq_level(m))) {
+                             m->adc_irq_level || m->lcd.irq_level || m->uart.irq_level ||
+                             spi2_irq_level(m))) {
             pi32v2_fail(&cpu->env, "IRQ clear requires a device acknowledgment");
         }
         if (!CPU(cpu)->cpu_index) { m->software_latch &= ~value; }
@@ -844,7 +848,7 @@ static void machine_init(MachineState *ms)
     sysbus_connect_irq(SYS_BUS_DEVICE(&m->adc), 0, qemu_allocate_irq(adc_irq_input, m, 24));
     fm1_sfr_map(0x13100, sysbus_mmio_get_region(SYS_BUS_DEVICE(&m->adc), 0));
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
-    fm1_uart_init(&m->uart, OBJECT(m), m->cpu);
+    fm1_uart_init(&m->uart, OBJECT(m), m->cpu, &m->syscon, ttmr_irq, m);
     fm1_crc_init(&m->crc, OBJECT(m), m->cpu);
     fm1_ttmr_init(&m->ttmr, OBJECT(m), m->cpu, ttmr_irq, m);
     fm1_lrct_init(&m->lrct, OBJECT(m), &m->system, ttmr_irq, m);
