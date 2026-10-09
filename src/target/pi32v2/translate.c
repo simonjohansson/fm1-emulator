@@ -643,7 +643,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                (op & 0xfff0) == 0xecb0 ||
                (op & 0xfff0) == 0xed30 || (op & 0xfff0) == 0xeeb0 ||
                (op & 0xfff0) == 0xed10 || (op & 0xfff0) == 0xee10 ||
-               (op & 0xfff0) == 0xee90 ||
+               (op & 0xfff0) == 0xed90 || (op & 0xfff0) == 0xee90 ||
                (op & 0xfff0) == 0xe920 || (op & 0xfff0) == 0xe990 ||
                (op & 0xfff0) == 0xec30 ||
                (op & 0xfff0) == 0xec90 || (op & 0xfff0) == 0xeca0 ||
@@ -702,9 +702,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             right = read_gpr(d, (x >> 8) & 15);
             /* Vendor EE17/0F00 establishes signed r7 > r15. */
             cond = kind == 0xe1 ? TCG_COND_GT : TCG_COND_GE;
-        } else if (kind == 0xe9) {
+        } else if (kind == 0xd9 || kind == 0xe9) {
             if (x & 255) { goto illegal; }
-            right = read_gpr(d, (x >> 8) & 15); cond = TCG_COND_LE;
+            /* Primary D9 register IF and vendor ED90/0800 at stock
+             * 0x02015492 select signed r0 < r8. Existing THEN/ELSE
+             * boundaries apply; the IF itself has no memory access. */
+            right = read_gpr(d, (x >> 8) & 15);
+            cond = kind == 0xd9 ? TCG_COND_LT : TCG_COND_LE;
         } else if (kind == 0xcb) {
             /* Vendor-backed unsigned literals disagree with SLEIGH's packed
              * label (ECB0 0208 means 520). Keep all twelve literal bits. */
