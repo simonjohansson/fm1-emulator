@@ -17,6 +17,7 @@ typedef struct FM1PocUART {
     void (*update_irq)(void *opaque);
     void *opaque;
     bool busy, pending, irq_level;
+    FILE *log;              /* optional development capture of TX bytes */
 } FM1PocUART;
 
 void fm1_uart_init(FM1PocUART *uart, Object *owner, Pi32v2CPU *cpu,

@@ -64,6 +64,9 @@ Edit `src/`, never generated sources under `.cache/`. Its directory structure
 matches QEMU so `tools/integrate.py` can apply it to the pinned release. Device
 and test-hook names retaining `poc` are internal compatibility names.
 `./emulator --qemu ...` retains the underlying QEMU command line for development.
+With it, `FM1_POC_UART1_LOG=/path/to/file` appends bytes the firmware sends on
+UART1 to that file; stock firmware sends MIDI messages there. Normal launches clear
+`FM1_POC_*` variables.
 Serialize builds and guest runs that share captures or caches.
 
 ## Build inputs

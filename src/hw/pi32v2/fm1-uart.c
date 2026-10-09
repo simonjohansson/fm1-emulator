@@ -2,8 +2,12 @@
 /* Fresh subset from WL82 declarations, vendor SDK accesses and an FM-1 UART
  * DMA probe. Serial pins are disconnected: TX completion affects registers
  * and IRQ20, while RX remains idle. No transmitted bytes enter USB console
- * output. Abort, restart and active configuration changes are unqualified. */
+ * output; FM1_POC_UART1_LOG optionally appends them to a file for
+ * development. Stock firmware sends MIDI here (running-status Note On). Abort, restart and active
+ * configuration changes are unqualified. */
 #include "qemu/osdep.h"
+#include "qemu/error-report.h"
+#include "system/address-spaces.h"
 #include "fm1-uart.h"
 
 #define UART_ENABLE 1u
@@ -82,6 +86,14 @@ static void start_transfer(FM1PocUART *u, uint64_t count)
     uint64_t duration = transfer_duration_ns(u, count);
     /* Disconnected TX has no observable payload consumer. Only the bounded
      * SRAM range and measured completion/status transitions are modeled. */
+    if (u->log) {
+        g_autofree uint8_t *bytes = g_malloc(count);
+        if (address_space_read(&address_space_memory, source, MEMTXATTRS_UNSPECIFIED,
+                               bytes, count) == MEMTX_OK) {
+            fwrite(bytes, 1, count, u->log);
+            fflush(u->log);
+        }
+    }
     u->registers[6] = count;
     u->busy = true;
     timer_mod_ns(u->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + duration);
@@ -178,6 +190,11 @@ void fm1_uart_init(FM1PocUART *u, Object *owner, Pi32v2CPU *cpu,
     u->update_irq = update_irq;
     u->opaque = opaque;
     u->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, transfer_complete, u);
+    const char *log = getenv("FM1_POC_UART1_LOG");
+    if (log && !(u->log = fopen(log, "ab"))) {
+        error_report("cannot open FM1_POC_UART1_LOG %s", log);
+        exit(EXIT_FAILURE);
+    }
     fm1_syscon_set_validator(syscon, FM1_SYSCON_CLK_CON1,
                               validate_clock_write, u);
     memory_region_init_io(&u->mmio, owner, &uart_ops, u, "fm1.uart1", 44);
