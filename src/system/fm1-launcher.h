@@ -141,8 +141,11 @@ static void fm1_launcher_arguments(int *argc, char ***argv)
     FM1_LAUNCHER_ARG("-accel");
     FM1_LAUNCHER_ARG("tcg,thread=single");
     FM1_LAUNCHER_ARG("-icount");
+    /* The interactive guest runs faster than real time; align paces its
+     * virtual clock to the host's, as CoreAudio consumes samples in real
+     * time and an unpaced guest overruns the output queue. */
     FM1_LAUNCHER_ARG(headless ? "shift=3,align=off,sleep=off" :
-                              "shift=3,align=off,sleep=on");
+                              "shift=3,align=on,sleep=on");
     FM1_LAUNCHER_ARG("-display");
     FM1_LAUNCHER_ARG(headless ? "none" :
                      "cocoa,zoom-to-fit=on,zoom-interpolation=off");
