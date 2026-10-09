@@ -96,19 +96,30 @@ class RepeatTests(unittest.TestCase):
                     self.assertEqual(state["registers"][3], count)
                 self.assertEqual(state["instructions"], guest.instructions + count - 1)
 
-    def test_unqualified_bodies_fault_at_repeat_before_effects(self):
-        bodies = [(0x0302,), (0x8000,), (0xe0e3, 0x3001)]
-        for body in bodies:
-            with self.subTest(body=body):
+    def test_body_straddling_its_end_faults_at_repeat(self):
+        guest = Guest()
+        guest.literal(2, 3)
+        fault_pc = guest.pc
+        guest.emit(0x0302)
+        guest.emit(0xe0e3, 0x3001)   # a 4-byte body instruction past the 2-byte span
+        result = run_guest(self.directory, guest)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(f"unsupported instruction 0x0302 at PC 0x{fault_pc:08x} after 1 instructions",
+                      result.stderr)
+
+    def test_control_transfer_in_body_faults_at_that_instruction(self):
+        # Nested REP (register and immediate forms) is a control transfer.
+        for body in (0x0302, 0x8000):
+            with self.subTest(body=hex(body)):
                 guest = Guest()
                 guest.literal(2, 3)
-                fault_pc = guest.pc
-                guest.emit(0x0302)  # Last case ends halfway through its body.
-                guest.emit(*body)
+                guest.emit(0x0302)
+                body_pc = guest.pc
+                guest.emit(body)
                 result = run_guest(self.directory, guest)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn("unsupported instruction 0x0302", result.stderr)
-                self.assertIn(f"at PC 0x{fault_pc:08x} after 1 instructions", result.stderr)
+                self.assertIn(f"unsupported instruction 0x{body:04x} at PC 0x{body_pc:08x}",
+                              result.stderr)
 
     def test_body_can_overwrite_counter_before_implicit_writeback(self):
         guest = Guest()

@@ -1317,23 +1317,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         uint32_t end = next + (((op >> 4) & 15) + 1) * 2;
         /* REP snapshots its count, skips the byte span at zero, and writes
          * the remaining count back after each completed iteration. The body
-         * may overwrite the count register. Qualify only existing linear
-         * forms; executed nested/control-transfer forms remain faults. */
+         * may overwrite the count register. Its instructions must end exactly
+         * at the span's end; translate_insn faults any body instruction that
+         * transfers control (branch, IF, nested REP), whatever its form. */
         bool qualified = true;
         for (uint32_t at = next; at < end; ) {
-            uint16_t body = fetch(d, at);
-            int writes = parallel_writes(d, at, body);
-            if (body >> 13 == 6 || (body & 0xf800) == 0xf000) {
-                uint16_t head = body >> 13 == 6 ? body & 0x1fff : body & ~0x1000;
-                uint32_t tail = at + operation_size(head);
-                int head_writes = parallel_writes(d, at, head);
-                int tail_writes = parallel_writes(d, tail, fetch(d, tail));
-                writes = head_writes < 0 || tail_writes < 0 ||
-                         ((head_writes & tail_writes) &&
-                          !discarded_load(fetch(d, tail))) ? -1 : head_writes | tail_writes;
-            }
             uint32_t after = instruction_end(d, at);
-            if (writes < 0 || after > end) { qualified = false; break; }
+            if (after > end) { qualified = false; break; }
             at = after;
         }
         if (!qualified && immediate) {
@@ -1856,6 +1846,9 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         db->pc_next = next;
         return;
     }
+    /* A REP body is straight-line code: emit speculatively and replace a
+     * control transfer with the unsupported-instruction fault. */
+    TCGOp *body_start = d->repeating ? tcg_last_op() : NULL;
     bool parallel = op >> 13 == 6 || (op & 0xf800) == 0xf000;
     if (parallel) {
         /* Either half may touch MMIO. Ending the TB here lets QEMU enable
@@ -1885,6 +1878,10 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         }
     } else {
         next = decode_operation(d, here, op);
+    }
+    if (body_start && db->is_jmp == DISAS_NORETURN) {
+        tcg_remove_ops_after(body_start);
+        gen_helper_pi32v2_illegal(tcg_env, tcg_constant_i32(op));
     }
     db->pc_next = next;
     if (db->is_jmp == DISAS_NEXT &&

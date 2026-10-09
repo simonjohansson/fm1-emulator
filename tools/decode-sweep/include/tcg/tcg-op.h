@@ -88,4 +88,14 @@ TCGv_i32 sweep_const(uint32_t value);
 #define tcg_gen_goto_tb(...) ((void)0)
 #define tcg_gen_exit_tb(...) ((void)0)
 #define tcg_gen_lookup_and_goto_ptr() ((void)0)
+#define tcg_gen_add_i64(...) ((void)0)
+#define tcg_gen_clzi_i32(...) ((void)0)
+#define tcg_gen_extrl_i64_i32(...) ((void)0)
+#define tcg_gen_mul_i64(...) ((void)0)
+#define tcg_gen_rotri_i32(...) ((void)0)
+#define tcg_gen_setcond_i64(...) ((void)0)
+#define tcg_gen_shr_i64(...) ((void)0)
+typedef struct SweepOp TCGOp;
+#define tcg_last_op() ((TCGOp *)0)
+#define tcg_remove_ops_after(...) ((void)0)
 #endif
