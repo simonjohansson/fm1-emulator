@@ -68,15 +68,17 @@ class EmulatorTests(unittest.TestCase):
         self.assertEqual(state["registers"][6], 0xbeef)
         self.assertEqual(state["instructions"], guest.instructions)
 
-    def test_qualified_packed_or_rejects_destination_conflict(self):
+    def test_qualified_packed_or_keeps_head_over_discarded_load(self):
+        # Both halves write r6; the tail's load is discarded, as in stock FM-1
+        # firmware's F100 A06D / 6000 bundle.
         guest = Guest()
+        guest.write(INSPECTION, 0x8000beef)
         guest.literal(4, INSPECTION)
         guest.literal(6, 8)
-        guest.emit(0xf146, 0x60f0, 0x604e)
-        result = run_guest(self.directory, guest)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unsupported instruction 0xf146", result.stderr)
-        self.assertIn("after 2 instructions", result.stderr)
+        guest.emit(0xf146, 0x60f0, 0x604e)  # r6=r6|0xf0 # r6=h[r4].
+        state = guest_state(self.directory, guest)
+        self.assertEqual(state["registers"][6], 0xf8)
+        self.assertEqual(state["instructions"], guest.instructions)
 
     def test_cli_version(self):
         result = self.cli("--version")

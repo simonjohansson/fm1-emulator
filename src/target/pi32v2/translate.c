@@ -22,6 +22,7 @@ static TCGv_i64 instructions;
 static uint32_t instruction_end(PiDisasContext *d, uint32_t here);
 static unsigned operation_size(uint16_t op);
 static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op);
+static bool discarded_load(uint16_t tail);
 
 void pi32v2_translate_init(void)
 {
@@ -1227,7 +1228,8 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                 int head_writes = parallel_writes(d, at, head);
                 int tail_writes = parallel_writes(d, tail, fetch(d, tail));
                 writes = head_writes < 0 || tail_writes < 0 ||
-                         (head_writes & tail_writes) ? -1 : head_writes | tail_writes;
+                         ((head_writes & tail_writes) &&
+                          !discarded_load(fetch(d, tail))) ? -1 : head_writes | tail_writes;
             }
             uint32_t after = instruction_end(d, at);
             if (writes < 0 || after > end) { qualified = false; break; }
@@ -1462,7 +1464,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         }
         next = here + 4;
         uint32_t immediate = (((op >> 4) & 7) << 7) | (x >> 9);
-        if (kind == 0x31 || kind >= 0x3a) { immediate = sext(immediate, 10); }
+        /* EQ and NE compare with a signed immediate, like the signed forms:
+         * vendor disassembly of stock FM-1 firmware shows F874/FC04 as
+         * "if (r4 == -2)" and never an EQ/NE operand of 512 or more. */
+        if (kind == 0x30 || kind == 0x31 || kind >= 0x3a) { immediate = sext(immediate, 10); }
         count(d); compare_branch(d, next + sext(x & 511, 9) * 2, next, cond,
                                  read_gpr(d, op & 15), tcg_constant_i32(immediate));
     } else if ((op & 0xfff0) == 0x0100 || (op & 0xfff0) == 0x0110) {
@@ -1518,6 +1523,15 @@ illegal:
     gen_helper_pi32v2_illegal(tcg_env, tcg_constant_i32(op));
     db->is_jmp = DISAS_NORETURN;
     return next;
+}
+/* A tail offset load (6000 family, no writeback) whose destination the head
+ * also writes is a discarded read: the head's value remains. Stock FM-1
+ * firmware passes "sys" to clk_get from F100 A06D / 6000 (r0 = r10 + 109 ||
+ * r0 = [r0+0]). The tail is translated first, so the head's write holds.
+ * Other overlapping writes stay rejected. */
+static bool discarded_load(uint16_t tail)
+{
+    return (tail & 0xe080) == 0x6000;
 }
 static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
 {
@@ -1693,7 +1707,8 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         uint16_t tail = fetch(d, tail_pc);
         int head_writes = parallel_writes(d, here, head);
         int tail_writes = parallel_writes(d, tail_pc, tail);
-        if (head_writes < 0 || tail_writes < 0 || (head_writes & tail_writes)) {
+        if (head_writes < 0 || tail_writes < 0 ||
+            ((head_writes & tail_writes) && !discarded_load(tail))) {
             gen_helper_pi32v2_illegal(tcg_env, tcg_constant_i32(op));
             db->is_jmp = DISAS_NORETURN;
         } else {
