@@ -196,9 +196,13 @@ static void fm1_text(NSString *text, NSRect rect, CGFloat size, NSColor *color)
         angle += steps * 15;
         pending = CLAMP(pending + steps, -32, 32);
         if (!phaseTimer) {
+            /* Each quadrature phase must outlast a guest matrix scan; Felucca
+             * samples the encoders once per 1.1 ms frame. 4 ms phases play
+             * about 60 detents a second, so a fast turn does not queue up. */
             [self advancePhase];
-            phaseTimer = [NSTimer timerWithTimeInterval:.02 target:self
+            phaseTimer = [NSTimer timerWithTimeInterval:.004 target:self
                            selector:@selector(advancePhase) userInfo:nil repeats:YES];
+            [phaseTimer setTolerance:0];
             [[NSRunLoop mainRunLoop] addTimer:phaseTimer forMode:NSRunLoopCommonModes];
         }
     }
