@@ -183,6 +183,31 @@ def main():
             raise SystemExit("pinned AioContext timer notify hook anchor differs")
         content = content.replace(notify, quiet)
     write_changed(asyncc, content)
+    # Round-robin icount splits each slice evenly among all vCPUs, so a
+    # core held in reset or halted still halves the running core's slices
+    # and doubles its CPU-loop exits. Split among runnable vCPUs only;
+    # icount_prepare_for_run still caps every budget at the next deadline.
+    # An idle vCPU's cpu_exec only returns EXCP_HALTED; skip it rather than
+    # cycling the BQL and replay locks for it every slice.
+    rr = SOURCE / "accel/tcg/tcg-accel-ops-rr.c"
+    content = rr.read_text()
+    for before, after in [
+        ('#include "system/tcg.h"\n',
+         '#include "system/tcg.h"\n#include "system/cpus.h"\n'),
+        ("            cpu_budget = icount_percpu_budget(cpu_count);\n",
+         "            CPUState *idle;\n"
+         "            CPU_FOREACH(idle) {\n"
+         "                cpu_count -= cpu_thread_is_idle(idle);\n"
+         "            }\n"
+         "            cpu_budget = icount_percpu_budget(MAX(cpu_count, 1));\n"),
+        ("            if (cpu_can_run(cpu)) {\n",
+         "            if (cpu_can_run(cpu) && !cpu_thread_is_idle(cpu)) {\n"),
+    ]:
+        if after not in content:
+            if content.count(before) != 1:
+                raise SystemExit("pinned round-robin icount budget hook anchor differs")
+            content = content.replace(before, after)
+    write_changed(rr, content)
     write_changed(SOURCE / "configs/targets/pi32v2-softmmu.mak",
                   "TARGET_ARCH=pi32v2\nTARGET_LONG_BITS=32\n")
     devices = SOURCE / "configs/devices/pi32v2-softmmu"

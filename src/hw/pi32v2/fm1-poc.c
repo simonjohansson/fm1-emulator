@@ -66,6 +66,9 @@ static void fm1_poc_reset_state(CPUPi32v2State *e)
     if (s->cpu) {
         fm1_system_sync_guards(s);
     }
+    /* Cores share translations, so a reset core keeps the current
+     * fetch-guard generation instead of reusing a stale one. */
+    e->fetch_epoch = m->system.fetch_epoch;
     e->xip_fetch = m->nor.cpu && fm1_nor_xip_enabled(&m->nor);
 }
 
@@ -517,6 +520,10 @@ static void machine_init(MachineState *ms)
         m->cpu1->observer_ops = m->cpu->observer_ops;
         m->cpu1->stop_pc = UINT32_MAX;
         m->cpu1->instruction_limit = m->cpu->instruction_limit;
+        /* Without core-0 observers, translation is identical for both
+         * cores and shared code is translated once. */
+        m->cpu1->private_translation = m->cpu->stop_pc != UINT32_MAX ||
+                                       m->cpu->frame_pc || m->cpu->loop_pc;
         object_property_set_bool(OBJECT(m->cpu1), "start-powered-off", true, &error_fatal);
         qdev_realize(DEVICE(m->cpu1), NULL, &error_fatal);
     }

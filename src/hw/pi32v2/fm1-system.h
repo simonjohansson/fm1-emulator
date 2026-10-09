@@ -35,6 +35,7 @@ typedef struct FM1PocSystem {
     uint8_t p33_plain[5];                   /* see p33_plain in fm1-system.c */
     uint32_t debug_message, debug_enable, write_enable;
     uint32_t write_low[3], write_high[3], pc_low[2], pc_high[2];
+    uint32_t fetch_epoch;                   /* PC-window generation */
     uint32_t emu_control, emu_message, stack_low[2], stack_high[2];
     uint32_t etm_control;
     uint32_t cache_control, cache_way[2];   /* CACHE_CON enables, DCACHE_WAY, ICACHE_WAY */

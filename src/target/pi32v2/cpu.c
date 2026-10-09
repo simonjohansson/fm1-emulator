@@ -31,7 +31,7 @@ static TCGTBCPUState get_tb_state(CPUState *cs)
                            (env->repeat_end ? PI32V2_TB_REPEAT : 0) |
                            (env->xip_fetch ? PI32V2_TB_XIP : 0) |
                            (env->predicate_end ? PI32V2_TB_PREDICATE : 0) |
-                           (cs->cpu_index ? PI32V2_TB_CORE1 : 0) };
+                           (PI32V2_CPU(cs)->private_translation ? PI32V2_TB_CORE1 : 0) };
 }
 
 static void synchronize(CPUState *cs, const TranslationBlock *tb)

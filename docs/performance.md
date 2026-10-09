@@ -108,6 +108,7 @@ anchor changes.
 | --- | --- |
 | `accel/tcg/cputlb.c` | TCG loads honor `lockless_io`; simple lockless regions are read directly (`src/accel/tcg/fm1-mmio-read.h`) |
 | `util/async.c` | An AioContext with no virtual-clock timer ignores virtual-clock notifications |
+| `accel/tcg/tcg-accel-ops-rr.c` | Icount slices are split among runnable vCPUs only, and idle vCPUs are skipped |
 
 The earlier `physmem.c` subpage-read hook was retired once no subpages
 remained; integration restores the upstream text in trees it had patched.
@@ -130,6 +131,21 @@ At 26.6 s the TCG thread spends about 31% in translated code, 33% in MMIO
 reads (mostly the TLB slow path every device access takes) and 12% leaving
 the CPU loop at icount deadlines. Further gains need deeper changes, for
 example modelling TIMER5 without a QEMU timer.
+
+## Second core
+
+The experimental `-smp 2` machine runs both vCPUs round-robin on one host
+thread. Upstream QEMU splits every icount slice evenly among all vCPUs and
+enters each one per slice, even when it is held in reset or halted. On
+Felucca, which never releases core 1, that cost about 17% (27.7 s to 32.5 s)
+and retranslated blocks cut short by the halved slices. The round-robin hook
+divides each slice among runnable vCPUs only and skips idle ones. This
+leaves about 7% (about 29.9 s) with identical `state.json` and `state.sram`.
+Without core-0 observers, both cores share translated code.
+
+Guest time still charges 8 ns per instruction across both cores, so two
+busy cores each run at half speed. Core 1 of the stock firmware busy-polls,
+so modelling both at full speed would double host work per guest second.
 
 ## Hardware timing
 

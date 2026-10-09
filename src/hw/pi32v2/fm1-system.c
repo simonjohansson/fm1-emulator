@@ -402,9 +402,10 @@ static void debug_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
         else { s->pc_high[window] = value; }
         /* Translated code was checked against the old windows: retire it
          * and leave the current TB chain before the next instruction. */
+        s->fetch_epoch++;
         CPUState *cs;
         CPU_FOREACH(cs) {
-            cpu_env(cs)->fetch_epoch++;
+            cpu_env(cs)->fetch_epoch = s->fetch_epoch;
             cpu_exit(cs);
         }
         return;

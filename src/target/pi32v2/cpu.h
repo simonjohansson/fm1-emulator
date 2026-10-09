@@ -9,7 +9,8 @@
 /* Register numbering: Apache-2.0 Quarkslab pi32v2.slaspec. */
 enum { RETI = 0, RETS = 3, PSR = 5, ICFG = 11, USP = 12, SSP = 13, SP = 14 };
 /* TB flags: bit 0 in_irq, bit 1 an active REP block, bit 2 XIP fetch enabled,
- * bit 3 an active IF arm, bit 4 core 1 (per-core translation observers).
+ * bit 3 an active IF arm, bit 4 core 1 while core 0 has translation
+ * observers; otherwise both cores share translations.
  * cs_base carries the machine's fetch-guard
  * generation. */
 enum { PI32V2_TB_IRQ = 1, PI32V2_TB_REPEAT = 2, PI32V2_TB_XIP = 4,
@@ -74,6 +75,8 @@ struct ArchCPU {
     void *machine;
     /* Host observer checkpoint, not architectural guest state. */
     bool observer_held;
+    /* Translates apart from its peer, whose observers differ. */
+    bool private_translation;
     bool lock_waiting;
     bool held_reset;
     bool core_paused;
