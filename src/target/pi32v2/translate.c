@@ -558,15 +558,19 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         unsigned pair = x >> 12;
         /* Reached E1D8/0600 shifts r1:r0 left by r6. Independent finite
          * probes establish identity at zero and zero for counts >= 64.
-         * Other directions and noncanonical fields remain deferred. */
-        if ((x & 255) || (pair & 1)) { goto illegal; }
+         * Kind 2 is the vendor's ">>=" (E1D8/4202 r5_r4 >>= r2), the logical
+         * right shift, given the same large-count result. Other directions
+         * and noncanonical fields remain deferred. */
+        unsigned kind = x & 255;
+        if ((kind != 0 && kind != 2) || (pair & 1)) { goto illegal; }
         TCGv_i32 shift = read_gpr(d, (x >> 8) & 15);
         TCGv_i64 value = tcg_temp_new_i64(), wide_shift = tcg_temp_new_i64();
         TCGLabel *large = gen_new_label(), *end = gen_new_label();
         tcg_gen_concat_i32_i64(value, read_gpr(d, pair), read_gpr(d, pair + 1));
         tcg_gen_brcondi_i32(TCG_COND_GEU, shift, 64, large);
         tcg_gen_extu_i32_i64(wide_shift, shift);
-        tcg_gen_shl_i64(value, value, wide_shift);
+        if (kind) { tcg_gen_shr_i64(value, value, wide_shift); }
+        else { tcg_gen_shl_i64(value, value, wide_shift); }
         tcg_gen_br(end);
         gen_set_label(large);
         tcg_gen_movi_i64(value, 0);
@@ -778,19 +782,23 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         else { tcg_gen_sub_i32(value, value, read_gpr(d, (x >> 8) & 15)); }
         store(d, value, addr, MO_LEUL | MO_ALIGN);
         next = here + 4;
-    } else if (op == 0xe86c) {
+    } else if (op == 0xe86c || op == 0xe86d) {
         uint16_t x = fetch(d, here + 2);
-        if ((x & 3) != 0 && (x & 3) != 2) { goto illegal; }
+        unsigned kind = x & 3, shift = ((x >> 8) & 15) + (op & 1) * 16;
+        if (kind == 1) { goto illegal; }
         /* Vendor E86C 3704 and separate executable probes establish an
          * immediate left shift; the pinned SLEIGH has no exact constructor.
-         * Kind 2 is the vendor's ">>=", its logical right-shift operator as
-         * in register shifts; ">>>=" and "<<<=" (kinds 3 and 1) stay open. */
+         * Kinds 2 and 3 are the vendor's ">>=" and ">>>=", its logical and
+         * arithmetic right-shift operators as in register shifts. E86D adds
+         * 16 to the count (vendor E86D 1602: [r1+0] >>= 22). "<<<=" (kind 1)
+         * stays open. */
         translator_io_start(db);
         TCGv_i32 addr = tcg_temp_new_i32(), value = tcg_temp_new_i32();
         tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), x & 252);
         load(d, value, addr, MO_LEUL | MO_ALIGN);
-        if (x & 2) { tcg_gen_shri_i32(value, value, (x >> 8) & 15); }
-        else { tcg_gen_shli_i32(value, value, (x >> 8) & 15); }
+        if (kind == 2) { tcg_gen_shri_i32(value, value, shift); }
+        else if (kind == 3) { tcg_gen_sari_i32(value, value, shift); }
+        else { tcg_gen_shli_i32(value, value, shift); }
         /* Count zero still performs both accesses; a failed write does not
          * undo any preceding MMIO read effect. */
         store(d, value, addr, MO_LEUL | MO_ALIGN);
@@ -1381,7 +1389,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         count(d); branch(d, next + (int16_t)displacement * 2, next, masked, op & 1);
     } else if (op == 0xff20 || op == 0xff21 || op == 0xff23 ||
                op == 0xff28 || op == 0xff29 || op == 0xff2a ||
-               op == 0xff2b || op == 0xff2d) {
+               op == 0xff2b || op == 0xff2c || op == 0xff2d) {
         uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
         TCGCond cond;
         switch (op & 15) {
@@ -1392,6 +1400,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         case 9: cond = TCG_COND_LEU; break;
         case 10: cond = TCG_COND_GE; break;
         case 11: cond = TCG_COND_LT; break;
+        case 12: cond = TCG_COND_GT; break;     /* vendor FF2C 157C: ifs (r1 > 0x3f000000) */
         default: cond = TCG_COND_LE; break;
         }
         /* Vendor FF2D/3D7A compares signed r3 <= 16000. The pinned
@@ -1661,6 +1670,10 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     if (op == 0xe1d0) {
         uint16_t x = fetch(d, here + 2);
         return (x & 0xf0) || ((x >> 12) & 1) || ((x >> 10) & 3) == 1 ? -1 : 3u << (x >> 12);
+    }
+    if (op == 0xe1d8) {
+        uint16_t x = fetch(d, here + 2);
+        return ((x & 255) != 0 && (x & 255) != 2) || ((x >> 12) & 1) ? -1 : 3u << (x >> 12);
     }
     if (op == 0x0000 || (op & 0xffc0) == 0xea40) { return 0; }
     return -1;

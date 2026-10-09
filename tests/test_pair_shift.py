@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Reached 64-bit register-pair left shift and incoming count aliases."""
+"""Reached 64-bit register-pair shifts and incoming count aliases."""
 from pathlib import Path
 import tempfile
 import unittest
@@ -15,7 +15,7 @@ class PairShiftTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
 
-    def check_shift(self, pair, index, low, high, shift):
+    def check_shift(self, pair, index, low, high, shift, right=False):
         guest = Guest()
         guest.literal(7, 0x89abcde5)
         guest.emit(0xe064, 0x7580)
@@ -23,9 +23,10 @@ class PairShiftTests(unittest.TestCase):
         guest.literal(pair + 1, high)
         if index not in (pair, pair + 1):
             guest.literal(index, shift)
-        guest.emit(0xe1d8, pair << 12 | index << 8)
+        guest.emit(0xe1d8, pair << 12 | index << 8 | (2 if right else 0))
         state = guest_state(self.directory, guest)
-        expected = ((high << 32 | low) << shift) & 0xffffffffffffffff if shift < 64 else 0
+        value = high << 32 | low
+        expected = 0 if shift >= 64 else value >> shift if right else (value << shift) & 0xffffffffffffffff
         self.assertEqual(state["registers"][pair:pair + 2],
                          [expected & 0xffffffff, expected >> 32])
         if index not in (pair, pair + 1):
@@ -37,6 +38,11 @@ class PairShiftTests(unittest.TestCase):
         for shift in (0, 1, 31, 32, 63, 64, 65, 0xffffffff):
             with self.subTest(shift=shift):
                 self.check_shift(0, 6, 0x89abcdef, 0x12345678, shift)
+
+    def test_logical_right_shift_reached_by_stock(self):
+        for shift in (0, 1, 31, 32, 63, 64):
+            with self.subTest(shift=shift):
+                self.check_shift(4, 2, 0x89abcdef, 0x92345678, shift, right=True)
 
     def test_count_alias_uses_incoming_low_or_high_register(self):
         self.check_shift(14, 14, 32, 0x12345678, 32)
@@ -93,7 +99,7 @@ class PairShiftTests(unittest.TestCase):
                 self.assertIn("after 1 instructions", result.stderr)
 
     def test_unqualified_direction_and_odd_pair_remain_rejected(self):
-        for operand in (0x0602, 0x1600):
+        for operand in (0x0603, 0x1600):
             with self.subTest(operand=operand):
                 guest = Guest()
                 guest.literal(6, 0)
