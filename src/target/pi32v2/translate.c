@@ -484,6 +484,26 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_rotri_i32(gpr[x >> 12], read_gpr(d, (x >> 4) & 15),
                           (x & 15) | ((x >> 8) & 3) * 16);
         next = here + 4;
+    } else if (op == 0xe53f) {
+        /* Single-precision FPU, encodings from the vendor assembler
+         * (-mfprev1): D = bits 12-15, A = bits 4-7, B = bits 8-11. Kinds
+         * 0-3 are A +, -, *, / B; 5/6 min/max; 7/8 D +=/-= A * B; 15 a
+         * unary op of B selected by bits 4-7 (8 itof, 9 unsigned itof,
+         * 1 and 5 truncate to int). Semantics are in helper.c. */
+        uint16_t x = fetch(d, here + 2);
+        unsigned kind = x & 15, dest = x >> 12, unary = (x >> 4) & 15;
+        TCGv_i32 a = read_gpr(d, (x >> 4) & 15), b = read_gpr(d, (x >> 8) & 15);
+        if (kind == 15 && (unary == 1 || unary == 5 || unary == 8 || unary == 9)) {
+            gen_helper_pi32v2_funary(gpr[dest], tcg_env, tcg_constant_i32(unary), b);
+        } else if (kind == 7 || kind == 8) {
+            gen_helper_pi32v2_fmac(gpr[dest], tcg_env, tcg_constant_i32(kind),
+                                   read_gpr(d, dest), a, b);
+        } else if (kind <= 3 || kind == 5 || kind == 6) {
+            gen_helper_pi32v2_fop(gpr[dest], tcg_env, tcg_constant_i32(kind), a, b);
+        } else {
+            goto illegal;
+        }
+        next = here + 4;
     } else if (op == 0xe180) {
         uint16_t x = fetch(d, here + 2);
         /* Measured on an FM-1: clz(0) is 32. */
@@ -1670,6 +1690,13 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     if (op == 0xe1d0) {
         uint16_t x = fetch(d, here + 2);
         return (x & 0xf0) || ((x >> 12) & 1) || ((x >> 10) & 3) == 1 ? -1 : 3u << (x >> 12);
+    }
+    if (op == 0xe53f) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned kind = x & 15, unary = (x >> 4) & 15;
+        bool known = kind <= 3 || (kind >= 5 && kind <= 8) ||
+                     (kind == 15 && (unary == 1 || unary == 5 || unary == 8 || unary == 9));
+        return known ? 1u << (x >> 12) : -1;
     }
     if (op == 0xe1d8) {
         uint16_t x = fetch(d, here + 2);

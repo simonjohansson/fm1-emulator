@@ -6,6 +6,7 @@
 #include "exec/helper-proto.h"
 #include "exec/icount.h"
 #include "accel/tcg/cpu-loop.h"
+#include "fpu/softfloat.h"
 #define HELPER_H "helper.h"
 #include "exec/helper-info.c.inc"
 
@@ -299,5 +300,97 @@ void HELPER(pi32v2_lock)(CPUPi32v2State *env, uint32_t acquire)
         cs->halted = true;
         cs->exception_index = EXCP_HLT;
         cpu_loop_exit(cs);
+    }
+}
+
+/* Single-precision FPU (E53F), measured on a real FM-1: arithmetic rounds to
+ * nearest even, multiply-accumulate rounds the product before the sum, int
+ * conversions round to nearest and float-to-int truncates. NaN, infinity,
+ * denormal operands or results, underflow and out-of-range conversions are
+ * unmeasured and fault rather than being guessed. */
+static float_status fpu_status(void)
+{
+    float_status s = {};
+    set_float_rounding_mode(float_round_nearest_even, &s);
+    set_default_nan_mode(true, &s);
+    set_float_default_nan_pattern(0b01000000, &s);
+    return s;
+}
+static void fpu_check(CPUPi32v2State *env, uintptr_t ra, float32 value,
+                      const float_status *s, const char *what)
+{
+    if (!float32_is_zero_or_normal(value) ||
+        (get_float_exception_flags(s) & float_flag_underflow)) {
+        g_autofree char *reason = g_strdup_printf(
+            "unmeasured floating-point %s 0x%08x", what, float32_val(value));
+        stop_at(env, ra);
+        pi32v2_fail(env, reason);
+    }
+}
+
+uint32_t HELPER(pi32v2_fop)(CPUPi32v2State *env, uint32_t kind, uint32_t a, uint32_t b)
+{
+    float_status s = fpu_status();
+    uintptr_t ra = GETPC();
+    float32 result;
+    fpu_check(env, ra, a, &s, "operand");
+    fpu_check(env, ra, b, &s, "operand");
+    switch (kind) {
+    case 0: result = float32_add(a, b, &s); break;
+    case 1: result = float32_sub(a, b, &s); break;
+    case 2: result = float32_mul(a, b, &s); break;
+    case 3: result = float32_div(a, b, &s); break;
+    default: {
+        /* MIN (5) and MAX (6) set PSR[3:0] as a subtraction would: 8 when
+         * a < b, 2 when a > b and 6 when equal, signed zeros included. Equal
+         * zeros give -0 for MIN and +0 for MAX. */
+        FloatRelation relation = float32_compare(a, b, &s);
+        bool min = kind == 5;
+        unsigned flags = relation == float_relation_less ? 8 :
+                         relation == float_relation_greater ? 2 : 6;
+        env->spr[PSR] = (env->spr[PSR] & ~15u) | flags;
+        if (relation == float_relation_equal) { return min ? a | b : a & b; }
+        return (relation == float_relation_less) == min ? a : b;
+    }
+    }
+    fpu_check(env, ra, result, &s, "result");
+    return result;
+}
+
+uint32_t HELPER(pi32v2_fmac)(CPUPi32v2State *env, uint32_t kind, uint32_t acc,
+                             uint32_t a, uint32_t b)
+{
+    float_status s = fpu_status();
+    uintptr_t ra = GETPC();
+    fpu_check(env, ra, acc, &s, "operand");
+    fpu_check(env, ra, a, &s, "operand");
+    fpu_check(env, ra, b, &s, "operand");
+    float32 product = float32_mul(a, b, &s);
+    fpu_check(env, ra, product, &s, "result");
+    float32 result = kind == 7 ? float32_add(acc, product, &s) : float32_sub(acc, product, &s);
+    fpu_check(env, ra, result, &s, "result");
+    return result;
+}
+
+uint32_t HELPER(pi32v2_funary)(CPUPi32v2State *env, uint32_t kind, uint32_t a)
+{
+    float_status s = fpu_status();
+    uintptr_t ra = GETPC();
+    switch (kind) {
+    case 8: return int32_to_float32(a, &s);
+    case 9: return uint32_to_float32(a, &s);
+    default:
+        /* Kinds 1 and 5 truncate to int32; kind 5 is measured only for
+         * non-negative inputs. */
+        fpu_check(env, ra, a, &s, "operand");
+        if ((kind == 5 && float32_is_neg(a) && !float32_is_zero(a)) ||
+            float32_compare(a, make_float32(0xcf000000), &s) == float_relation_less ||
+            float32_compare(a, make_float32(0x4f000000), &s) != float_relation_less) {
+            g_autofree char *reason = g_strdup_printf(
+                "unmeasured float-to-int conversion 0x%08x (kind %u)", a, kind);
+            stop_at(env, ra);
+            pi32v2_fail(env, reason);
+        }
+        return float32_to_int32_round_to_zero(a, &s);
     }
 }
