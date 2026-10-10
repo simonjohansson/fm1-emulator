@@ -45,15 +45,26 @@ Python is needed only to build and test.
 
 ## Status
 
-Unchanged Felucca passes boot, note/release, page navigation, audio-generation,
-and console checks. Headless, it runs about 1.7 times faster than real time on
-an Apple silicon Mac.
-The stock FM-1 firmware (`.fwsc` package) boots on both cores to its HOME
-screen with audio running. Headless it runs only slightly faster than real
-time, so windowed sessions can fall behind ("guest is late" warnings); its
-audio-rendering core is the bottleneck. Its Wi-Fi radio is modeled as
-inert hardware.
-Other firmware compatibility is limited. Linux and Windows are deferred.
+Firmware confirmed to work. CI boots each one on every push, drives the
+panel with random buttons and encoders for 60 guest seconds (`mise run stress`),
+then steps through 128 presets and every function button (`mise run panel_smoke`).
+
+| Firmware | Version | Source | Headless, idle | Headless, input every 10 ms | Windowed with audio |
+| --- | --- | --- | --- | --- | --- |
+| Stock FM-1 | `FM-1_015` (string in the image) | [FM-1.fwsc](https://yms-file-store.oss-cn-hongkong.aliyuncs.com/software/firmware/FM-1.fwsc) | 2.7x | 1.1x | real time, 53% of a core |
+| Felucca | 1.5 | [felucca-1.5.fwsc](https://github.com/hugelton/Felucca/releases/download/v1.5/felucca-1.5.fwsc) | 1.5x | 1.0x | real time, 68% of a core |
+
+Speeds are guest time divided by host time, measured on an Apple M3 Pro
+(macOS 27, both firmware cores emulated). Headless is unpaced, so it shows the
+most the emulator can do: "idle" is 50 guest seconds sitting at HOME, and
+"input every 10 ms" is the stress run, about 83 guest seconds of constant button
+presses and knob turns. Windowed sessions are paced to real time, so they
+cannot run faster than 1x; the last column is the host CPU the session used
+over 40 seconds, and no "guest is late" warnings appeared. A slower Mac has
+less headroom, and below 1x a windowed session falls behind.
+
+The stock FM-1 Wi-Fi radio is modeled as inert hardware. Other firmware
+compatibility is limited. Linux and Windows are deferred.
 
 See [development](docs/development.md) for tests and
 [architecture](docs/architecture.md) for the model. Licensing and source
