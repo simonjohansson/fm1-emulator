@@ -3,11 +3,20 @@ python = "3.13.15"
 node = "26.11.1"
 
 [tasks.build]
-description = "Build and package the native macOS emulator"
+description = "Build and package the native emulator (macOS or Linux)"
+# Every compiler and library comes from mise: clang with LLVM's archiver and
+# linker (for LTO; Linux links with lld), and conda-forge's GLib, SDL2, zlib and
+# pkg-config. Each conda package has its own environment with its own copies
+# of its dependencies; where two provide a library, the first listed wins.
+# SDL2's X11 headers on Linux need xorgproto's, which conda ships separately.
+tools = { clang = "23.1.2", "conda:glib" = "2.90.1", "conda:sdl2" = "2.30.10", "conda:zlib" = "1.3.2", "conda:xorg-xorgproto" = "2025.1", "conda:llvm-tools" = "23.1.2", "conda:lld" = "23.1.2", "conda:pkg-config" = "0.29.2" }
 run = "python tools/build.py --standalone"
 
 [tasks.test]
 description = "Run CPU, input, image, and CLI regression tests"
+# The image tests compile the decoder with mise's clang, as the build does.
+tools = { clang = "23.1.2" }
+env = { CC = "clang" }
 run = "python -m unittest discover -s tests -p 'test_*.py' -v"
 
 [tasks.stress]
@@ -26,12 +35,11 @@ run = "python tools/speed.py"
 description = "Cross-build the headless emulator for WebAssembly (Emscripten)"
 # The native build fetches the pinned QEMU source and build tools this reuses.
 depends = ["build"]
-# Both compilers are task-scoped: each puts its own clang on PATH, which would
-# shadow Apple's for the native build. clang is the build machine's C compiler,
-# which Meson and QEMU's configure need for build-time tools; the script tells it
-# apart from emsdk's own. emsdk is the WebAssembly compiler; the asdf plugin
-# brings its own Python, where the vfox one needs the system's, too old on macOS.
-tools = { clang = "23.1.2", "asdf:mise-plugins/mise-emsdk" = "4.0.10" }
+# clang is the build machine's C compiler, which Meson and QEMU's configure need
+# for build-time tools; the script tells it apart from emsdk's own. emsdk is the
+# WebAssembly compiler; the asdf plugin brings its own Python, where the vfox
+# one needs the system's, too old on macOS.
+tools = { clang = "23.1.2", "conda:pkg-config" = "0.29.2", "asdf:mise-plugins/mise-emsdk" = "4.0.10" }
 run = "python tools/build_wasm.py"
 
 [tasks.serve_web]

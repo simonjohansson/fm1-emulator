@@ -39,5 +39,7 @@ struct FM1PocInput {
 
 /* Private board composition binding, before realization. */
 void fm1_input_bind(FM1PocInput *input, Pi32v2CPU *cpu);
+/* Turn the MASTER potentiometer to raw, 0 to FM1_PANEL_MASTER_MAX. */
+void fm1_input_master(FM1PocInput *input, int raw);
 
 #endif

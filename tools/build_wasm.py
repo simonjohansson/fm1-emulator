@@ -10,8 +10,8 @@ is wasm64; its 32-bit address limit lowers the module to 32-bit memory, so it
 runs in Chrome, Firefox and Safari. The compilers (emsdk, zig) come from mise; the
 libraries QEMU links (zlib, libffi, pixman, GLib) are compiled for WebAssembly
 here from pinned sources, as QEMU's tests/docker/dockerfiles/emsdk-wasm64-cross.docker
-does. It reuses the native build's pinned QEMU source, Python environment and
-pkgconf; the mise task runs that build first.
+does. It reuses the native build's pinned QEMU source and Python environment;
+the mise task runs that build first.
 """
 import os
 from pathlib import Path
@@ -170,13 +170,13 @@ def main():
     if not shutil.which("emcc"):
         raise SystemExit("emcc not found: run this as `mise run build_wasm`, which provides the Emscripten SDK")
     source = CACHE / f"qemu-{build.QEMU}"
-    venv, tools = CACHE / "python", CACHE / "tools"
-    if not (source.exists() and (venv / "bin/meson").exists() and (tools / "bin/pkgconf").exists()):
+    venv = CACHE / "python"
+    if not (source.exists() and (venv / "bin/meson").exists()):
         raise SystemExit("run this as `mise run build_wasm`: the native build it depends on fetches the pinned QEMU and build tools")
     integrate.main()
     CACHE.mkdir(exist_ok=True)
     env = dict(os.environ)
-    env["PATH"] = os.pathsep.join([str(venv / "bin"), str(tools / "bin"), env["PATH"]])
+    env["PATH"] = os.pathsep.join([str(venv / "bin"), env["PATH"]])
     env["PYTHONNOUSERSITE"] = "1"
     env["CPATH"] = str(PREFIX / "include")
     env["PKG_CONFIG_PATH"] = env["EM_PKG_CONFIG_PATH"] = str(PREFIX / "lib/pkgconfig")

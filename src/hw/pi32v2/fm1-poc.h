@@ -14,6 +14,7 @@
 #include "fm1-adc.h"
 #include "fm1-analog.h"
 #include "fm1-input.h"
+#include "fm1-panel.h"
 #include "fm1-leds.h"
 #include "fm1-uart.h"
 #include "fm1-crc.h"
@@ -70,6 +71,7 @@ struct FM1PocState {
     FM1PocADC adc;
     FM1PocAnalog analog;
     FM1PocInput input;
+    FM1PocPanel panel;
     FM1PocLEDs leds;
     FM1PocUART uart;
     FM1PocCRC crc;

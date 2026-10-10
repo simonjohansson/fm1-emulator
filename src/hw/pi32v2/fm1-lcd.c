@@ -12,7 +12,6 @@
 #include "fm1-nor.h"
 #include "fm1-sfr.h"
 #include "system/address-spaces.h"
-#include "ui/console.h"
 
 #define SPI1_BASE 0x11d00
 #define SRAM_BASE 0x01c00000
@@ -39,38 +38,6 @@ static void lcd_update_irq(FM1PocLCD *lcd)
     lcd->irq_level = (lcd->control & SPI_IRQ_ENABLE) && lcd->pending;
     lcd->update_irq(lcd->opaque);
 }
-
-static bool lcd_update_display(void *opaque)
-{
-    FM1PocLCD *lcd = opaque;
-    if (!lcd->redraw) { return true; }
-    DisplaySurface *surface = qemu_console_surface(lcd->console);
-    /* qemu_console_resize creates QEMU's native 32-bit RGB surface. The
-     * console observes completed panel writes; it never advances the guest. */
-    g_assert(surface_format(surface) == PIXMAN_x8r8g8b8);
-    bool visible = fm1_lcd_visible(lcd);
-    for (unsigned y = 0; y < FM1_LCD_HEIGHT; y++) {
-        uint32_t *row = (uint32_t *)((uint8_t *)surface_data(surface) +
-                                   y * surface_stride(surface));
-        for (unsigned x = 0; x < FM1_LCD_WIDTH; x++) {
-            row[x] = visible ? fm1_lcd_rgb(lcd, x, y) : 0;
-        }
-    }
-    lcd->redraw = false;
-    qemu_console_update(lcd->console, 0, 0, FM1_LCD_WIDTH, FM1_LCD_HEIGHT);
-    return true;
-}
-
-static void lcd_invalidate_display(void *opaque)
-{
-    FM1PocLCD *lcd = opaque;
-    lcd->redraw = true;
-}
-
-static const GraphicHwOps lcd_graphic_ops = {
-    .invalidate = lcd_invalidate_display,
-    .gfx_update = lcd_update_display,
-};
 
 static unsigned parameter_length(uint8_t command)
 {
@@ -347,9 +314,6 @@ void fm1_lcd_init(FM1PocLCD *lcd, Object *owner, Pi32v2CPU *cpu,
     lcd->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, transfer_complete, lcd);
     memory_region_init_io(&lcd->spi_mmio, owner, &spi_ops, lcd, "fm1.spi1", 20);
     fm1_sfr_map(SPI1_BASE, &lcd->spi_mmio);
-    /* This private panel is machine state rather than a qdev device. */
-    lcd->console = qemu_graphic_console_create(NULL, 0, &lcd_graphic_ops, lcd);
-    qemu_console_resize(lcd->console, FM1_LCD_WIDTH, FM1_LCD_HEIGHT);
 #ifdef __EMSCRIPTEN__
     fm1_web_lcd_register(lcd);
 #endif
@@ -386,7 +350,7 @@ uint32_t fm1_lcd_rgb(const FM1PocLCD *lcd, unsigned x, unsigned y)
 #include <emscripten.h>
 
 /* The browser page's exports. This one paints the panel: RGBA, 240 by 240,
- * black while the panel is dark (as the native console draws it), or NULL
+ * black while the panel is dark (as the native panel draws it), or NULL
  * before the board exists. The page reads it while the guest runs
  * on another thread, so a frame can tear; it is a picture, not state. */
 static FM1PocLCD *web_lcd;

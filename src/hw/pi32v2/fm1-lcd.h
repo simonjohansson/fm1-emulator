@@ -18,8 +18,7 @@ typedef struct FM1PocLCD {
     void (*update_irq)(void *opaque);
     void *opaque;
     bool irq_level;
-    QemuConsole *console;
-    bool redraw;
+    bool redraw;   /* pixels changed since the panel last drew them */
     uint32_t control, baud, buffer, address, count;
     uint32_t pc_out, iomap_con1, pa_out;
     uint32_t transfer_address, transfer_count;

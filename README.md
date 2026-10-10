@@ -1,6 +1,6 @@
 # FM-1 Emulator
 
-Run FM-1 application firmware on your Mac, with an FM-1 panel, mouse and keyboard controls,
+Run FM-1 application firmware on macOS or Linux, with an FM-1 panel, mouse and keyboard controls,
 audio, and a USB console. Built on QEMU with a pi32v2 CPU and FM-1 board model.
 
 ## Run
@@ -30,17 +30,18 @@ For Felucca, try `help` or `status`. Use `--no-audio` for silence or
 
 ## Build
 
-On Apple Silicon macOS, install Xcode Command Line Tools, [Homebrew](https://brew.sh),
-and the build dependencies:
+Install [mise](https://mise.jdx.dev); on macOS also the Xcode Command Line
+Tools, for the SDK. Then:
 
 ```sh
-brew install mise glib pkgconf
 mise install
 mise run build
 ```
 
-The first build downloads pinned QEMU sources and Python build tools.
-It produces `./emulator` and a distribution archive in `.cache/`.
+mise supplies everything else: clang, and GLib, SDL2 and pkg-config from
+conda-forge. No Homebrew or apt packages are needed. The first build downloads
+pinned QEMU sources and Python build tools. It produces `./emulator` and a
+distribution archive in `.cache/` with the libraries it needs in `lib/`.
 Python is needed only to build and test.
 
 ## Status
@@ -65,7 +66,7 @@ less headroom, and below 1x a windowed session falls behind.
 
 The panel draws the button and key LEDs as the firmware drives them,
 including the dim glow, REC's red and PLAY's green. The stock FM-1 Wi-Fi radio is modeled as inert hardware. Other firmware
-compatibility is limited. Linux and Windows are deferred.
+compatibility is limited. Windows is deferred.
 
 ## Browser (experimental)
 

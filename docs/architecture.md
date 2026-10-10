@@ -7,7 +7,7 @@ Headless and interactive sessions use the same CPU and hardware model.
 | --- | --- |
 | CPU | pi32v2 registers, instructions, memory accesses, exceptions, IRQ entry/return |
 | Hardware | Register-driven JieLi controllers, shared routing, FM-1 wiring, flash/LCD/controls |
-| Host | Cocoa pixels, physical key events, CoreAudio samples, USB CDC terminal, session controls |
+| Host | SDL window and audio, physical key and pointer events, USB CDC terminal, session controls |
 
 Firmware names, hashes, symbols, and PCs never select CPU or hardware behavior.
 Host input closes board contacts or uses real USB endpoint transfers; it does
@@ -50,10 +50,11 @@ charges 8 ns per instruction while one CPU is runnable and 4 ns while both
 are, so two busy cores each advance at 8 ns per instruction as if executing
 simultaneously.
 
-The Cocoa panel embeds the existing LCD surface. Mouse and keyboard inputs
-close the same matrix contacts; encoders emit quadrature transitions. MASTER
-supplies the board’s SAR ADC channel 4. Focus loss, pause, and shutdown release
-contacts, while keyboard and mouse holds are combined.
+The board draws its own front panel, with the LCD inside it, as its one QEMU
+display (`fm1-panel.c`), so any QEMU display shows it; the native build uses
+SDL. Pointer clicks and keyboard keys close the same matrix contacts through
+QEMU's input layer; encoders emit quadrature transitions. MASTER supplies the
+board’s SAR ADC channel 4. Pause and shutdown release contacts.
 
 The panel LEDs share the key matrix. An LED lights while its column is
 selected on the 595 chain (output low) and the LED line of its matrix row is

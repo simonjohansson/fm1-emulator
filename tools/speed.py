@@ -9,7 +9,7 @@ Both runs use the launcher's two-core command line and end with a capture
 
 - headless: unpaced, no display or audio. Speed is guest time divided by
   host wall time, the most the emulator can do;
-- ui: the Cocoa window with CoreAudio, paced to real time, so it cannot
+- ui: the SDL window with SDL audio, paced to real time, so it cannot
   exceed 1x. Reported are the speed, the host CPU the process used (100%
   is one core) and icount's "guest is late" warnings, which mean the host
   could not keep up.
@@ -32,8 +32,8 @@ TAIL = ["-chardev", "null,id=console", "-serial", "chardev:console",
 MODES = {
     "headless": ["-icount", "shift=3,align=off,sleep=off", "-display", "none"],
     "ui": ["-icount", "shift=3,align=on,sleep=on",
-           "-display", "cocoa,zoom-to-fit=on,zoom-interpolation=off",
-           "-audiodev", "coreaudio,id=fm1,out.frequency=44100,out.channels=2",
+           "-display", "sdl,show-cursor=on",
+           "-audiodev", "sdl,id=fm1,out.frequency=44100,out.channels=2",
            "-global", "fm1-alnk.audiodev=fm1"],
 }
 
@@ -77,7 +77,7 @@ def main():
     if not firmware.is_file() or not QEMU.is_file():
         parser.error("firmware and built ./emulator must exist")
 
-    print(f"{firmware.name} on {platform.machine()} macOS {platform.mac_ver()[0]}", flush=True)
+    print(f"{firmware.name} on {platform.machine()} {platform.platform(terse=True)}", flush=True)
     modes = [("headless", args.headless_seconds)]
     if not args.skip_ui:
         modes.append(("ui", args.ui_seconds))

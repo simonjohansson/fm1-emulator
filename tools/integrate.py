@@ -3,7 +3,6 @@
 """Apply the maintained overlay to the exact pristine QEMU release tree."""
 from pathlib import Path
 import shutil
-import re
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -31,56 +30,7 @@ def main():
             dest.parent.mkdir(parents=True, exist_ok=True)
             if not dest.exists() or dest.read_bytes() != path.read_bytes():
                 shutil.copy2(path, dest)
-    # Keep the small Cocoa host hook in the overlay rather than copying the
-    # upstream backend. Anchors belong to the pinned release; fail on drift.
-    cocoa = SOURCE / "ui/cocoa.m"
-    content = cocoa.read_text()
-    for before, after in [
-        ('#include "system/runstate.h"',
-         '#include "system/runstate.h"\n#include "fm1-cocoa-activity.h"'),
-        ('    [NSApp setDelegate:controller];',
-         '    [NSApp setDelegate:controller];\n    cocoa_vm_activity_init();'),
-    ]:
-        if after not in content:
-            if content.count(before) != 1:
-                raise SystemExit("pinned Cocoa activity hook anchor differs")
-            content = content.replace(before, after)
-    write_changed(cocoa, content)
-    # Keep the native instrument panel as a small maintained host adapter.
-    # The stock Cocoa renderer remains the LCD child; other boards retain
-    # the original interface. Hooks are checked against the pinned release.
-    content = cocoa.read_text()
-    for before, after in [
-        ('#include "ui/kbd-state.h"',
-         '#include "ui/kbd-state.h"\n#include "fm1-panel-declarations.h"'),
-        ('@interface QemuCocoaAppController : NSObject',
-         '#include "fm1-panel.h"\n\n@interface QemuCocoaAppController : NSObject'),
-        ('- (void) resizeWindow\n{',
-         '- (void) resizeWindow\n{\n    if (fm1_panel_resize(self)) { return; }'),
-        ('    COCOA_DEBUG("QemuApplication: sendEvent\\n");',
-         '    COCOA_DEBUG("QemuApplication: sendEvent\\n");\n'
-         '    if (fm1_panel_native_event(event)) { [super sendEvent:event]; return; }'),
-        ('    COCOA_DEBUG("%s\\n", __func__);\n    [cocoaView ungrabMouse];\n    [cocoaView raiseAllKeys];',
-         '    COCOA_DEBUG("%s\\n", __func__);\n    fm1_panel_release();\n'
-         '    [cocoaView ungrabMouse];\n    [cocoaView raiseAllKeys];'),
-        ('    kbd = qkbd_state_init(dcl.con);',
-         '    kbd = qkbd_state_init(dcl.con);\n    fm1_panel_install();'),
-    ]:
-        if after not in content:
-            if content.count(before) != 1:
-                raise SystemExit("pinned Cocoa panel hook anchor differs")
-            content = content.replace(before, after)
-    content = content.replace('qkbd_state_key_event(', 'fm1_panel_keyboard_event(')
-    # Normalize both maintained cleanup hooks together so repeated integration
-    # cannot insert another activity cleanup around the panel cleanup.
-    content, cleanup_count = re.subn(
-        r"(static void cocoa_display_cleanup\(void\)\n\{)"
-        r"(?:\n    (?:fm1_panel_cleanup|cocoa_vm_activity_cleanup)\(\);)*",
-        r"\1\n    fm1_panel_cleanup();\n    cocoa_vm_activity_cleanup();", content)
-    if cleanup_count != 1:
-        raise SystemExit("pinned Cocoa cleanup hook anchor differs")
-    write_changed(cocoa, content)
-    # Native firmware launcher shares QEMU's main-thread Cocoa lifecycle.
+    # Native firmware launcher rewrites the command line before QEMU parses it.
     entry = SOURCE / "system/main.c"
     content = entry.read_text()
     for before, after in [

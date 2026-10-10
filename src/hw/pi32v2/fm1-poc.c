@@ -929,6 +929,7 @@ static void machine_init(MachineState *ms)
     object_initialize_child(OBJECT(m), "board-input", &m->input, TYPE_FM1_INPUT);
     fm1_input_bind(&m->input, m->cpu);
     qdev_realize(DEVICE(&m->input), NULL, &error_fatal);
+    fm1_panel_init(&m->panel, &m->lcd, &m->input);
     fm1_test_start(m);
 }
 static void machine_class_init(ObjectClass *oc, const void *data)

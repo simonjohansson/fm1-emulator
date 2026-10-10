@@ -102,17 +102,17 @@ QEMU is pinned to **11.1.2**, release commit
 build-tool versions are checked in `tools/build.py`. Downloaded sources,
 private Python environment, build products, and logs stay in `.cache/`.
 Use `mise run build` after changing sources; it integrates changed files before Ninja.
-Use `mise exec python@3.13.15 -- python tools/build.py --standalone --reconfigure`
-when changing configuration.
+Use `mise run build -- --reconfigure` when changing configuration.
 
-The macOS build uses Cocoa, CoreAudio, LTO, and static third-party archives.
-It rejects non-system dynamic dependencies, ad-hoc signs the executable,
-and packages it with notices. The build needs Xcode Command Line Tools,
-Homebrew GLib/pkgconf, and mise Python. It does not bundle firmware or Python.
-The deployment target follows the SDK and dependency archives: the locally
-validated Apple Silicon artifact requires macOS 27. Older macOS compatibility
-has not been established. CI targets Apple Silicon macOS 26; Linux/Windows
-build and packaging work is deferred.
+The native build (macOS or Linux) uses SDL for the window and audio, and LTO.
+mise provides the compiler (clang) and conda-forge's GLib, SDL2 and pkg-config;
+the build reads their pkg-config files from the conda environments on PATH.
+Publishing copies the shared libraries the executable loads from those
+environments into `lib/` next to it (found through its rpath), checks that it
+starts with them alone, ad-hoc signs it on macOS, and packages it with
+notices. On macOS the Xcode Command Line Tools supply the SDK. It does not
+bundle firmware or Python. CI targets Apple Silicon macOS 26; Windows is
+deferred.
 
 For release distribution, retain notices and provide the corresponding QEMU
 and overlay sources/build inputs and LGPL relinking materials. See

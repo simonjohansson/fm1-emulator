@@ -118,7 +118,8 @@ static const FM1PanelEncoder fm1_panel_encoders[FM1_PANEL_ENCODERS] = {
 
 /* MASTER is the 300-degree potentiometer, sampled on SARADC channel 4/PB6.
  * In the saved binary 0x0200e2e2 samples channel 4; the smoothed/squared result
- * supplies audio gain at 0x0200388c. It is carried as QEMU ABS X, not a contact.
+ * supplies audio gain at 0x0200388c. It is not a contact: QEMU ABS X events
+ * without a console (QMP) set it, as does the panel's MASTER knob.
  */
 #define FM1_PANEL_MASTER_AXIS INPUT_AXIS_X
 

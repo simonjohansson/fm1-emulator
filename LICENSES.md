@@ -7,7 +7,8 @@ The executable incorporates QEMU 11.1.2. QEMU as a whole is GPL version 2;
 individual components, including TCG, carry compatible file-specific licenses.
 See the downloaded source's `LICENSE`, `COPYING`, and individual files, and
 [QEMU's licensing documentation](https://www.qemu.org/docs/master/about/license.html).
-The macOS build also links GLib/gettext (LGPL) and PCRE2 (BSD); retain their
+The native build also bundles GLib/gettext (LGPL), PCRE2 (BSD) and SDL2 (zlib)
+as shared libraries in `lib/`; retain their
 notices and meet their source/relinking obligations when redistributing.
 An executable archive alone is not a complete corresponding-source offer.
 

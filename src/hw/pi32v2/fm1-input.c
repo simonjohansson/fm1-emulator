@@ -17,7 +17,7 @@ typedef struct FM1InputBinding {
 } FM1InputBinding;
 
 /* Board matrix coordinates. Encoder pairs expose each phase independently,
- * so Cocoa and standard QMP KEY events traverse the same electrical path. */
+ * so the panel and standard QMP KEY events traverse the same electrical path. */
 static const FM1InputBinding bindings[FM1_INPUT_BINDINGS] = {
 #define CONTACT(label, qcode, column, row) \
     {Q_KEY_CODE_##qcode, column, row},
@@ -100,20 +100,6 @@ static void input_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *even
     if (!s->active) {
         return;
     }
-    if (event->type == INPUT_EVENT_KIND_ABS) {
-        if (event->abs.axis == FM1_PANEL_MASTER_AXIS && runstate_is_running()) {
-            int value = CLAMP(event->abs.value, INPUT_EVENT_ABS_MIN,
-                              INPUT_EVENT_ABS_MAX);
-            /* A pot retains its position when contacts are released. Only
-             * CPU work publishes the new level to the ADC's board provider. */
-            s->master_pending = qemu_input_scale_axis(value,
-                INPUT_EVENT_ABS_MIN, INPUT_EVENT_ABS_MAX,
-                0, FM1_PANEL_MASTER_MAX);
-            s->master_changed = true;
-            input_schedule(s);
-        }
-        return;
-    }
     g_assert(event->type == INPUT_EVENT_KIND_KEY);
     qcode = qemu_input_linux_to_qcode(event->key.key);
     for (unsigned i = 0; i < FM1_INPUT_BINDINGS; i++) {
@@ -123,7 +109,7 @@ static void input_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *even
         if (bindings[i].qcode != qcode) {
             continue;
         }
-        /* QEMU drops paused keyups after Cocoa updates its own key state.
+        /* QEMU drops paused keyups after the display updates its key state.
          * An explicit later keyup rearms a quarantined contact. If the paused
          * keyup was lost, one later press/release cycle only rearms it. */
         if (s->quarantined[i]) {
@@ -161,7 +147,7 @@ static void input_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *even
 
 static const QemuInputHandler input_handler = {
     .name = "FM-1 board contacts",
-    .mask = INPUT_EVENT_MASK_KEY | INPUT_EVENT_MASK_ABS,
+    .mask = INPUT_EVENT_MASK_KEY,
     .event = input_event,
 };
 
@@ -273,6 +259,19 @@ static void input_register_types(void)
     type_register_static(&input_info);
 }
 type_init(input_register_types)
+
+void fm1_input_master(FM1PocInput *s, int raw)
+{
+    g_assert(bql_locked());
+    if (!s->active || !runstate_is_running()) {
+        return;
+    }
+    /* A pot retains its position when contacts are released. Only CPU work
+     * publishes the new level to the ADC's board provider. */
+    s->master_pending = CLAMP(raw, 0, FM1_PANEL_MASTER_MAX);
+    s->master_changed = true;
+    input_schedule(s);
+}
 
 void fm1_input_bind(FM1PocInput *s, Pi32v2CPU *cpu)
 {

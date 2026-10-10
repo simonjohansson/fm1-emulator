@@ -106,16 +106,16 @@ static void fm1_launcher_arguments(int *argc, char ***argv)
         fm1_launcher_error(program, message);
     }
 
-#ifndef CONFIG_COCOA
+#ifndef CONFIG_SDL
     if (!headless) {
         fm1_launcher_error(program,
-            "this build has no macOS display; use --headless");
+            "this build has no SDL display; use --headless");
     }
 #endif
-#ifndef CONFIG_AUDIO_COREAUDIO
+#ifndef CONFIG_AUDIO_SDL
     if (!headless && !no_audio) {
         fm1_launcher_error(program,
-            "this build has no macOS audio; use --no-audio");
+            "this build has no SDL audio; use --no-audio");
     }
 #endif
 
@@ -145,17 +145,17 @@ static void fm1_launcher_arguments(int *argc, char ***argv)
     FM1_LAUNCHER_ARG("tcg,thread=single");
     FM1_LAUNCHER_ARG("-icount");
     /* The interactive guest runs faster than real time; align paces its
-     * virtual clock to the host's, as CoreAudio consumes samples in real
+     * virtual clock to the host's, as the host audio consumes samples in real
      * time and an unpaced guest overruns the output queue. */
     FM1_LAUNCHER_ARG(headless ? "shift=3,align=off,sleep=off" :
                               "shift=3,align=on,sleep=on");
     FM1_LAUNCHER_ARG("-display");
     FM1_LAUNCHER_ARG(headless ? "none" :
-                     "cocoa,zoom-to-fit=on,zoom-interpolation=off");
+                     "sdl,show-cursor=on");
     if (!headless && !no_audio) {
         FM1_LAUNCHER_ARG("-audiodev");
         FM1_LAUNCHER_ARG(
-            "coreaudio,id=fm1,out.frequency=44100,out.channels=2");
+            "sdl,id=fm1,out.frequency=44100,out.channels=2");
         FM1_LAUNCHER_ARG("-global");
         FM1_LAUNCHER_ARG("fm1-alnk.audiodev=fm1");
     }

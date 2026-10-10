@@ -564,7 +564,7 @@ static void requested_capture(void *opaque)
 
 /* FM1_POC_INPUT="NS:QCODE:1,NS:QCODE:0,..." presses (1) and releases (0)
  * host keys at guest times through QEMU's input layer, the path QMP and
- * Cocoa use, so scripted panel scenarios are deterministic and unpaced. */
+ * the panel use, so scripted panel scenarios are deterministic and unpaced. */
 typedef struct ScriptedKey {
     QEMUTimer *timer;
     QKeyCode code;

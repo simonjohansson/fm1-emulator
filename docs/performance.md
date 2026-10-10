@@ -101,7 +101,7 @@ headless sessions stay unpaced.
 ## QEMU hooks
 
 `tools/integrate.py` adds two anchored hooks to the pinned release, besides
-the existing Cocoa and launcher ones. Each fails the build if its upstream
+the existing launcher one. Each fails the build if its upstream
 anchor changes.
 
 | File | Hook |

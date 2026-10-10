@@ -6,13 +6,13 @@ import hashlib
 import json
 import os
 import platform
-import shlex
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 import urllib.request
 import integrate
 
@@ -22,7 +22,6 @@ CACHE = ROOT / ".cache"
 QEMU = integrate.QEMU
 QEMU_COMMIT = "4fc49f46dc95d4a27de2509e7fceb2931e91faeb"
 QEMU_SHA = "731b5681e4bb18be313231579b8efd0296c5b015fa36dc533874b639ba838016"
-PKGCONF_SHA = "3a9080ac51d03615e7c1910a0a2a8df08424892b5f13b0628a204d3fcce0ea8b"
 PACKAGES = ["meson==1.5.0", "ninja==1.11.1.4", "distlib==0.3.9", "pycotap==1.3.1"]
 
 
@@ -49,69 +48,105 @@ def run(command, cwd, env, log):
         raise SystemExit(f"build step failed; inspect {CACHE / log}")
 
 
-def static_glib(env):
-    """Select third-party archives without statically linking macOS itself."""
-    metadata = CACHE / "standalone-pkgconfig"
-    env["PKG_CONFIG_PATH"] = os.pathsep.join(
-        part for part in env.get("PKG_CONFIG_PATH", "").split(os.pathsep)
-        if part != str(metadata))
-    pkgconfig = shutil.which("pkg-config", path=env["PATH"])
-    def query(*args):
-        return subprocess.check_output([pkgconfig, *args, "glib-2.0"],
-                                       env=env, text=True).strip()
-    libs = shlex.split(query("--libs", "--static"))
-    directories = [Path(flag[2:]) for flag in libs if flag.startswith("-L")]
-    for index, flag in enumerate(libs):
-        if flag in ("-lglib-2.0", "-lintl", "-lpcre2-8"):
-            archive = next((directory / ("lib" + flag[2:] + ".a")
-                            for directory in directories
-                            if (directory / ("lib" + flag[2:] + ".a")).is_file()), None)
-            if archive is None:
-                raise SystemExit(f"standalone build needs the static archive for {flag}")
-            libs[index] = str(archive)
-    if "-lglib-2.0" not in shlex.split(query("--libs")):
-        raise SystemExit("unexpected GLib package metadata")
-    metadata.mkdir(exist_ok=True)
-    package = metadata / "glib-2.0.pc"
-    previous = package.read_text() if package.exists() else None
-    integrate.write_changed(package,
-        "Name: GLib (FM-1 standalone)\nDescription: Statically linked GLib\n"
-        f"Version: {query('--modversion')}\nLibs: {shlex.join(libs)}\n"
-        f"Cflags: {query('--cflags')}\n")
-    env["PKG_CONFIG_PATH"] = os.pathsep.join([str(metadata), env.get("PKG_CONFIG_PATH", "")])
-    return previous != package.read_text()
+def mise_prefixes(env):
+    """The build task's conda-forge environments on PATH, in mise.toml's order.
+
+    mise installs each package into its own environment, with its own copies
+    of its dependencies (SDL2's on Linux include GLib), so the first listed
+    wins wherever two provide the same library."""
+    tools = tomllib.loads((ROOT / "mise.toml").read_text())["tasks"]["build"]["tools"]
+    on_path = {Path(entry).parent for entry in env["PATH"].split(os.pathsep)}
+    prefixes = []
+    for tool in tools:
+        if tool.startswith("conda:"):
+            prefix = next((p for p in on_path if p.parent.name == "conda-" + tool[6:]), None)
+            if prefix is None:
+                raise SystemExit(f"{tool} is not on PATH: run this as `mise run build`")
+            prefixes.append(prefix)
+    return prefixes
 
 
-def publish_executable(build):
-    """Publish one native executable and reject installed-library dependencies."""
+def llvm_tools(tools, env):
+    """Archive with the LLVM matching mise's clang: the system ar cannot index
+    its LTO bitcode, and Meson only accepts an archiver named ar."""
+    (tools / "bin").mkdir(parents=True, exist_ok=True)
+    for name in ("ar", "ranlib"):
+        target = shutil.which(f"llvm-{name}", path=env["PATH"])
+        if not target:
+            raise SystemExit(f"no llvm-{name} on PATH: run this as `mise run build`")
+        target = Path(target)
+        link = tools / "bin" / name
+        if not link.is_symlink() or link.readlink() != target:
+            link.unlink(missing_ok=True)
+            link.symlink_to(target)
+
+
+def bundle_libraries(executable, lib, prefixes):
+    """Copy the mise-provided shared libraries the executable loads into lib/."""
+    found = {}
+    if sys.platform == "darwin":
+        pending = [executable]
+        while pending:
+            listing = subprocess.check_output(["otool", "-L", str(pending.pop())], text=True)
+            for line in listing.splitlines()[1:]:
+                name = line.strip().split(" (", 1)[0]
+                if name.startswith(("/usr/lib/", "/System/Library/")):
+                    continue
+                if not name.startswith("@rpath/"):
+                    raise SystemExit(f"unexpected library dependency: {name}")
+                name = name.removeprefix("@rpath/")
+                if name not in found:
+                    found[name] = next((prefix / "lib" / name for prefix in prefixes
+                                        if (prefix / "lib" / name).is_file()), None)
+                    if found[name] is None:
+                        raise SystemExit(f"no mise package provides {name}")
+                    pending.append(found[name])
+    else:
+        env = dict(os.environ, LD_LIBRARY_PATH=os.pathsep.join(str(p / "lib") for p in prefixes))
+        for line in subprocess.check_output(["ldd", str(executable)], env=env, text=True).splitlines():
+            name, _, path = line.strip().partition(" => ")
+            path = Path(path.split(" (", 1)[0])
+            if any(path.is_relative_to(prefix) for prefix in prefixes):
+                found[name] = path
+            elif "not found" in line:
+                raise SystemExit(f"no mise package provides {name}")
+    shutil.rmtree(lib, ignore_errors=True)
+    lib.mkdir()
+    for name, path in found.items():
+        shutil.copy2(path, lib / name)
+
+
+def publish_executable(build, source, prefixes):
+    """Publish the executable with its libraries and reject any it cannot find."""
     release = CACHE / "release"
     release.mkdir(exist_ok=True)
     target = release / "emulator.new"
     shutil.copy2(build / "qemu-system-pi32v2", target)
-    linked = subprocess.check_output(["otool", "-L", str(target)], text=True)
-    for line in linked.splitlines()[1:]:
-        dependency = line.strip().split(" (", 1)[0]
-        if not dependency.startswith(("/usr/lib/", "/System/Library/")):
-            target.unlink()
-            raise SystemExit(f"standalone build still needs an installed library: {dependency}")
-    subprocess.run(["codesign", "--force", "--sign", "-", str(target)], check=True)
-    subprocess.run(["codesign", "--verify", "--strict", str(target)], check=True)
+    bundle_libraries(target, release / "lib", prefixes)
+    if sys.platform == "darwin":
+        subprocess.run(["codesign", "--force", "--sign", "-", str(target)], check=True)
+        subprocess.run(["codesign", "--verify", "--strict", str(target)], check=True)
+    # The executable must load from lib/ alone, without the mise packages.
+    clean = {k: v for k, v in os.environ.items() if not k.startswith(("DYLD_", "LD_"))}
+    if subprocess.run([str(target), "--version"], env=clean, capture_output=True).returncode:
+        target.unlink()
+        raise SystemExit("the published executable does not start with its bundled libraries")
     target.replace(release / "emulator")
-    # Publish atomically, preserving a running executable and the last good build.
+    # A link, so the executable finds lib/ next to its real path. Replacing it
+    # is atomic, preserving a running executable and the last good build.
     with tempfile.TemporaryDirectory(prefix=".emulator-", dir=HERE.parent) as staged:
         executable = Path(staged) / "emulator"
-        shutil.copy2(release / "emulator", executable)
+        executable.symlink_to(release / "emulator")
         executable.replace(HERE.parent / "emulator")
     shutil.copy2(ROOT / "LICENSE", release / "COPYING.GPL-2.0")
     shutil.copy2(ROOT / "LICENSES.md", release / "LICENSES.md")
-    # Retain the notices supplied with the statically linked dependencies.
-    notices = {
-        "GLib-LGPL-2.1.txt": Path("/opt/homebrew/opt/glib/LGPL-2.1-or-later.txt"),
-        "PCRE2-COPYING.txt": Path("/opt/homebrew/opt/pcre2/COPYING"),
-    }
-    for name, source in notices.items():
-        if source.exists():
-            shutil.copy2(source, release / name)
+    # Retain the notices of the bundled libraries; QEMU ships the LGPL text.
+    notices = {"GLib-LGPL-2.1.txt": source / "COPYING.LIB"}
+    notices |= {"PCRE2-COPYING.txt": prefix / "share/doc/pcre2/COPYING" for prefix in prefixes
+                if (prefix / "share/doc/pcre2/COPYING").exists()}
+    for name, notice in notices.items():
+        if notice.exists():
+            shutil.copy2(notice, release / name)
     integrate.write_changed(release / "RUNNING.txt",
         "Run: ./emulator path/to/firmware.bin\n"
         "Close the window to quit. Use --help for controls.\n"
@@ -120,7 +155,8 @@ def publish_executable(build):
         "Raw .bin and uncompressed .fwsc/.ufw loading is supported; firmware compatibility varies.\n"
         "For redistribution retain licensing and provide the corresponding source/build inputs.\n")
     print(f"Standalone executable: {HERE.parent / 'emulator'}")
-    package = CACHE / f"fm1-emulator-macos-{platform.machine()}.tar.gz"
+    system = "macos" if sys.platform == "darwin" else sys.platform
+    package = CACHE / f"fm1-emulator-{system}-{platform.machine()}.tar.gz"
     with tarfile.open(package, "w:gz") as archive:
         for item in sorted(release.iterdir()):
             archive.add(item, arcname=item.name)
@@ -131,10 +167,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--reconfigure", action="store_true")
     parser.add_argument("--standalone", action="store_true",
-                        help="build a native macOS executable with third-party libraries embedded")
+                        help="publish ./emulator and an archive with its libraries bundled")
     args = parser.parse_args()
-    if args.standalone and sys.platform != "darwin":
-        raise SystemExit("standalone packaging currently targets macOS")
     build = CACHE / ("build-standalone" if args.standalone else "build")
     CACHE.mkdir(exist_ok=True)
     # An older Ninja build remains tied to its original source tree. Do not
@@ -148,7 +182,7 @@ def main():
     env["PYTHONNOUSERSITE"] = "1"
     # This interpreter must have been selected with mise (see README).
     if sys.version_info[:2] != (3, 13):
-        raise SystemExit("run with: mise exec python@3.13.15 -- python tools/build.py")
+        raise SystemExit("run with: mise run build")
     archive = fetch(f"https://download.qemu.org/qemu-{QEMU}.tar.xz", f"qemu-{QEMU}.tar.xz", QEMU_SHA)
     source = CACHE / f"qemu-{QEMU}"
     if not source.exists():
@@ -166,44 +200,37 @@ def main():
         (venv / ".requirements").write_text("\n".join(PACKAGES))
     tools = CACHE / "tools"
     env["PATH"] = os.pathsep.join([str(venv / "bin"), str(tools / "bin"), env["PATH"]])
-    if not shutil.which("pkg-config", path=env["PATH"]):
-        archive = fetch("https://distfiles.dereferenced.org/pkgconf/pkgconf-2.3.0.tar.xz", "pkgconf-2.3.0.tar.xz", PKGCONF_SHA)
-        pkgsource = CACHE / "pkgconf-2.3.0"
-        if not pkgsource.exists():
-            with tarfile.open(archive) as tar:
-                tar.extractall(CACHE, filter="data")
-        run([pkgsource / "configure", f"--prefix={tools}", "--disable-shared"], pkgsource, env, "pkgconf-configure.log")
-        run(["make", "-j8"], pkgsource, env, "pkgconf-build.log")
-        run(["make", "install"], pkgsource, env, "pkgconf-install.log")
-        (tools / "bin/pkg-config").symlink_to("pkgconf")
-    if sys.platform == "darwin":
-        pc_dirs = sorted(Path("/opt/homebrew/opt").glob("*/lib/pkgconfig"))
-        env["PKG_CONFIG_PATH"] = os.pathsep.join([env.get("PKG_CONFIG_PATH", ""), *map(str, pc_dirs)])
-    needs_static_deps = args.standalone and static_glib(env)
+    prefixes = mise_prefixes(env)
+    env["PKG_CONFIG_PATH"] = os.pathsep.join(str(prefix / "lib/pkgconfig") for prefix in prefixes)
+    llvm_tools(tools, env)
     integrate.main()
     build.mkdir(exist_ok=True)
-    cocoa = sys.platform == "darwin"
     config_host = build / "config-host.h"
-    needs_cocoa = cocoa and (not config_host.exists() or
-                             "#define CONFIG_COCOA" not in config_host.read_text().splitlines())
-    needs_audio = cocoa and (not config_host.exists() or
-                            "#define CONFIG_AUDIO_COREAUDIO" not in config_host.read_text().splitlines())
+    needs_sdl = (not config_host.exists() or
+                 "#define CONFIG_SDL" not in config_host.read_text().splitlines())
     build_options = build / "meson-info/intro-buildoptions.json"
     lto_enabled = build_options.exists() and any(
         option["name"] == "b_lto" and option["value"] is True
         for option in json.loads(build_options.read_text()))
-    needs_lto = cocoa and not lto_enabled
-    if args.reconfigure or not (build / "build.ninja").exists() or needs_cocoa or needs_lto or needs_audio or needs_static_deps:
+    if args.reconfigure or not (build / "build.ninja").exists() or needs_sdl or not lto_enabled:
+        # GNU ld cannot link LLVM bitcode; macOS's linker can.
+        ldflags = "-Wl,-rpath,@executable_path/lib" if sys.platform == "darwin" else \
+            "-fuse-ld=lld -Wl,-rpath,$ORIGIN/lib"
+        # SDL_syswm.h includes Xlib.h, whose protocol headers are in xorgproto.
+        xorgproto = next(p for p in prefixes if p.parent.name == "conda-xorg-xorgproto")
+        cflags = "" if sys.platform == "darwin" else f"-isystem {xorgproto / 'include'}"
         run([source / "configure", "--target-list=pi32v2-softmmu", f"--python={venv / 'bin/python'}",
+             "--cc=clang", "--objcc=clang", "--host-cc=clang",
              "--without-default-features", "--enable-tcg", "--disable-fdt", "--disable-docs",
              "--disable-user", "--disable-tools", "--disable-guest-agent", "--disable-slirp",
              "--disable-capstone", "--enable-werror",
-             *(["--enable-cocoa", "--enable-coreaudio", "--enable-lto"] if cocoa else [])],
+             "--enable-sdl", "--audio-drv-list=sdl", "--enable-lto",
+             f"--extra-cflags={cflags}", f"--extra-ldflags={ldflags}"],
             build, env, "configure.log")
     run([venv / "bin/ninja", "-j8", "qemu-system-pi32v2"], build, env, "build.log")
     print(f"Built {build / 'qemu-system-pi32v2'} (QEMU {QEMU}, {QEMU_COMMIT})")
     if args.standalone:
-        publish_executable(build)
+        publish_executable(build, source, prefixes)
 
 
 if __name__ == "__main__":
