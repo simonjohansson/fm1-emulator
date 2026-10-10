@@ -90,6 +90,27 @@ class StockFormTests(unittest.TestCase):
         self.assertEqual(state["inspection"][0], 0xabcd1111)
         self.assertEqual(state["registers"][0], INSPECTION - 2)
 
+    def test_doubleword_pre_and_post_index(self):
+        # Felucca: EC50 2213 d[++r1=32] = r3_r2; EC58 2009 d[r0++=8] = r3_r2;
+        # EC58 6048 r7_r6 = d[r4++=8].
+        guest = Guest()
+        guest.literal(1, INSPECTION - 32)
+        guest.literal(2, 0x11111111)
+        guest.literal(3, 0x22222222)
+        guest.emit(0xec50, 0x2213)
+        guest.literal(0, INSPECTION + 8)
+        guest.literal(2, 0x33333333)
+        guest.literal(3, 0x44444444)
+        guest.emit(0xec58, 0x2009)
+        guest.literal(4, INSPECTION + 8)
+        guest.emit(0xec58, 0x6048)
+        state = guest_state(self.directory, guest)
+        self.assertEqual(state["inspection"][:4], [0x11111111, 0x22222222, 0x33333333, 0x44444444])
+        self.assertEqual(state["registers"][1], INSPECTION)
+        self.assertEqual(state["registers"][0], INSPECTION + 16)
+        self.assertEqual(state["registers"][4], INSPECTION + 16)
+        self.assertEqual(state["registers"][6:8], [0x33333333, 0x44444444])
+
     def test_halfword_store_at_unscaled_register_sum(self):
         # EDD8 kind 1, stock EDD8/5431: h[r3+r4] = r5 without writeback.
         guest = Guest()

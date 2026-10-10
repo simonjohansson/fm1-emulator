@@ -1019,19 +1019,43 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         next = here + 4;
     } else if ((op & 0xfff8) == 0xecd0 || (op & 0xfff8) == 0xec50) {
         uint16_t x = fetch(d, here + 2);
-        if (x & 2) { goto illegal; }
+        bool pair = (op & 0xfff8) == 0xec50;
+        /* ECD0 handles its pre-index forms above. Doubleword x bit 1 writes
+         * the address back first, as the word form does (vendor EC50 2213:
+         * d[++r1=32] = r3_r2); stored values are taken beforehand. */
+        if ((x & 2) && !pair) { goto illegal; }
         int32_t offset = sext(op & 7, 3) * 256 + ((x >> 8) & 15) * 16 + ((x >> 2) & 3) * 4;
-        unsigned reg = x >> 12;
-        TCGv_i32 addr = tcg_temp_new_i32();
-        tcg_gen_addi_i32(addr, read_gpr(d, (x >> 4) & 15), offset);
-        if ((op & 0xfff8) == 0xec50 && (reg & 1)) { goto illegal; }
-        if (x & 1) { store(d, read_gpr(d, reg), addr, MO_LEUL | MO_ALIGN); }
+        unsigned reg = x >> 12, base = (x >> 4) & 15;
+        if (pair && (reg & 1)) { goto illegal; }
+        if ((x & 2) && !(x & 1) && (base == reg || base == reg + 1)) { goto illegal; }
+        TCGv_i32 addr = tcg_temp_new_i32(), low = tcg_temp_new_i32(), high = tcg_temp_new_i32();
+        tcg_gen_mov_i32(low, read_gpr(d, reg));
+        if (pair) { tcg_gen_mov_i32(high, read_gpr(d, reg + 1)); }
+        tcg_gen_addi_i32(addr, read_gpr(d, base), offset);
+        if (x & 2) { tcg_gen_mov_i32(gpr[base], addr); }
+        if (x & 1) { store(d, low, addr, MO_LEUL | MO_ALIGN); }
         else { load(d, gpr[reg], addr, MO_LEUL | MO_ALIGN); }
-        if ((op & 0xfff8) == 0xec50) {
+        if (pair) {
             tcg_gen_addi_i32(addr, addr, 4);
-            if (x & 1) { store(d, read_gpr(d, reg + 1), addr, MO_LEUL | MO_ALIGN); }
+            if (x & 1) { store(d, high, addr, MO_LEUL | MO_ALIGN); }
             else { load(d, gpr[reg + 1], addr, MO_LEUL | MO_ALIGN); }
         }
+        next = here + 4;
+    } else if ((op & 0xfff8) == 0xec58 && (fetch(d, here + 2) & 3) < 2) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned base = (x >> 4) & 15, reg = x >> 12;
+        /* Doubleword ECD8: vendor EC58 2009 d[r0++=8] = r3_r2 and EC58 6048
+         * r7_r6 = d[r4++=8] access the old base, then add the stride. */
+        if ((reg & 1) || (!(x & 1) && (base == reg || base == reg + 1))) { goto illegal; }
+        int32_t stride = sext(op & 7, 3) * 256 + (x & 12) + ((x >> 8) & 15) * 16;
+        TCGv_i32 addr = tcg_temp_new_i32();
+        tcg_gen_mov_i32(addr, read_gpr(d, base));
+        for (unsigned i = 0; i < 2; i++) {
+            if (x & 1) { store(d, read_gpr(d, reg + i), addr, MO_LEUL | MO_ALIGN); }
+            else { load(d, gpr[reg + i], addr, MO_LEUL | MO_ALIGN); }
+            tcg_gen_addi_i32(addr, addr, 4);
+        }
+        tcg_gen_addi_i32(gpr[base], read_gpr(d, base), stride);
         next = here + 4;
     } else if ((op & 0xfff8) == 0xecd8 &&
                (fetch(d, here + 2) & 3) < 2) {
@@ -1726,7 +1750,8 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
         uint16_t x = fetch(d, here + 2);
         return (x & 15) || (x & 0x10) ? -1 : 3u << ((x >> 13) * 2);
     }
-    if (op == 0xe1f8) {
+    if (op == 0xe1f8 || op == 0xe1fc) {
+        /* Vendor F1FC 10F7 bundles r15_r14 += r1 * r7 (s) with a load. */
         uint16_t x = fetch(d, here + 2);
         return x & 15 ? -1 : 3u << ((x >> 13) * 2);
     }
