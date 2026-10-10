@@ -1082,13 +1082,10 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         else { load(d, gpr[dest], addr, MO_LEUL | MO_ALIGN); }
         next = here + 4;
     } else if ((op & 0xfff8) == 0xec58) {
-        /* Doubleword post-index and register-sum forms over one signed
-         * 11-bit immediate shared with the offset family above. The
-         * opcode's bit 3 makes the immediate a post-index stride; with
-         * the extension's bit 1 set the operands become a register sum,
-         * written back before the access only when the opcode's bit 2 is
-         * also set. Vendor EC58 0233 is d[r3+r2] = r1_r0 without
-         * writeback, EC58 00F0 is r1_r0 = d[r15++=0], EC5C 8012 is
+        /* Doubleword register-sum forms (post-index ones, extension bit 1
+         * clear, are decoded above): written back before the access only
+         * when the opcode's bit 2 is set. Vendor EC58 0233 is
+         * d[r3+r2] = r1_r0 without writeback, EC5C 8012 is
          * r9_r8 = d[++r1=r0]. The sum scales its index by eight when the
          * kind's bit 3 is set, which the pre-index opcode does not accept
          * (vendor EC5C 0A00 has no decoding). */
@@ -1096,37 +1093,23 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         unsigned base = (x >> 4) & 15, reg = x >> 12, kind = x & 15;
         if (reg & 1) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
-        if (x & 2) {
-            if ((kind & 12) == 4 || (kind & 12) == 12 || ((kind & 8) && (op & 4))) {
-                goto illegal;
-            }
-            tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), kind & 8 ? 3 : 0);
-            tcg_gen_add_i32(addr, addr, read_gpr(d, base));
-            if (op & 4) {
-                /* Writeback happens before the access; an unresolved
-                 * source or destination alias with the base would make
-                 * that order observable, so keep it rejected. */
-                if (base == reg || base == reg + 1) { goto illegal; }
-                tcg_gen_mov_i32(gpr[base], addr);
-            }
-            for (unsigned i = 0; i < 2; i++) {
-                if (kind & 1) { store(d, read_gpr(d, reg + i), addr, MO_LEUL | MO_ALIGN); }
-                else { load(d, gpr[reg + i], addr, MO_LEUL | MO_ALIGN); }
-                tcg_gen_addi_i32(addr, addr, 4);
-            }
-        } else {
-            int32_t offset = sext(op & 7, 3) * 256 + ((x >> 8) & 15) * 16 + ((x >> 2) & 3) * 4;
-            /* A post-index load with a base/destination alias would make
-             * the writeback order observable; keep that rejected, as for
-             * the word form. */
-            if (!(x & 1) && (base == reg || base == reg + 1)) { goto illegal; }
-            tcg_gen_addi_i32(addr, read_gpr(d, base), offset);
-            if (x & 1) { store(d, read_gpr(d, reg), addr, MO_LEUL | MO_ALIGN); }
-            else { load(d, gpr[reg], addr, MO_LEUL | MO_ALIGN); }
+        if (!(x & 2)) { goto illegal; }
+        if ((kind & 12) == 4 || (kind & 12) == 12 || ((kind & 8) && (op & 4))) {
+            goto illegal;
+        }
+        tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), kind & 8 ? 3 : 0);
+        tcg_gen_add_i32(addr, addr, read_gpr(d, base));
+        if (op & 4) {
+            /* Writeback happens before the access; an unresolved
+             * source or destination alias with the base would make
+             * that order observable, so keep it rejected. */
+            if (base == reg || base == reg + 1) { goto illegal; }
+            tcg_gen_mov_i32(gpr[base], addr);
+        }
+        for (unsigned i = 0; i < 2; i++) {
+            if (kind & 1) { store(d, read_gpr(d, reg + i), addr, MO_LEUL | MO_ALIGN); }
+            else { load(d, gpr[reg + i], addr, MO_LEUL | MO_ALIGN); }
             tcg_gen_addi_i32(addr, addr, 4);
-            if (x & 1) { store(d, read_gpr(d, reg + 1), addr, MO_LEUL | MO_ALIGN); }
-            else { load(d, gpr[reg + 1], addr, MO_LEUL | MO_ALIGN); }
-            tcg_gen_addi_i32(gpr[base], read_gpr(d, base), offset);
         }
         next = here + 4;
     } else if (op == 0xeddc) {
