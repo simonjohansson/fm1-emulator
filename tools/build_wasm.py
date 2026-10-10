@@ -10,8 +10,8 @@ interpreter (TCI) running the pi32v2 machine in a 64-bit WebAssembly module
 memory64: Chrome, Firefox). The compilers (emsdk, zig) come from mise; the
 libraries QEMU links (zlib, libffi, pixman, GLib) are compiled for WebAssembly
 here from pinned sources, as QEMU's tests/docker/dockerfiles/emsdk-wasm64-cross.docker
-does. The native `mise run build` must have run once: this reuses its pinned
-QEMU source, Python environment and pkgconf.
+does. It reuses the native build's pinned QEMU source, Python environment and
+pkgconf; the mise task runs that build first.
 """
 import os
 from pathlib import Path
@@ -151,7 +151,7 @@ def main():
     source = CACHE / f"qemu-{build.QEMU}"
     venv, tools = CACHE / "python", CACHE / "tools"
     if not (source.exists() and (venv / "bin/meson").exists() and (tools / "bin/pkgconf").exists()):
-        raise SystemExit("run `mise run build` once first: it fetches the pinned QEMU and build tools")
+        raise SystemExit("run this as `mise run build_wasm`: the native build it depends on fetches the pinned QEMU and build tools")
     integrate.main()
     CACHE.mkdir(exist_ok=True)
     env = dict(os.environ)

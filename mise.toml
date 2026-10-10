@@ -24,6 +24,8 @@ run = "python tools/speed.py"
 
 [tasks.build_wasm]
 description = "Cross-build the headless emulator for WebAssembly (Emscripten)"
+# The native build fetches the pinned QEMU source and build tools this reuses.
+depends = ["build"]
 # Both compilers are task-scoped: each puts its own clang on PATH, which would
 # shadow Apple's for the native build. clang is the host C compiler Meson and
 # QEMU's configure need for build-machine tools (listed first so it wins on PATH).
@@ -34,5 +36,11 @@ env = { CC = "clang" }
 run = "python tools/build_wasm.py"
 
 [tasks.serve_web]
-description = "Serve the WebAssembly emulator page locally (build it with build_wasm first)"
+description = "Serve the WebAssembly emulator page locally"
+depends = ["build_wasm"]
 run = "python tools/serve_web.py"
+
+[tasks.test_wasm]
+description = "Check the WebAssembly build against the native emulator"
+depends = ["build", "build_wasm"]
+run = "node tests/wasm_boot.mjs"

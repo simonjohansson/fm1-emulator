@@ -77,7 +77,7 @@ It needs 64-bit WebAssembly, so current Chrome or Firefox; the firmware never
 leaves your computer.
 
 ```sh
-mise run build_wasm    # emsdk and clang come from mise; needs `mise run build` once first
+mise run build_wasm    # emsdk and clang come from mise
 mise run serve_web     # http://localhost:8080
 ```
 

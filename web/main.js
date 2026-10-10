@@ -5,6 +5,7 @@ const els = { file: $('file'), drop: $('drop'), label: $('drop-label'), boot: $(
 const ctx = els.lcd.getContext('2d');
 const LCD_BYTES = 240 * 240 * 4;
 const MAX_LINES = 400;
+const CONSOLE = '/console.log';
 let firmware = null;      // { name, bytes }
 let started = 0;
 let module = null;
@@ -50,6 +51,16 @@ function clock() {
   els.status.textContent = `Running, ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
+let consoleLength = 0;
+function tailConsole() {
+  let bytes;
+  try { bytes = module.FS.readFile(CONSOLE); } catch { return; }   // not created yet
+  if (bytes.length <= consoleLength) return;
+  const text = new TextDecoder().decode(bytes.slice(consoleLength));
+  consoleLength = bytes.length;
+  text.split(/\r?\n/).forEach(log);
+}
+
 function paint() {
   const pointer = Number(module._fm1_web_lcd_frame());
   if (!pointer) return;
@@ -79,7 +90,10 @@ async function boot() {
     module = await createModule({
       arguments: ['-M', 'fm1-poc', '-smp', '2', '-accel', 'tcg,thread=single',
                   '-icount', 'shift=3,align=off,sleep=off', '-display', 'none',
-                  '-serial', 'stdio', '-monitor', 'none', '-nodefaults', '-no-user-config',
+                  // The console goes to a file the page tails. Standard input would make
+                  // Emscripten pop up a prompt() box, as a browser has no stdin.
+                  '-chardev', `file,id=console,path=${CONSOLE}`, '-serial', 'chardev:console',
+                  '-monitor', 'none', '-nodefaults', '-no-user-config',
                   '-kernel', path, '-append', 'application'],
       preRun: [(m) => m.FS.writeFile(path, firmware.bytes)],
       print: log,
@@ -92,7 +106,7 @@ async function boot() {
   }
   started = performance.now();
   clock();
-  timers = [setInterval(clock, 1000), setInterval(paint, 250)];
+  timers = [setInterval(clock, 1000), setInterval(paint, 250), setInterval(tailConsole, 500)];
 }
 
 els.boot.addEventListener('click', boot);
