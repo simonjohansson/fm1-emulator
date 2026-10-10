@@ -10,7 +10,7 @@ snapshots (FM1_POC_SNAPSHOT_NS):
 1. step PRESETS one detent at a time through N presets (default 128), and
    play a note on each: the screen must change and the note must sound;
 2. from HOME, press each function button up to PAGES times, paging through
-   its screens: report whether the screen changed;
+   its screens: report whether the screen changed (MAY_STAY buttons may not);
 3. play a final note and stop with a capture: the run must not have faulted.
 
 Failing steps are written as PPM images under --out.
@@ -30,6 +30,9 @@ SECOND = 1_000_000_000
 MS = 1_000_000
 READY = 20 * SECOND            # stock reaches HOME by about 17 guest seconds
 PAGES = 6
+# Pressed from HOME, these show nothing new on stock FM-1: HOME is already
+# there, and the SEL and REC contacts are unverified against hardware.
+MAY_STAY = {"HOME", "SEL", "REC"}
 
 
 def controls():
@@ -183,7 +186,7 @@ def main():
                 seen.append(digest[index])
             pages = len(set(seen)) - 1
             print(f"  {label:10s} {pages} new screen(s): {' '.join(changes)}")
-            if pages == 0:
+            if pages == 0 and label not in MAY_STAY:
                 fail(presses[0], f"{label}: no visible change")
 
         quiet, note = final
