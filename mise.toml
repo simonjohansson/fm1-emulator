@@ -1,5 +1,6 @@
 [tools]
 python = "3.13.15"
+node = "26.11.1"
 
 [tasks.build]
 description = "Build and package the native macOS emulator"
@@ -20,3 +21,14 @@ run = "python tools/panel_smoke.py"
 [tasks.speed]
 description = "Measure firmware speed headless and windowed with audio"
 run = "python tools/speed.py"
+
+[tasks.build_wasm]
+description = "Cross-build the headless emulator for WebAssembly (Emscripten)"
+# Both compilers are task-scoped: each puts its own clang on PATH, which would
+# shadow Apple's for the native build. clang is the host C compiler Meson and
+# QEMU's configure need for build-machine tools (listed first so it wins on PATH).
+# emsdk is the WebAssembly compiler; the asdf plugin brings its own Python, where
+# the vfox one needs the system's, too old on macOS.
+tools = { clang = "23.1.2", "asdf:mise-plugins/mise-emsdk" = "4.0.10" }
+env = { CC = "clang" }
+run = "python tools/build_wasm.py"
