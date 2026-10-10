@@ -4,6 +4,7 @@
 #include "qapi/error.h"
 #include "qemu/qemu-print.h"
 #include "cpu.h"
+#include "exec/icount.h"
 #include "exec/cputlb.h"
 #include "exec/page-protection.h"
 #include "exec/target_page.h"
@@ -128,6 +129,7 @@ static bool interrupt(CPUState *cs, int request)
     e->pc = handler;
     e->in_irq = true;
     e->irq_entries++;
+    if (number >= 120) { cpu->hold_for_soft_irq = false; }
     e->last_irq_source = number;
     if (number == 11) { e->irq11_entries++; }
     else if (number == 63) { e->irq63_entries++; }
@@ -197,6 +199,19 @@ static const TCGCPUOps tcg_ops = {
     .do_unaligned_access = unaligned, .cpu_exec_interrupt = interrupt,
     .cpu_exec_halt = has_work, .do_interrupt = unexpected_exception,
 };
+/* Two FM-1 cores run in parallel, so a critical section (IRQs masked) and
+ * the step from a core raising a software IRQ for itself (stock's
+ * scheduler requests a task switch so) to taking it last only their own
+ * instructions. Ending the round-robin slice there let the other core's
+ * slice pass; device IRQs piled up, overtook the switch and stock lost a
+ * task wakeup. The rr loop then runs this core again for a few short
+ * passes (timers still run) before the other core. */
+static bool hold_slice(CPUState *cs)
+{
+    CPUPi32v2State *e = cpu_env(cs);
+    return !cs->halted && ((e->spr[ICFG] & 0x300) != 0x300 ||
+                           PI32V2_CPU(cs)->hold_for_soft_irq);
+}
 static void class_init(ObjectClass *oc, const void *data)
 {
     Pi32v2CPUClass *klass = PI32V2_CPU_CLASS(oc);
@@ -206,6 +221,7 @@ static void class_init(ObjectClass *oc, const void *data)
     cc->class_by_name = class_by_name;
     cc->set_pc = set_pc; cc->get_pc = get_pc;
     cc->dump_state = dump; cc->sysemu_ops = &system_ops; cc->tcg_ops = &tcg_ops;
+    tcg_rr_hold_slice = hold_slice;
 }
 static const TypeInfo info = {
     .name = TYPE_PI32V2_CPU, .parent = TYPE_CPU,

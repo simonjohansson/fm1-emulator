@@ -85,6 +85,8 @@ struct ArchCPU {
     /* Translates apart from its peer, whose observers differ. */
     bool private_translation;
     bool lock_waiting;
+    /* Host-side: a software IRQ this core raised for itself is pending. */
+    bool hold_for_soft_irq;
     bool held_reset;
     bool core_paused;
     bool resume_requested;

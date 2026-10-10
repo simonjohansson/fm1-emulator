@@ -518,6 +518,10 @@ static void irq_write(void *opaque, hwaddr offset, uint64_t value, unsigned size
             pi32v2_fail(&cpu->env, "unsupported software IRQ request bank or source");
         }
         m->software_latch |= value;
+        if (current_cpu) {
+            Pi32v2CPU *self = PI32V2_CPU(current_cpu);
+            self->hold_for_soft_irq |= software_pending(m, current_cpu->cpu_index != 0) != 0;
+        }
         break;
     case 0xa8:
         if (value > 7) { pi32v2_fail(&cpu->env, "invalid priority mask"); }

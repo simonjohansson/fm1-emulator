@@ -235,7 +235,10 @@ def main():
          "                cpu_count -= cpu_thread_is_idle(idle);\n"
          "            }\n"
          "            icount_set_parallel(MAX(cpu_count, 1));\n"
-         "            cpu_budget = icount_percpu_budget(MAX(cpu_count, 1));\n"),
+         "            cpu_budget = icount_percpu_budget(MAX(cpu_count, 1));\n"
+         "            if (rr_held) {\n"
+         "                cpu_budget = MIN(cpu_budget, 1024);\n"
+         "            }\n"),
         ("            if (cpu_can_run(cpu)) {\n",
          "            if (cpu_can_run(cpu) && !cpu_thread_is_idle(cpu)) {\n"),
         # A kick from the main loop (host timing) used to end the slice and
@@ -268,6 +271,27 @@ def main():
          "                                                    QEMU_TIMER_ATTR_ALL) != 0 &&\n"
          "                         cpu_work_list_empty(cpu) &&\n"
          "                         cpu_can_run(cpu) && !cpu_thread_is_idle(cpu));\n"),
+        # Two cores run in parallel on hardware, so a critical section or
+        # the step from requesting a task switch to taking it lasts only its
+        # own instructions. Ending a slice there let the other core's slice
+        # pass and device IRQs overtook the switch (stock lost a wakeup).
+        # A target may keep the same vCPU for a few short passes (1024
+        # instructions); timers still run between them, the other vCPU waits.
+        ("            cpu = CPU_NEXT(cpu);\n"
+         "        } /* while (cpu && !cpu->exit_request).. */\n",
+         "            if (cpu && tcg_rr_hold_slice && rr_held < 16 &&\n"
+         "                cpu_can_run(cpu) && !cpu_thread_is_idle(cpu) &&\n"
+         "                tcg_rr_hold_slice(cpu)) {\n"
+         "                rr_held++;\n"
+         "                break;\n"
+         "            }\n"
+         "            rr_held = 0;\n"
+         "            cpu = CPU_NEXT(cpu);\n"
+         "        } /* while (cpu && !cpu->exit_request).. */\n"),
+        ("static void rr_deal_with_unplugged_cpus(void)\n",
+         "bool (*tcg_rr_hold_slice)(CPUState *cpu);\n"
+         "static unsigned rr_held;\n\n"
+         "static void rr_deal_with_unplugged_cpus(void)\n"),
     ]:
         if after not in content:
             if content.count(before) != 1:
@@ -308,7 +332,9 @@ def main():
     write_changed(common, content)
     header = SOURCE / "include/exec/icount.h"
     content = header.read_text()
-    decl = "void icount_set_parallel(int runnable);\n"
+    decl = ("void icount_set_parallel(int runnable);\n"
+            "/* FM-1: run this vCPU again before the next (IRQs masked). */\n"
+            "extern bool (*tcg_rr_hold_slice)(CPUState *cpu);\n")
     if decl not in content:
         anchor = "#endif /* EXEC_ICOUNT_H */"
         if content.count(anchor) != 1:
