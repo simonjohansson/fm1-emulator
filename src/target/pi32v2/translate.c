@@ -1628,6 +1628,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         set_call_return(d, next);
         count(d); dynamic_jump(d, read_gpr(d, op & 15));
     } else if ((op & 0xfff0) == 0x00d0) {
+        if (d->predicated) { gen_helper_pi32v2_jump_end(tcg_env, tcg_constant_i32(next)); }
         count(d); dynamic_jump(d, read_gpr(d, op & 15));
     } else if ((op & 0xfff0) == 0x0230) {
         gen_helper_pi32v2_flush(tcg_env, read_gpr(d, op & 15));

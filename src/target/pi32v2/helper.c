@@ -213,6 +213,16 @@ void HELPER(pi32v2_return_end)(CPUPi32v2State *env, uint32_t next)
     HELPER(pi32v2_advance)(env, next);
 }
 
+/* A final selected register JUMP leaves the block for an arbitrary target,
+ * so the skipped ELSE arm never needs a successor: retire the block without
+ * redirecting. Felucca 1.5 runs "IF c THEN jump rN ELSE <insn>" on
+ * hardware, with an IF as the target's first instruction. */
+void HELPER(pi32v2_jump_end)(CPUPi32v2State *env, uint32_t next)
+{
+    if (next == env->predicate_end) { env->predicate_from = 0; }
+    HELPER(pi32v2_advance)(env, next);
+}
+
 void HELPER(pi32v2_unsigned_le_end)(CPUPi32v2State *env, uint32_t next)
 {
     /* Retire a final selected FF49 at its sequential arm boundary, before

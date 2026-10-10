@@ -91,6 +91,21 @@ class ConditionalReturnTests(unittest.TestCase):
         self.assertIn("final THEN return with ELSE is unsupported", result.stderr)
         self.assertIn("after 7 instructions", result.stderr)
 
+    def test_final_then_register_jump_with_else_leaves_the_block(self):
+        guest = Guest()
+        guest.literal(3, 0x5555)
+        guest.literal(2, guest.base + 20)
+        guest.emit(0xea20, 0x1000)  # Always true: THEN jump r2, ELSE one add.
+        guest.emit(0x00d2)
+        guest.add(3, 1)
+        guest.emit(0xea20, 0)  # The target opens its own block.
+        guest.literal(4, 0x1234)
+        guest.literal(5, 0x77)
+        state = guest_state(self.directory, guest)
+        self.assertEqual(state["registers"][3:6], [0x5555, 0x1234, 0x77])
+        self.assertEqual(state["pc"], guest.pc)
+        self.assertEqual(state["instructions"], 7)
+
     def test_signed_register_greater_selects_then_or_else(self):
         for left, right, selected in ((1922, 1024, 1), (0, 0, 2),
                                      (0xffffffff, 0, 2), (0, 0xffffffff, 1),
