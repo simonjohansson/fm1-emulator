@@ -3,6 +3,7 @@
  * controls emit ordinary input events into the board, never guest commands. */
 #include "hw/core/boards.h"
 #include "ui/fm1-controls.h"
+#include "ui/fm1-leds.h"
 #import <dispatch/dispatch.h>
 
 @class FM1Panel;
@@ -49,15 +50,41 @@ static void fm1_text(NSString *text, NSRect rect, CGFloat size, NSColor *color)
     }];
 }
 
+/* LED brightness is the fraction of the time its column was selected that
+ * its line was driven; the eye is roughly logarithmic, so a dim glow of a few
+ * percent reads as clearly on and a full-duty LED as full. */
+static double fm1_led_brightness(uint8_t level)
+{
+    return pow(MIN(level / 242., 1.), .4);
+}
+
+static void fm1_led_draw(NSRect rect, double brightness, double red, double green, double blue)
+{
+    [fm1_gray(.1) setFill];
+    [[NSBezierPath bezierPathWithRoundedRect:rect xRadius:1.5 yRadius:1.5] fill];
+    if (brightness < .02) { return; }
+    NSRect halo = NSInsetRect(rect, -3, -2.5);
+    [[NSColor colorWithCalibratedRed:red green:green blue:blue alpha:.28 * brightness] setFill];
+    [[NSBezierPath bezierPathWithRoundedRect:halo xRadius:3.5 yRadius:3.5] fill];
+    [[NSColor colorWithCalibratedRed:red green:green blue:blue alpha:brightness] setFill];
+    [[NSBezierPath bezierPathWithRoundedRect:rect xRadius:1.5 yRadius:1.5] fill];
+}
+
 @interface FM1Contact : NSView {
     QKeyCode contact;
     NSString *caption;
     bool piano, pressed;
     NSTimer *releaseTimer;
     NSTimeInterval pressedAt;
+    /* Matrix LEDs: [0] the contact's own, [1] PLAY's extra green one. */
+    unsigned ledColumn[2], ledRow[2], ledCount;
+    uint8_t ledLevel[2];
 }
 - (id)initWithFrame:(NSRect)rect contact:(QKeyCode)code caption:(NSString *)text piano:(bool)isPiano;
 - (void)releaseContact;
+- (void)addLedAtColumn:(unsigned)column row:(unsigned)row;
+- (bool)isPlay;
+- (void)updateLeds:(uint8_t (*)[FM1_LED_ROWS])levels;
 @end
 
 @implementation FM1Contact
@@ -82,6 +109,26 @@ static void fm1_text(NSString *text, NSRect rect, CGFloat size, NSColor *color)
     [releaseTimer invalidate]; releaseTimer = nil;
     if (pressed) { fm1_panel_contact(contact, false); pressed = false; }
     [self setNeedsDisplay:YES];
+}
+- (void)addLedAtColumn:(unsigned)column row:(unsigned)row
+{
+    if (ledCount < 2) {
+        ledColumn[ledCount] = column; ledRow[ledCount] = row; ledCount++;
+    }
+}
+- (bool)isPlay { return [caption isEqualToString:@"PLAY/STOP"]; }
+- (void)updateLeds:(uint8_t (*)[FM1_LED_ROWS])levels
+{
+    bool changed = false;
+    for (unsigned i = 0; i < ledCount; i++) {
+        uint8_t level = levels[ledColumn[i]][ledRow[i] - 1];
+        /* Redraw only when the drawn brightness moves by a visible step. */
+        if ((int)(fm1_led_brightness(level) * 24) != (int)(fm1_led_brightness(ledLevel[i]) * 24)) {
+            changed = true;
+        }
+        ledLevel[i] = level;
+    }
+    if (changed) { [self setNeedsDisplay:YES]; }
 }
 - (void)mouseDown:(NSEvent *)event
 {
@@ -129,15 +176,28 @@ static void fm1_text(NSString *text, NSRect rect, CGFloat size, NSColor *color)
                                                        endingColor:fm1_gray(pressed ? .24 : .13)] autorelease];
     [gradient drawInBezierPath:path angle:90];
     [fm1_gray(pressed ? .55 : .36) setStroke]; [path stroke];
+    double lit = ledCount ? fm1_led_brightness(ledLevel[0]) : 1;
     if (piano) {
+        /* The bar is the key's LED: dark when the firmware leaves it off. */
         NSRect mark = NSMakeRect(NSMidX(face)-2, face.origin.y+face.size.height*.35, 4, face.size.height*.43);
-        [[NSColor colorWithCalibratedRed:pressed ? .38 : .92 green:pressed ? .91 : .94 blue:pressed ? .64 : .91 alpha:1] setFill];
+        double tone = .2 + .72 * lit;
+        [[NSColor colorWithCalibratedRed:pressed ? .38 : tone green:pressed ? .91 : tone + .02
+                                    blue:pressed ? .64 : tone alpha:1] setFill];
         [[NSBezierPath bezierPathWithRoundedRect:mark xRadius:2 yRadius:2] fill];
     } else {
         bool play = [caption isEqualToString:@"PLAY/STOP"];
         fm1_text(play ? @"PLAY\nSTOP" : caption,
                  NSMakeRect(0, NSMidY(face)-(play ? 13 : 6), rect.size.width,
                             play ? 30 : 16), 10, fm1_gray(.92));
+        bool rec = [caption isEqualToString:@"REC"];
+        double x = NSMidX(face) - (play ? 14 : 6), y = NSMaxY(face) - 8;
+        for (unsigned i = 0; i < ledCount; i++, x += 16) {
+            double b = fm1_led_brightness(ledLevel[i]);
+            NSRect led = NSMakeRect(x, y, 12, 3.5);
+            if (i == 1) { fm1_led_draw(led, b, .25, 1, .35); }
+            else if (rec) { fm1_led_draw(led, b, 1, .15, .1); }
+            else { fm1_led_draw(led, b, 1, 1, 1); }
+        }
     }
 }
 @end
@@ -263,8 +323,10 @@ static void fm1_text(NSString *text, NSRect rect, CGFloat size, NSColor *color)
 
 @interface FM1Panel : NSView {
     NSMutableArray *controls;
+    NSTimer *ledTimer;
 }
 - (void)releaseContacts;
+- (void)stopLeds;
 @end
 
 @implementation FM1Panel
@@ -281,6 +343,8 @@ static void fm1_text(NSString *text, NSRect rect, CGFloat size, NSColor *color)
                                   : NSMakeRect(79+(i-12)*84, 311, 75, 36);
             FM1Contact *button = [[FM1Contact alloc] initWithFrame:frame contact:fm1_panel_buttons[i].qcode
                                  caption:[NSString stringWithUTF8String:fm1_panel_buttons[i].label] piano:false];
+            [button addLedAtColumn:fm1_panel_buttons[i].column row:fm1_panel_buttons[i].row];
+            if ([button isPlay]) { [button addLedAtColumn:8 row:1]; }   /* PLAY's green LED */
             [self addSubview:button]; [controls addObject:button]; [button release];
         }
         unsigned white = 0;
@@ -292,6 +356,7 @@ static void fm1_text(NSString *text, NSRect rect, CGFloat size, NSColor *color)
             NSString *label = [NSString stringWithFormat:@"Key %u %@", i+1,
                                [NSString stringWithUTF8String:fm1_panel_keys[i].label]];
             FM1Contact *key = [[FM1Contact alloc] initWithFrame:frame contact:fm1_panel_keys[i].qcode caption:label piano:true];
+            [key addLedAtColumn:fm1_panel_keys[i].column row:fm1_panel_keys[i].row];
             [self addSubview:key]; [controls addObject:key]; [key release];
         }
         for (int i = -1; i < FM1_PANEL_ENCODERS; i++) {
@@ -307,10 +372,23 @@ static void fm1_text(NSString *text, NSRect rect, CGFloat size, NSColor *color)
         [cocoaView setAutoresizingMask:NSViewNotSizable];
         [self addSubview:cocoaView]; [cocoaView release];
         [cocoaView updateBounds];
+        ledTimer = [NSTimer timerWithTimeInterval:1. / 30 target:self
+                      selector:@selector(refreshLeds) userInfo:nil repeats:YES];
+        [[NSRunLoop mainRunLoop] addTimer:ledTimer forMode:NSRunLoopCommonModes];
     }
     return self;
 }
-- (void)dealloc { [controls release]; [super dealloc]; }
+- (void)dealloc { [ledTimer invalidate]; [controls release]; [super dealloc]; }
+- (void)stopLeds { [ledTimer invalidate]; ledTimer = nil; }
+- (void)refreshLeds
+{
+    uint8_t levels[FM1_LED_COLUMNS][FM1_LED_ROWS];
+    uint8_t (*copy)[FM1_LED_ROWS] = levels;
+    with_bql(^{ fm1_leds_read(copy); });
+    for (id control in controls) {
+        if ([control respondsToSelector:@selector(updateLeds:)]) { [control updateLeds:levels]; }
+    }
+}
 - (void)setFrameSize:(NSSize)size
 {
     [super setFrameSize:size];
@@ -420,5 +498,6 @@ static void fm1_panel_cleanup(void)
         fm1_panel_runstate = NULL;
     }
     fm1_panel_release();
+    [fm1_panel stopLeds];
     [fm1_panel release]; fm1_panel = nil;
 }
