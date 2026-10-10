@@ -89,6 +89,10 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
                 p->spr[6], p->pc, p->instructions, p->in_irq ? "true" : "false",
                 CPU(peer)->halted ? "true" : "false", p->spr[RETS], p->spr[SP]);
     }
+    fprintf(f, ",\"software_irq\":{\"latch\":%u,\"config0\":%u,\"config1\":%u,"
+            "\"priority_mask0\":%u,\"priority_mask1\":%u}",
+            m->software_latch, m->irq_configs[15], m->irq1_configs[15],
+            m->cpu->env.priority_mask, m->cpu1 ? m->cpu1->env.priority_mask : 0);
     fprintf(f, ",\"irq_entries\":%" PRIu64 ",\"rti_count\":%" PRIu64
             ",\"in_irq\":%s,\"timer_expirations\":%" PRIu64
             ",\"acknowledgments\":%" PRIu64 ",\"pending\":%s,"
@@ -604,6 +608,57 @@ static void schedule_input(const char *script)
     }
 }
 
+/* FM1_POC_SNAPSHOT_NS="NS,NS,..." (with FM1_POC_STATE_DIR) saves the LCD as
+ * snapshot-N.ppm and appends a progress line to snapshots.jsonl at each
+ * guest time, without stopping the run. */
+typedef struct Snapshot {
+    QEMUTimer *timer;
+    FM1PocState *m;
+    unsigned index;
+} Snapshot;
+
+static void take_snapshot(void *opaque)
+{
+    Snapshot *snap = opaque;
+    FM1PocState *m = snap->m;
+    const char *dir = getenv("FM1_POC_STATE_DIR");
+    g_autofree char *image = g_strdup_printf("%s/snapshot-%u.ppm", dir, snap->index);
+    save_lcd_ppm(m, image);
+    g_autofree char *path = g_strdup_printf("%s/snapshots.jsonl", dir);
+    FILE *f = fopen(path, "a");
+    if (!f) { pi32v2_fail(&m->cpu->env, "cannot append snapshots.jsonl"); }
+    fprintf(f, "{\"index\":%u,\"virtual_ns\":%" PRId64 ",\"pc\":%u,\"visible\":%s,"
+            "\"lcd_commands\":%" PRIu64 ",\"audio_nonzero_words\":%" PRIu64
+            ",\"audio_completions\":%" PRIu64 ",\"uart1_bytes\":%ld}\n",
+            snap->index, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), m->cpu->env.pc,
+            fm1_lcd_visible(&m->lcd) ? "true" : "false", m->lcd.commands,
+            m->alnk.nonzero_words, m->alnk.completions,
+            m->uart.log ? ftell(m->uart.log) : -1L);
+    fclose(f);
+}
+
+static void schedule_snapshots(FM1PocState *m, const char *list)
+{
+    if (!getenv("FM1_POC_STATE_DIR")) {
+        error_report("FM1_POC_SNAPSHOT_NS needs FM1_POC_STATE_DIR");
+        exit(EXIT_FAILURE);
+    }
+    g_auto(GStrv) times = g_strsplit(list, ",", -1);
+    for (unsigned i = 0; times[i]; i++) {
+        char *end = NULL;
+        uint64_t when = g_ascii_strtoull(times[i], &end, 0);
+        if (!*times[i] || *end || !when || when > INT64_MAX) {
+            error_report("FM1_POC_SNAPSHOT_NS entry '%s' is not a guest time in ns", times[i]);
+            exit(EXIT_FAILURE);
+        }
+        Snapshot *snap = g_new0(Snapshot, 1);
+        snap->m = m;
+        snap->index = i;
+        snap->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, take_snapshot, snap);
+        timer_mod_ns(snap->timer, when);
+    }
+}
+
 void fm1_test_configure(FM1PocState *m, MachineState *ms)
 {
     const char *profile = ms->kernel_cmdline ? ms->kernel_cmdline : "";
@@ -721,6 +776,8 @@ void fm1_test_configure(FM1PocState *m, MachineState *ms)
     }
     const char *input = getenv("FM1_POC_INPUT");
     if (input) { schedule_input(input); }
+    const char *snapshots = getenv("FM1_POC_SNAPSHOT_NS");
+    if (snapshots) { schedule_snapshots(m, snapshots); }
 }
 
 void fm1_test_seed_ram(FM1PocState *m)
