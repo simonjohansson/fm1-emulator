@@ -46,8 +46,9 @@ through bank 0. Pause/resume commands suspend and continue instruction execution
 without resetting registers; their status and self-clearing command bits were
 measured on hardware. Bank-1 requests remain unsupported. The boot-ROM reset sequence,
 retained register values and startup latency are not modeled. Icount
-continues to charge 8 ns per instruction across both
-CPUs; this does not model two physical cores executing simultaneously.
+charges 8 ns per instruction while one CPU is runnable and 4 ns while both
+are, so two busy cores each advance at 8 ns per instruction as if executing
+simultaneously.
 
 The Cocoa panel embeds the existing LCD surface. Mouse and keyboard inputs
 close the same matrix contacts; encoders emit quadrature transitions. MASTER

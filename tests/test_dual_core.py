@@ -61,7 +61,7 @@ class DualCoreTests(unittest.TestCase):
             [*COMMAND, "-smp", "2", "-kernel", str(path), "-append", "application"],
             env=environment(FM1_POC_STATE_DIR=str(state_dir),
                             FM1_POC_STOP_PC=hex(primary.pc),
-                            FM1_POC_MAX_INSTRUCTIONS="10000000"),
+                            FM1_POC_MAX_INSTRUCTIONS="40000000"),  # above one 100 ms two-core slice
             capture_output=True, text=True, timeout=30)
         state = json.loads((state_dir / "state.json").read_text())
         ram = (state_dir / "state.sram").read_bytes()

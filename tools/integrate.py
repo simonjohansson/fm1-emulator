@@ -234,6 +234,7 @@ def main():
          "            CPU_FOREACH(idle) {\n"
          "                cpu_count -= cpu_thread_is_idle(idle);\n"
          "            }\n"
+         "            icount_set_parallel(MAX(cpu_count, 1));\n"
          "            cpu_budget = icount_percpu_budget(MAX(cpu_count, 1));\n"),
         ("            if (cpu_can_run(cpu)) {\n",
          "            if (cpu_can_run(cpu) && !cpu_thread_is_idle(cpu)) {\n"),
@@ -273,6 +274,47 @@ def main():
                 raise SystemExit("pinned round-robin icount budget hook anchor differs")
             content = content.replace(before, after)
     write_changed(rr, content)
+    # Two runnable FM-1 cores execute in parallel: with the summed icount
+    # clock each would get half its time. Halve the time per instruction
+    # (shift - 1) while two vCPUs are runnable, keeping the clock continuous
+    # as QEMU's adaptive icount does.
+    common = SOURCE / "accel/tcg/icount-common.c"
+    content = common.read_text()
+    anchor = "static void icount_adjust_rt(void *opaque)\n"
+    hook = ("/* FM-1: shift for 1 or 2 runnable vCPUs, from the configured one. */\n"
+            "void icount_set_parallel(int runnable)\n"
+            "{\n"
+            "    static int base = -1;\n"
+            "    if (base < 0) {\n"
+            "        base = timers_state.icount_time_shift;\n"
+            "    }\n"
+            "    int shift = runnable > 1 && base > 0 ? base - 1 : base;\n"
+            "    if (shift == timers_state.icount_time_shift) {\n"
+            "        return;\n"
+            "    }\n"
+            "    seqlock_write_lock(&timers_state.vm_clock_seqlock,\n"
+            "                       &timers_state.vm_clock_lock);\n"
+            "    int64_t now = icount_get_locked();\n"
+            "    qatomic_set(&timers_state.icount_time_shift, shift);\n"
+            "    qatomic_set(&timers_state.qemu_icount_bias,\n"
+            "                now - (timers_state.qemu_icount << shift));\n"
+            "    seqlock_write_unlock(&timers_state.vm_clock_seqlock,\n"
+            "                         &timers_state.vm_clock_lock);\n"
+            "}\n\n")
+    if hook not in content:
+        if content.count(anchor) != 1:
+            raise SystemExit("pinned icount shift anchor differs")
+        content = content.replace(anchor, hook + anchor)
+    write_changed(common, content)
+    header = SOURCE / "include/exec/icount.h"
+    content = header.read_text()
+    decl = "void icount_set_parallel(int runnable);\n"
+    if decl not in content:
+        anchor = "#endif /* EXEC_ICOUNT_H */"
+        if content.count(anchor) != 1:
+            raise SystemExit("pinned icount header anchor differs")
+        content = content.replace(anchor, decl + "\n" + anchor)
+    write_changed(header, content)
     # The icount budget also stopped at host REALTIME timer deadlines (for
     # UI input), another host-dependent slice boundary. The main loop runs
     # those timers on its own thread; bound slices by guest timers only.

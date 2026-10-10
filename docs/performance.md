@@ -144,9 +144,14 @@ divides each slice among runnable vCPUs only and skips idle ones. This
 leaves about 7% (about 29.9 s) with identical `state.json` and `state.sram`.
 Without core-0 observers, both cores share translated code.
 
-Guest time still charges 8 ns per instruction across both cores, so two
-busy cores each run at half speed, and the host must execute 125 million
-guest instructions per guest second whatever the cores do.
+Guest time charges 8 ns per instruction while one core is runnable and
+4 ns while both are, so each busy core advances at 8 ns per instruction as
+it would executing in parallel. With the summed clock, stock firmware's
+audio task on core 0 got half of each slice and sometimes missed its
+1.45 ms buffer, which played as 64 frames of silence (five in eight seconds
+of a held note); a sixteen-second note now has none. Two busy cores need up
+to 250 million host-executed guest instructions per guest second, less
+whatever the fast-forwards skip.
 
 ## Stock firmware
 
