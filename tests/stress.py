@@ -101,9 +101,12 @@ def main():
     with (directory / "inputs.jsonl").open("w") as log:
         for action in actions:
             log.write(json.dumps(action) + "\n")
+    # A file, as the script outgrows one environment string on Linux.
+    script = directory / "input.txt"
+    script.write_text(",".join(f"{at}:{code}:{down}" for at, code, down in sorted(events)))
     settings = {"FM1_POC_STATE_DIR": str(directory), "FM1_POC_CAPTURE_NS": str(capture),
                 "FM1_POC_MAX_INSTRUCTIONS": str(10 ** 13),
-                "FM1_POC_INPUT": ",".join(f"{at}:{code}:{down}" for at, code, down in sorted(events)),
+                "FM1_POC_INPUT": f"@{script}",
                 "FM1_POC_SNAPSHOT_NS": ",".join(map(str, snaps))}
     command = [str(QEMU), "--qemu", "-M", "fm1-poc", "-smp", "2", "-accel", "tcg,thread=single",
                "-icount", "shift=3,align=off,sleep=off", "-display", "none",

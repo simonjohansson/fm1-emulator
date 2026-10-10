@@ -74,7 +74,8 @@ With it, `FM1_POC_CAPTURE_NS=<guest ns>` together with `FM1_POC_STATE_DIR`
 ends the run with a full capture (state, SRAM, LCD image) at that guest
 time, for example after panel input sent over QMP. `FM1_POC_INPUT` presses
 and releases host keys at guest times (`NS:QCODE:1,NS:QCODE:0,...`) through
-QEMU's input layer, so scripted panel scenarios run unpaced.
+QEMU's input layer, so scripted panel scenarios run unpaced; `@FILE` reads
+the script from a file.
 
 With stock update packages, the scenarios in `tests/test_stock_scenarios.py`
 boot each package and check HOME, the ENV page, PRESETS, a held note (audio

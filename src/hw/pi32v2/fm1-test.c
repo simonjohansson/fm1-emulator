@@ -564,7 +564,9 @@ static void requested_capture(void *opaque)
 
 /* FM1_POC_INPUT="NS:QCODE:1,NS:QCODE:0,..." presses (1) and releases (0)
  * host keys at guest times through QEMU's input layer, the path QMP and
- * the panel use, so scripted panel scenarios are deterministic and unpaced. */
+ * the panel use, so scripted panel scenarios are deterministic and unpaced.
+ * "@FILE" reads the script from FILE: Linux caps one environment string at
+ * 128 KiB, which a long stress run exceeds. */
 typedef struct ScriptedKey {
     QEMUTimer *timer;
     QKeyCode code;
@@ -779,7 +781,17 @@ void fm1_test_configure(FM1PocState *m, MachineState *ms)
         timer_mod_ns(timer_new_ns(QEMU_CLOCK_VIRTUAL, requested_capture, m), when);
     }
     const char *input = getenv("FM1_POC_INPUT");
-    if (input) { schedule_input(input); }
+    if (input && input[0] == '@') {
+        g_autofree char *script = NULL;
+        g_autoptr(GError) error = NULL;
+        if (!g_file_get_contents(input + 1, &script, NULL, &error)) {
+            error_report("FM1_POC_INPUT: %s", error->message);
+            exit(EXIT_FAILURE);
+        }
+        schedule_input(g_strstrip(script));
+    } else if (input) {
+        schedule_input(input);
+    }
     const char *trace = getenv("FM1_POC_TRACE_PCS");
     if (trace) {
         /* Tracing changes translations; both cores keep the same list. */
