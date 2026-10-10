@@ -1698,7 +1698,8 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     }
     if (op == 0xe194) {
         uint16_t x = fetch(d, here + 2);
-        return (x & 15) == 2 ? 1u << (x >> 12) : -1;
+        /* decode_operation accepts or/xor/and/andc; each writes one GPR. */
+        return (x & 15) <= 3 ? 1u << (x >> 12) : -1;
     }
     if (op == 0xe430 || op == 0xe070) {
         uint16_t x = fetch(d, here + 2);
