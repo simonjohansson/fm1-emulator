@@ -17,6 +17,10 @@ enum { RETI = 0, RETS = 3, PSR = 5, ICFG = 11, USP = 12, SSP = 13, SP = 14 };
 enum { PI32V2_TB_IRQ = 1, PI32V2_TB_REPEAT = 2, PI32V2_TB_XIP = 4,
        PI32V2_TB_PREDICATE = 8, PI32V2_TB_CORE1 = 16, PI32V2_TB_WATCH = 32 };
 #define PI32V2_IDLE_LOG 64
+/* Control transfers that may end a selected IF arm (helper_pi32v2_transfer_end).
+ * All but JUMP still refuse a final THEN with an ELSE arm. */
+enum { PI32V2_END_CALL, PI32V2_END_RETURN, PI32V2_END_GOTO, PI32V2_END_FF49,
+       PI32V2_END_FF0C, PI32V2_END_FF41, PI32V2_END_JUMP };
 /* Guard kinds reported through Pi32v2MachineOps.guard_fault. */
 enum { PI32V2_GUARD_STACK, PI32V2_GUARD_WRITE, PI32V2_GUARD_PC,
        PI32V2_GUARD_XIP_DISABLED, PI32V2_GUARD_XIP_BOUNDS };

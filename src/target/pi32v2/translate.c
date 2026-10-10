@@ -95,20 +95,28 @@ static void count(PiDisasContext *d)
 {
     if (d->count_enabled) { tcg_gen_addi_i64(instructions, instructions, 1); }
 }
+/* Retire an IF arm (or REP body) that this transfer ends; see
+ * helper_pi32v2_transfer_end. */
+static void transfer_end(uint32_t next, unsigned kind)
+{
+    gen_helper_pi32v2_transfer_end(tcg_temp_new_i32(), tcg_env, tcg_constant_i32(next),
+                                   tcg_constant_i32(kind));
+}
 /* A final selected RTS, pop PC or GOTO retires its IF arm (or REP body) at
  * its sequential boundary before leaving it. Outside such blocks there is
  * nothing to retire. */
-static void retire_final_transfer(PiDisasContext *d, uint32_t next)
+static void retire_final_transfer(PiDisasContext *d, uint32_t next, unsigned kind)
 {
     if (d->predicated || d->repeating) {
-        gen_helper_pi32v2_return_end(tcg_env, tcg_constant_i32(next));
+        transfer_end(next, kind);
     }
 }
 static void set_call_return(PiDisasContext *d, uint32_t next)
 {
     /* Retire the call at its sequential boundary before entering its callee;
      * the outgoing control-transfer target is separate. */
-    gen_helper_pi32v2_call_return(spr[RETS], tcg_env, tcg_constant_i32(next));
+    gen_helper_pi32v2_transfer_end(spr[RETS], tcg_env, tcg_constant_i32(next),
+                                   tcg_constant_i32(PI32V2_END_CALL));
 }
 static TCGv_i32 read_gpr(PiDisasContext *d, unsigned reg)
 {
@@ -327,6 +335,7 @@ static void branch(PiDisasContext *d, uint32_t dest, uint32_t next,
     tcg_gen_brcondi_i32(nonzero ? TCG_COND_NE : TCG_COND_EQ, value, 0, taken);
     chain_jump(d, next, 0);
     gen_set_label(taken);
+    if (d->predicated) { transfer_end(next, PI32V2_END_JUMP); }
     spin_check(d, dest);
     record_branch(d);
     chain_jump(d, dest, 1);
@@ -339,6 +348,7 @@ static void compare_branch(PiDisasContext *d, uint32_t dest, uint32_t next,
     tcg_gen_brcond_i32(cond, left, right, taken);
     chain_jump(d, next, 0);
     gen_set_label(taken);
+    if (d->predicated) { transfer_end(next, PI32V2_END_JUMP); }
     spin_check(d, dest);
     record_branch(d);
     chain_jump(d, dest, 1);
@@ -785,12 +795,6 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
                (op & 0xffe0) == 0xef80 || op == 0xe864 || op == 0xe866) {
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 3;
-        if ((op == 0xe864 && kind == 1) || (op & 0xffe0) == 0xef80) {
-            /* Vendor E864/E401 and E405 XOR the full register into a word.
-             * EF81/047F ANDs a packed mask into a word at base+4.
-             * Keep each read/write in one I/O boundary to avoid MMIO replay. */
-            translator_io_start(db);
-        }
         TCGv_i32 addr = tcg_temp_new_i32(), value = tcg_temp_new_i32();
         tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), op == 0xe864 || op == 0xe866 ? x & 252 :
                           (op & 31) * 4);
@@ -815,9 +819,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         uint16_t x = fetch(d, here + 2);
         unsigned kind = x & 3;
         if (kind != 0 && kind != 2) { goto illegal; }
-        /* Exact primary word RMW: one read and one write, including zero.
-         * End this TB before MMIO can replay a prior read side effect. */
-        translator_io_start(db);
+        /* Exact primary word RMW: one read and one write, including zero. */
         TCGv_i32 addr = tcg_temp_new_i32(), value = tcg_temp_new_i32();
         tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), x & 252);
         load(d, value, addr, MO_LEUL | MO_ALIGN);
@@ -835,7 +837,6 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
          * arithmetic right-shift operators as in register shifts. E86D adds
          * 16 to the count (vendor E86D 1602: [r1+0] >>= 22). "<<<=" (kind 1)
          * stays open. */
-        translator_io_start(db);
         TCGv_i32 addr = tcg_temp_new_i32(), value = tcg_temp_new_i32();
         tcg_gen_addi_i32(addr, read_gpr(d, x >> 12), x & 252);
         load(d, value, addr, MO_LEUL | MO_ALIGN);
@@ -953,7 +954,6 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         /* Vendor and independent probes use source12:15/index8:11;
          * the primary constructor swaps them. Source==base is deferred. */
         if (base == source) { goto illegal; }
-        translator_io_start(db);
         TCGv_i32 addr = tcg_temp_new_i32();
         tcg_gen_add_i32(addr, read_gpr(d, base), read_gpr(d, (x >> 8) & 15));
         /* Preserve the existing modeled pre-index writeback-before-access. */
@@ -1291,7 +1291,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             push(d, spr[RETS]);
             for (int i = 15; i >= 0; i--) { if (mask & (1 << i)) { push(d, read_gpr(d, i)); } }
         } else {
-            gen_helper_pi32v2_return_end(tcg_env, tcg_constant_i32(next));
+            transfer_end(next, PI32V2_END_RETURN);
             TCGv_i32 dest = tcg_temp_new_i32();
             for (int i = 0; i < 16; i++) { if (mask & (1 << i)) { pop(d, gpr[i]); } }
             pop(d, dest);
@@ -1345,7 +1345,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     } else if (op == 0x0400) {
         TCGv_i32 dest = tcg_temp_new_i32();
         pop(d, dest);
-        retire_final_transfer(d, next);
+        retire_final_transfer(d, next, PI32V2_END_RETURN);
         count(d); dynamic_jump(d, dest);
     } else if ((op & 0xff00) == 0x0300 || (op & 0xe00f) == 0x8000) {
         /* The immediate form repeats ((op >> 8) & 31) + 1 times; the helper
@@ -1406,7 +1406,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         } else {
             /* A final selected stack return closes its IF arm just like RTS,
              * before restoring registers or transferring to the popped PC. */
-            gen_helper_pi32v2_return_end(tcg_env, tcg_constant_i32(next));
+            transfer_end(next, PI32V2_END_RETURN);
             TCGv_i32 dest = tcg_temp_new_i32();
             for (unsigned i = 4; i <= hi; i++) { pop(d, gpr[i]); }
             pop(d, dest);
@@ -1447,11 +1447,11 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         int32_t delta = sext(((uint32_t)(op & 63) << 16) | fetch(d, here + 2), 22) * 2;
         next = here + 4;
         /* The long GOTO shares CALL's displacement fields but preserves RETS. */
-        retire_final_transfer(d, next);
+        retire_final_transfer(d, next, PI32V2_END_GOTO);
         count(d); record_branch(d); goto_back(d, next + delta); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe00c) == 0x8004) {
         int32_t delta = sext(((op & 3) << 10) | (((op >> 4) & 15) << 6) | (((op >> 8) & 31) << 1), 12);
-        retire_final_transfer(d, next);
+        retire_final_transfer(d, next, PI32V2_END_GOTO);
         count(d); record_branch(d); goto_back(d, next + delta); db->is_jmp = DISAS_NORETURN;
     } else if ((op & 0xe08f) == 0x8001) {
         int32_t delta = sext((((op >> 4) & 7) << 6) | (((op >> 8) & 31) << 1), 9);
@@ -1531,7 +1531,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         }
         next = here + 6;
         if (op == 0xff49) {
-            gen_helper_pi32v2_unsigned_le_end(tcg_env, tcg_constant_i32(next));
+            transfer_end(next, PI32V2_END_FF49);
         }
         count(d); compare_branch(d, next + (int16_t)displacement * 2, next, cond,
                                  read_gpr(d, x >> 12), right);
@@ -1539,7 +1539,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         uint16_t x = fetch(d, here + 2), displacement = fetch(d, here + 4);
         if (x & 255) { goto illegal; }
         next = here + 6;
-        gen_helper_pi32v2_long_register_ne_end(tcg_env, tcg_constant_i32(next));
+        transfer_end(next, PI32V2_END_FF41);
         count(d); compare_branch(d, next + (int16_t)displacement * 2, next, TCG_COND_NE,
                                  read_gpr(d, x >> 12), read_gpr(d, (x >> 8) & 15));
     } else if (op == 0xff00 || op == 0xff01 || op == 0xff02 || op == 0xff03 || op == 0xff08 || op == 0xff09 || op == 0xff0c) {
@@ -1556,7 +1556,7 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         }
         next = here + 6;
         if (op == 0xff0c) {
-            gen_helper_pi32v2_signed_branch_end(tcg_env, tcg_constant_i32(next));
+            transfer_end(next, PI32V2_END_FF0C);
         }
         count(d); compare_branch(d, next + (int16_t)displacement * 2, next, cond,
                                  read_gpr(d, x >> 12),
@@ -1628,13 +1628,13 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         set_call_return(d, next);
         count(d); dynamic_jump(d, read_gpr(d, op & 15));
     } else if ((op & 0xfff0) == 0x00d0) {
-        if (d->predicated) { gen_helper_pi32v2_jump_end(tcg_env, tcg_constant_i32(next)); }
+        if (d->predicated) { transfer_end(next, PI32V2_END_JUMP); }
         count(d); dynamic_jump(d, read_gpr(d, op & 15));
     } else if ((op & 0xfff0) == 0x0230) {
         gen_helper_pi32v2_flush(tcg_env, read_gpr(d, op & 15));
         db->is_jmp = DISAS_EXIT;
     } else if (op == 0x0080) {
-        retire_final_transfer(d, next);
+        retire_final_transfer(d, next, PI32V2_END_RETURN);
         count(d); dynamic_jump(d, spr[RETS]);
     } else if (op == 0x0081) {
         count(d); record_branch(d); gen_helper_pi32v2_rti(tcg_env); tcg_gen_exit_tb(NULL, 0);

@@ -106,6 +106,25 @@ class ConditionalReturnTests(unittest.TestCase):
         self.assertEqual(state["pc"], guest.pc)
         self.assertEqual(state["instructions"], 7)
 
+    def test_final_then_taken_branch_leaves_the_block(self):
+        guest = Guest()
+        guest.literal(3, 0x5555)
+        guest.literal(1, 0)
+        guest.emit(0xea20, 0)  # Always true: THEN one branch, no ELSE.
+        branch_index = len(guest.words)
+        guest.emit(0)  # Patched: branch if r1 == 0 to the target, taken.
+        guest.literal(3, 0xbad)
+        target = guest.pc
+        guest.emit(0xea20, 0)  # The target opens its own block.
+        guest.literal(4, 0x1234)
+        branch = Guest(guest.base + branch_index * 2)
+        branch.branch_zero(1, target)
+        guest.words[branch_index] = branch.words[0]
+        state = guest_state(self.directory, guest)
+        self.assertEqual([state["registers"][3], state["registers"][4]], [0x5555, 0x1234])
+        self.assertEqual(state["pc"], guest.pc)
+        self.assertEqual(state["instructions"], 6)
+
     def test_signed_register_greater_selects_then_or_else(self):
         for left, right, selected in ((1922, 1024, 1), (0, 0, 2),
                                      (0xffffffff, 0, 2), (0, 0xffffffff, 1),

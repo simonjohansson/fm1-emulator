@@ -385,20 +385,22 @@ uint32_t fm1_lcd_rgb(const FM1PocLCD *lcd, unsigned x, unsigned y)
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 
-/* The browser page's exports. This one paints the panel: RGBA, 240 by 240, or NULL while
- * the panel is dark or no board exists. The page reads it while the guest runs
+/* The browser page's exports. This one paints the panel: RGBA, 240 by 240,
+ * black while the panel is dark (as the native console draws it), or NULL
+ * before the board exists. The page reads it while the guest runs
  * on another thread, so a frame can tear; it is a picture, not state. */
 static FM1PocLCD *web_lcd;
 static uint8_t web_frame[FM1_LCD_WIDTH * FM1_LCD_HEIGHT * 4];
 
 EMSCRIPTEN_KEEPALIVE uint8_t *fm1_web_lcd_frame(void)
 {
-    if (!web_lcd || !fm1_lcd_visible(web_lcd)) {
+    if (!web_lcd) {
         return NULL;
     }
+    bool visible = fm1_lcd_visible(web_lcd);
     for (unsigned y = 0; y < FM1_LCD_HEIGHT; y++) {
         for (unsigned x = 0; x < FM1_LCD_WIDTH; x++) {
-            uint32_t rgb = fm1_lcd_rgb(web_lcd, x, y);
+            uint32_t rgb = visible ? fm1_lcd_rgb(web_lcd, x, y) : 0;
             uint8_t *out = &web_frame[(y * FM1_LCD_WIDTH + x) * 4];
             out[0] = rgb >> 16; out[1] = rgb >> 8; out[2] = rgb; out[3] = 255;
         }

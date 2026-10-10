@@ -191,67 +191,31 @@ uint64_t HELPER(pi32v2_divs64)(uint64_t dividend, uint32_t divisor)
     return a / b;
 }
 
-uint32_t HELPER(pi32v2_call_return)(CPUPi32v2State *env, uint32_t next)
+/* A control transfer that ends a selected IF arm retires the block at its
+ * sequential end, before it enters a callee or target that may start another
+ * block; the transfer supplies the successor, so a skipped ELSE needs no
+ * redirect. Felucca 1.5 runs "IF c THEN jump rN ELSE <insn>" on hardware, so
+ * a register JUMP (and a taken branch, a jump too) may end THEN with ELSE.
+ * The other kinds keep refusing that form: the separate reference disagrees
+ * there (and scans FF41 as four bytes inside IF arms), with no hardware
+ * evidence yet. Returns the retired successor, a CALL's return address. */
+uint32_t HELPER(pi32v2_transfer_end)(CPUPi32v2State *env, uint32_t next, uint32_t kind)
 {
-    /* Close a final selected CALL before its callee starts another block.
-     * THEN+ELSE return handling disagrees with the separate reference; keep
-     * that form explicit until the hardware contract is established. */
+    static const char *const names[] = {
+        [PI32V2_END_CALL] = "call", [PI32V2_END_RETURN] = "return",
+        [PI32V2_END_GOTO] = "GOTO", [PI32V2_END_FF49] = "FF49 branch",
+        [PI32V2_END_FF0C] = "signed-literal branch",
+        [PI32V2_END_FF41] = "FF41 register branch",
+    };
     if (next == env->predicate_end && env->predicate_from) {
-        helper_fail(env, "final THEN call with ELSE is unsupported");
+        if (kind != PI32V2_END_JUMP) {
+            g_autofree char *reason = g_strdup_printf("final THEN %s with ELSE is unsupported",
+                                                      names[kind]);
+            helper_fail(env, reason);
+        }
+        env->predicate_from = 0;
     }
     return HELPER(pi32v2_advance)(env, next);
-}
-
-void HELPER(pi32v2_return_end)(CPUPi32v2State *env, uint32_t next)
-{
-    /* A final selected RTS, "pc = [sp++]" or GOTO retires the arm at its
-     * sequential boundary before transferring to its target. Match CALL's bounded policy; THEN with ELSE stays
-     * explicit until that control-transfer contract is established. */
-    if (next == env->predicate_end && env->predicate_from) {
-        helper_fail(env, "final THEN return with ELSE is unsupported");
-    }
-    HELPER(pi32v2_advance)(env, next);
-}
-
-/* A final selected register JUMP leaves the block for an arbitrary target,
- * so the skipped ELSE arm never needs a successor: retire the block without
- * redirecting. Felucca 1.5 runs "IF c THEN jump rN ELSE <insn>" on
- * hardware, with an IF as the target's first instruction. */
-void HELPER(pi32v2_jump_end)(CPUPi32v2State *env, uint32_t next)
-{
-    if (next == env->predicate_end) { env->predicate_from = 0; }
-    HELPER(pi32v2_advance)(env, next);
-}
-
-void HELPER(pi32v2_unsigned_le_end)(CPUPi32v2State *env, uint32_t next)
-{
-    /* Retire a final selected FF49 at its sequential arm boundary, before
-     * either destination starts another IF. Keep CALL/RTS's bounded policy
-     * for the unresolved final THEN with ELSE control transfer. */
-    if (next == env->predicate_end && env->predicate_from) {
-        helper_fail(env, "final THEN FF49 branch with ELSE is unsupported");
-    }
-    HELPER(pi32v2_advance)(env, next);
-}
-
-/* This new branch is established outside conditional blocks. The reference
- * disagrees for a final selected THEN with ELSE, and hardware evidence for
- * that combination is absent. Reject it before any retirement/branch effect. */
-void HELPER(pi32v2_signed_branch_end)(CPUPi32v2State *env, uint32_t next)
-{
-    if (env->predicate_from && next == env->predicate_end) {
-        helper_fail(env, "final THEN signed-literal branch with ELSE is unsupported");
-    }
-}
-
-/* FF41 has independent six-byte evidence, but the separate reference scans
- * it as four bytes inside IF arms. Preserve the scoped final-THEN/ELSE
- * rejection before retirement or branch effects; hardware remains unverified. */
-void HELPER(pi32v2_long_register_ne_end)(CPUPi32v2State *env, uint32_t next)
-{
-    if (env->predicate_from && next == env->predicate_end) {
-        helper_fail(env, "final THEN FF41 register branch with ELSE is unsupported");
-    }
 }
 
 /* Fresh implementation of the four observed condition bits. No Rust code

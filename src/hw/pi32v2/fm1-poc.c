@@ -322,7 +322,6 @@ static uint64_t gpio_read(void *opaque, hwaddr offset, unsigned size)
         }
         return (m->gpio[port][0] & ~m->gpio[port][2] & m->gpio[port][3]) | inputs;
     }
-    if (offset >= sizeof(m->gpio[0])) { pi32v2_fail(&m->cpu->env, "unsupported PA GPIO register"); }
     return m->gpio[port][offset / 4];
 }
 static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned size)

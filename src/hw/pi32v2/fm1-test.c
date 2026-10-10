@@ -481,32 +481,38 @@ static void alnk_test_reset(void *opaque)
     }
 }
 
-static void configure_alnk_test_resets(FM1PocState *m)
+/* A test reset schedule: NAME holds 1 to max sorted positive guest times in
+ * ns. Returns how many, 0 when NAME is unset; exits on a malformed list. */
+static unsigned reset_schedule(const char *name, int64_t *times, unsigned max)
 {
-    const char *schedule = getenv("FM1_POC_ALNK_RESETS_NS");
-    if (!schedule) { return; }
+    const char *schedule = getenv(name);
+    if (!schedule) { return 0; }
     if (!getenv("FM1_POC_STATE_DIR") || !*getenv("FM1_POC_STATE_DIR")) {
-        error_report("FM1_POC_ALNK_RESETS_NS requires FM1_POC_STATE_DIR");
+        error_report("%s requires FM1_POC_STATE_DIR", name);
         exit(EXIT_FAILURE);
     }
-    g_auto(GStrv) entries = g_strsplit(schedule, ",", FM1_POC_MAX_ALNK_RESETS + 1);
+    g_auto(GStrv) entries = g_strsplit(schedule, ",", max + 1);
     unsigned count = g_strv_length(entries);
-    if (!count || count > FM1_POC_MAX_ALNK_RESETS) {
-        error_report("FM1_POC_ALNK_RESETS_NS requires 1 to 16 sorted positive nanoseconds");
-        exit(EXIT_FAILURE);
-    }
-    for (unsigned i = 0; i < count; i++) {
+    bool valid = count && count <= max;
+    for (unsigned i = 0; valid && i < count; i++) {
         char *end = NULL;
         errno = 0;
         uint64_t ns = g_ascii_strtoull(entries[i], &end, 0);
-        if (errno || !*entries[i] || *entries[i] == '-' || *end || !ns ||
-            ns > INT64_MAX || (i && ns < (uint64_t)m->alnk_reset_times[i - 1])) {
-            error_report("FM1_POC_ALNK_RESETS_NS requires 1 to 16 sorted positive nanoseconds");
-            exit(EXIT_FAILURE);
-        }
-        m->alnk_reset_times[i] = ns;
+        valid = !errno && *entries[i] && *entries[i] != '-' && !*end && ns &&
+                ns <= INT64_MAX && (!i || ns >= (uint64_t)times[i - 1]);
+        times[i] = ns;
     }
-    m->alnk_reset_count = count;
+    if (!valid) {
+        error_report("%s requires 1 to %u sorted positive nanoseconds", name, max);
+        exit(EXIT_FAILURE);
+    }
+    return count;
+}
+
+static void configure_alnk_test_resets(FM1PocState *m)
+{
+    m->alnk_reset_count = reset_schedule("FM1_POC_ALNK_RESETS_NS", m->alnk_reset_times,
+                                         FM1_POC_MAX_ALNK_RESETS);
 }
 
 static void adc_test_reset(void *opaque)
@@ -526,7 +532,6 @@ static void adc_test_reset(void *opaque)
 static void configure_adc_test_inputs(FM1PocState *m)
 {
     const char *initial = getenv("FM1_POC_ANALOG_INITIAL_WLA_CON0");
-    const char *schedule = getenv("FM1_POC_ADC_RESETS_NS");
 
     if (initial) {
         char *end = NULL;
@@ -538,31 +543,8 @@ static void configure_adc_test_inputs(FM1PocState *m)
         }
         m->analog_initial_wla_con0 = value;
     }
-    if (!schedule) {
-        return;
-    }
-    if (!getenv("FM1_POC_STATE_DIR") || !*getenv("FM1_POC_STATE_DIR")) {
-        error_report("FM1_POC_ADC_RESETS_NS requires FM1_POC_STATE_DIR");
-        exit(EXIT_FAILURE);
-    }
-    g_auto(GStrv) entries = g_strsplit(schedule, ",", FM1_POC_MAX_ADC_RESETS + 1);
-    unsigned count = g_strv_length(entries);
-    if (!count || count > FM1_POC_MAX_ADC_RESETS) {
-        error_report("FM1_POC_ADC_RESETS_NS requires 1 to 16 sorted positive nanoseconds");
-        exit(EXIT_FAILURE);
-    }
-    for (unsigned i = 0; i < count; i++) {
-        char *end = NULL;
-        errno = 0;
-        uint64_t ns = g_ascii_strtoull(entries[i], &end, 0);
-        if (errno || !*entries[i] || *entries[i] == '-' || *end || !ns ||
-            ns > INT64_MAX || (i && ns < (uint64_t)m->adc_reset_times[i - 1])) {
-            error_report("FM1_POC_ADC_RESETS_NS requires 1 to 16 sorted positive nanoseconds");
-            exit(EXIT_FAILURE);
-        }
-        m->adc_reset_times[i] = ns;
-    }
-    m->adc_reset_count = count;
+    m->adc_reset_count = reset_schedule("FM1_POC_ADC_RESETS_NS", m->adc_reset_times,
+                                        FM1_POC_MAX_ADC_RESETS);
 }
 
 void fm1_test_reset_state(CPUPi32v2State *e)
