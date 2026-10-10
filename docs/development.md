@@ -79,6 +79,11 @@ cd tests && FM1_STOCK_PACKAGES=/path/FM-1.fwsc:/path/FM-1_093.fwsc \
   mise exec python@3.13.15 -- python -m unittest test_stock_scenarios
 ```
 
+`FM1_POC_TRACE_PCS=HEX,HEX,...` prints the core, its instruction count and
+r0-r3/RETS whenever either core reaches one of the listed PCs; it costs nothing
+when unset. `FM1_POC_SNAPSHOT_NS` and `tools/panel_smoke.py` are described in
+the panel smoke test's docstring.
+
 `FM1_POC_UART1_LOG=/path/to/file` appends bytes the firmware sends on UART1 to
 that file; stock firmware sends MIDI messages there. Normal launches clear
 `FM1_POC_*` variables.

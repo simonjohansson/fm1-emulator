@@ -89,6 +89,15 @@ void fm1_poc_fault(CPUPi32v2State *e, const char *reason)
                 p->spr[6], p->pc, p->instructions, p->in_irq ? "true" : "false",
                 CPU(peer)->halted ? "true" : "false", p->spr[RETS], p->spr[SP]);
     }
+    fprintf(f, ",\"irq_configs\":[");
+    for (unsigned i = 0; i < 32; i++) {
+        fprintf(f, "%s%u", i ? "," : "", m->irq_configs[i]);
+    }
+    fprintf(f, "],\"irq1_configs\":[");
+    for (unsigned i = 0; i < 32; i++) {
+        fprintf(f, "%s%u", i ? "," : "", m->irq1_configs[i]);
+    }
+    fprintf(f, "]");
     fprintf(f, ",\"software_irq\":{\"latch\":%u,\"config0\":%u,\"config1\":%u,"
             "\"priority_mask0\":%u,\"priority_mask1\":%u}",
             m->software_latch, m->irq_configs[15], m->irq1_configs[15],
@@ -776,6 +785,15 @@ void fm1_test_configure(FM1PocState *m, MachineState *ms)
     }
     const char *input = getenv("FM1_POC_INPUT");
     if (input) { schedule_input(input); }
+    const char *trace = getenv("FM1_POC_TRACE_PCS");
+    if (trace) {
+        /* Tracing changes translations; both cores keep the same list. */
+        g_auto(GStrv) pcs = g_strsplit(trace, ",", -1);
+        for (unsigned i = 0; pcs[i] && i < ARRAY_SIZE(m->cpu->trace_pcs); i++) {
+            m->cpu->trace_pcs[i] = g_ascii_strtoull(pcs[i], NULL, 16);
+            m->cpu->trace_count = i + 1;
+        }
+    }
     const char *snapshots = getenv("FM1_POC_SNAPSHOT_NS");
     if (snapshots) { schedule_snapshots(m, snapshots); }
 }

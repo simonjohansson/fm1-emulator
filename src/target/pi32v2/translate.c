@@ -1792,6 +1792,11 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
         translator_io_start(db);
         gen_helper_pi32v2_frame(tcg_env);
     }
+    for (unsigned i = 0; i < PI32V2_CPU(cs)->trace_count; i++) {
+        if (here == PI32V2_CPU(cs)->trace_pcs[i]) {
+            gen_helper_pi32v2_trace(tcg_env, tcg_constant_i32(here));
+        }
+    }
     if (PI32V2_CPU(cs)->loop_pc && here == PI32V2_CPU(cs)->loop_pc) {
         translator_io_start(db);
         gen_helper_pi32v2_loop(tcg_env);

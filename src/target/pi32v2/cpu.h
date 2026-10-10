@@ -73,6 +73,9 @@ struct ArchCPU {
     CPUPi32v2State env;
     /* Explicit loader entry and optional observer addresses/budget. */
     uint32_t boot_pc, stop_pc, frame_pc, loop_pc;
+    /* Development tracing (FM1_POC_TRACE_PCS): print registers at these PCs. */
+    uint32_t trace_pcs[32];
+    unsigned trace_count;
     uint64_t instruction_limit;
     const Pi32v2MachineOps *ops;
     const Pi32v2ObserverOps *observer_ops;

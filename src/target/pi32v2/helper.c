@@ -68,6 +68,13 @@ void HELPER(pi32v2_loop)(CPUPi32v2State *env)
     }
 }
 
+void HELPER(pi32v2_trace)(CPUPi32v2State *env, uint32_t pc)
+{
+    fprintf(stderr, "TRACE core%d n=%" PRIu64 " pc=%08x r0=%08x r1=%08x r2=%08x r3=%08x rets=%08x irq=%d\n",
+            env_cpu(env)->cpu_index, env->instructions, pc,
+            env->gpr[0], env->gpr[1], env->gpr[2], env->gpr[3], env->spr[RETS], env->in_irq);
+}
+
 void HELPER(pi32v2_budget)(CPUPi32v2State *env)
 {
     helper_fail(env, "instruction limit reached");

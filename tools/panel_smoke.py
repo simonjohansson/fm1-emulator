@@ -99,7 +99,8 @@ def build(presets, buttons, encoders):
 
 
 def run(firmware, tl, directory):
-    env = {k: v for k, v in os.environ.items() if not k.startswith("FM1_POC_")}
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith("FM1_POC_") or k == "FM1_POC_TRACE_PCS"}
     env.update(FM1_POC_STATE_DIR=str(directory),
                FM1_POC_CAPTURE_NS=str(tl.t),
                FM1_POC_MAX_INSTRUCTIONS=str(10 ** 13),
@@ -132,6 +133,7 @@ def main():
         if args.keep:
             print(f"run directory: {directory}")
         result = run(args.firmware, tl, directory)
+        (directory / "stderr.txt").write_text(result.stderr)
         lines = (directory / "snapshots.jsonl").read_text().splitlines() \
             if (directory / "snapshots.jsonl").exists() else []
         snaps = {s["index"]: s for s in map(json.loads, lines)}

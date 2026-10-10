@@ -801,6 +801,8 @@ static void machine_init(MachineState *ms)
         m->cpu1 = PI32V2_CPU(object_new(TYPE_PI32V2_CPU));
         m->cpu1->machine = m;
         m->cpu1->ops = &machine_ops;
+        memcpy(m->cpu1->trace_pcs, m->cpu->trace_pcs, sizeof(m->cpu1->trace_pcs));
+        m->cpu1->trace_count = m->cpu->trace_count;
         m->cpu1->observer_ops = m->cpu->observer_ops;
         m->cpu1->stop_pc = UINT32_MAX;
         m->cpu1->instruction_limit = m->cpu->instruction_limit;

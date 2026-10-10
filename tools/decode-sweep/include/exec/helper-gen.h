@@ -32,4 +32,5 @@ void sweep_illegal(uint32_t op);
 #define gen_helper_pi32v2_divu64(...) ((void)0)
 #define gen_helper_pi32v2_idle_loop(...) ((void)0)
 #define gen_helper_pi32v2_watch_store(...) ((void)0)
+#define gen_helper_pi32v2_trace(...) ((void)0)
 #endif
