@@ -385,7 +385,7 @@ uint32_t fm1_lcd_rgb(const FM1PocLCD *lcd, unsigned x, unsigned y)
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 
-/* The browser page paints the panel from this: RGBA, 240 by 240, or NULL while
+/* The browser page's exports. This one paints the panel: RGBA, 240 by 240, or NULL while
  * the panel is dark or no board exists. The page reads it while the guest runs
  * on another thread, so a frame can tear; it is a picture, not state. */
 static FM1PocLCD *web_lcd;
@@ -407,4 +407,11 @@ EMSCRIPTEN_KEEPALIVE uint8_t *fm1_web_lcd_frame(void)
 }
 
 void fm1_web_lcd_register(FM1PocLCD *lcd) { web_lcd = lcd; }
+
+/* Guest time in ns, so the page can show how fast the guest runs against the
+ * wall clock. */
+EMSCRIPTEN_KEEPALIVE int64_t fm1_web_guest_ns(void)
+{
+    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+}
 #endif

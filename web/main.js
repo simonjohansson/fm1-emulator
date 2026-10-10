@@ -46,9 +46,18 @@ els.drop.addEventListener('drop', (e) => {
 });
 els.stop.addEventListener('click', () => location.reload());
 
+// Guest seconds per wall second over the last few samples.
+const samples = [];
 function clock() {
-  const seconds = Math.floor((performance.now() - started) / 1000);
-  els.status.textContent = `Running, ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  const wall = performance.now();
+  const seconds = Math.floor((wall - started) / 1000);
+  const guest = Number(module._fm1_web_guest_ns()) / 1e9;
+  samples.push({ wall, guest });
+  if (samples.length > 6) samples.shift();
+  const first = samples[0];
+  const speed = wall > first.wall ? (guest - first.guest) / ((wall - first.wall) / 1000) : 0;
+  els.status.textContent = `Running ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+    + ` · guest ${guest.toFixed(1)} s · ${speed.toFixed(2)}× real time`;
 }
 
 let consoleLength = 0;

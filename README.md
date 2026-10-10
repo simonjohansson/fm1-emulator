@@ -70,11 +70,10 @@ compatibility is limited. Linux and Windows are deferred.
 ## Browser (experimental)
 
 A headless build runs in the browser: choose a firmware file, press Boot, and the
-page shows the display and the console. It is an interpreter, so it runs about
-thirty times slower than real time (the Felucca splash screen takes under a
-minute, the home screen several), and there are no buttons, LEDs or sound yet.
-It needs 64-bit WebAssembly, so current Chrome or Firefox; the firmware never
-leaves your computer.
+page shows the display and the console, with its speed against real time. It is
+an interpreter, so it is slower than the instrument, and there are no buttons,
+LEDs or sound yet. It needs 64-bit WebAssembly, so current Chrome or Firefox;
+the firmware never leaves your computer.
 
 ```sh
 mise run build_wasm    # emsdk and clang come from mise
