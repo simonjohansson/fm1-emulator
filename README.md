@@ -63,7 +63,8 @@ cannot run faster than 1x; the last column is the host CPU the session used
 over 40 seconds, and no "guest is late" warnings appeared. A slower Mac has
 less headroom, and below 1x a windowed session falls behind.
 
-The stock FM-1 Wi-Fi radio is modeled as inert hardware. Other firmware
+The panel draws the button and key LEDs as the firmware drives them,
+including the dim glow, REC's red and PLAY's green. The stock FM-1 Wi-Fi radio is modeled as inert hardware. Other firmware
 compatibility is limited. Linux and Windows are deferred.
 
 See [development](docs/development.md) for tests and

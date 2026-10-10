@@ -10,7 +10,7 @@ snapshots (FM1_POC_SNAPSHOT_NS):
 1. step PRESETS one detent at a time through N presets (default 128), and
    play a note on each: the screen must change and the note must sound;
 2. from HOME, press each function button up to PAGES times, paging through
-   its screens: report whether the screen changed (MAY_STAY buttons may not);
+   its screens: report whether the screen or a lit LED changed;
 3. play a final note and stop with a capture: the run must not have faulted.
 
 Failing steps are written as PPM images under --out.
@@ -30,9 +30,13 @@ SECOND = 1_000_000_000
 MS = 1_000_000
 READY = 20 * SECOND            # stock reaches HOME by about 17 guest seconds
 PAGES = 6
-# Pressed from HOME, these show nothing new on stock FM-1: HOME is already
-# there, and the SEL and REC contacts are unverified against hardware.
-MAY_STAY = {"HOME", "SEL", "REC"}
+# Pressed from HOME, HOME has nowhere new to go.
+MAY_STAY = {"HOME"}
+# Snapshot LED levels run 0-255; a lit LED reads above this, the dim glow
+# firmware leaves on idle LEDs (about 8 on Felucca, 60 on stock) below it.
+LIT = 120
+# PLAY's second, green LED has no key of its own, at column 8, row 1.
+PLAY_GREEN = (8, 1)
 
 
 def controls():
@@ -44,6 +48,22 @@ def controls():
     encoders = re.findall(r'APPLY\("([^"]+)",\s*(\w+),\s*(\w+),', encoders_block)
     return ([(label, code.lower()) for label, code in buttons],
             {label: (a.lower(), b.lower()) for label, a, b in encoders})
+
+
+def led_names():
+    """(column, row) -> label of the contact whose LED sits there."""
+    text = (ROOT / "src/include/ui/fm1-controls.h").read_text()
+    block = text.split("FM1_PANEL_BUTTON_CONTACTS(APPLY)", 1)[1].split("\n\n", 1)[0]
+    names = {(int(c), int(r)): label
+             for label, c, r in re.findall(r'APPLY\("([^"]+)",\s*\w+,\s*(\d+),\s*(\d+)\)', block)}
+    names[PLAY_GREEN] = "PLAY green"
+    return names
+
+
+def lit_leds(snapshot):
+    """Positions of the LEDs the firmware drives fully on."""
+    return {tuple(map(int, key.split(","))) for key, level in snapshot.get("leds", {}).items()
+            if level >= LIT}
 
 
 class Timeline:
@@ -158,6 +178,7 @@ def main():
         print(f"{args.firmware.name}: {len(snaps)}/{len(tl.snapshots)} snapshots, "
               f"{tl.t / SECOND:.0f} guest seconds")
 
+        names = led_names()
         previous = 0
         silent, unchanged, screens = [], [], set()
         for step, (loaded, sounding) in enumerate(preset_steps, 1):
@@ -185,8 +206,15 @@ def main():
                                "same" if digest[index] == seen[-1] else "back")
                 seen.append(digest[index])
             pages = len(set(seen)) - 1
-            print(f"  {label:10s} {pages} new screen(s): {' '.join(changes)}")
-            if pages == 0 and label not in MAY_STAY:
+            base = lit_leds(snaps[before])
+            moved = set()
+            for index in presses:
+                moved |= lit_leds(snaps[index]) ^ base
+            leds = " ".join(("+" if pos not in base else "-") + names.get(pos, f"key{pos}")
+                            for pos in sorted(moved))
+            print(f"  {label:10s} {pages} new screen(s): {' '.join(changes)}"
+                  + (f"; LEDs {leds}" if leds else ""))
+            if pages == 0 and not moved and label not in MAY_STAY:
                 fail(presses[0], f"{label}: no visible change")
 
         quiet, note = final

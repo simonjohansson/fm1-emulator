@@ -42,7 +42,8 @@ still sounds. Captures in `.cache/tests/stress/` hold the seed, every action
 same run.
 
 The panel smoke test steps through every preset with a note and pages through
-every button, checking each step on screen and in the audio:
+every button, checking each step on screen, in the audio and in the panel
+LEDs (a button passes if the screen or a lit LED changes):
 
 ```sh
 mise exec python@3.13.15 -- python tools/panel_smoke.py /path/to/firmware.fwsc
