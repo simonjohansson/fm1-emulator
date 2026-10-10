@@ -280,6 +280,15 @@ static uint32_t gpio_pins(FM1PocState *m)
 {
     return m->gpio[0][0] & ~m->gpio[0][2];
 }
+/* The LED lines PA9, PA10, PH6 and PH9 drive the LEDs of matrix rows 1 to 4
+ * on whichever column the 595 chain currently selects. */
+static void leds_update(FM1PocState *m)
+{
+    uint32_t a = gpio_pins(m), h = m->gpio[7][0] & ~m->gpio[7][2];
+    uint8_t lines = ((a >> 9) & 3) | (((h >> 6) & 1) << 2) | (((h >> 9) & 1) << 3);
+
+    fm1_leds_set(&m->leds, m->latched, lines);
+}
 static uint64_t gpio_read(void *opaque, hwaddr offset, unsigned size)
 {
     FM1PocState *m = opaque;
@@ -329,6 +338,7 @@ static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
         m->gpio[port][offset / 4] = value;
         if (port == 2) { fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]); }
         else if (port == 3) { fm1_nor_set_pins(&m->nor, m->gpio[3][0], m->iomap_con0); }
+        else if (port == 7) { leds_update(m); }
         return;
     }
     uint32_t before = gpio_pins(m);
@@ -343,6 +353,7 @@ static void gpio_write(void *opaque, hwaddr offset, uint64_t value, unsigned siz
         m->latch_edges++;
     }
     fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
+    leds_update(m);
 }
 /* SPI2 (0x11e00, IRQ 37) as stock drives the 74HC595 chain: a DMA
  * transmit of CNT bytes from ADR, shifted MSB first through PA3/PA4 when

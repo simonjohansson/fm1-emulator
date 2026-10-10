@@ -633,15 +633,28 @@ static void take_snapshot(void *opaque)
     const char *dir = getenv("FM1_POC_STATE_DIR");
     g_autofree char *image = g_strdup_printf("%s/snapshot-%u.ppm", dir, snap->index);
     save_lcd_ppm(m, image);
+    /* Lit LEDs as {"column,row":level,...}; zero levels are left out. */
+    uint8_t levels[FM1_LED_COLUMNS][FM1_LED_ROWS];
+    fm1_leds_read(levels);
+    g_autoptr(GString) leds = g_string_new("{");
+    for (unsigned col = 0; col < FM1_LED_COLUMNS; col++) {
+        for (unsigned line = 0; line < FM1_LED_ROWS; line++) {
+            if (levels[col][line]) {
+                g_string_append_printf(leds, "%s\"%u,%u\":%u", leds->len > 1 ? "," : "",
+                                       col, line + 1, levels[col][line]);
+            }
+        }
+    }
+    g_string_append_c(leds, '}');
     g_autofree char *path = g_strdup_printf("%s/snapshots.jsonl", dir);
     FILE *f = fopen(path, "a");
     if (!f) { pi32v2_fail(&m->cpu->env, "cannot append snapshots.jsonl"); }
     fprintf(f, "{\"index\":%u,\"virtual_ns\":%" PRId64 ",\"pc\":%u,\"visible\":%s,"
             "\"lcd_commands\":%" PRIu64 ",\"audio_nonzero_words\":%" PRIu64
-            ",\"audio_completions\":%" PRIu64 ",\"uart1_bytes\":%ld}\n",
+            ",\"audio_completions\":%" PRIu64 ",\"leds\":%s,\"uart1_bytes\":%ld}\n",
             snap->index, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), m->cpu->env.pc,
             fm1_lcd_visible(&m->lcd) ? "true" : "false", m->lcd.commands,
-            m->alnk.nonzero_words, m->alnk.completions,
+            m->alnk.nonzero_words, m->alnk.completions, leds->str,
             m->uart.log ? ftell(m->uart.log) : -1L);
     fclose(f);
 }
