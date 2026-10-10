@@ -16,3 +16,7 @@ run = "python tests/stress.py"
 [tasks.panel_smoke]
 description = "Run headless firmware preset and panel button smoke tests"
 run = "python tools/panel_smoke.py"
+
+[tasks.speed]
+description = "Measure firmware speed headless and windowed with audio"
+run = "python tools/speed.py"
