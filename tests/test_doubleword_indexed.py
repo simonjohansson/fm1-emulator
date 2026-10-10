@@ -102,15 +102,15 @@ class DoublewordIndexedTests(unittest.TestCase):
         self.assertEqual(state["registers"][0], INSPECTION)
 
     def test_post_index_load(self):
-        # Vendor EC58 0214: r1_r0 = d[r1++=36]; the access uses the
-        # incoming base and the stride charges it afterwards.
+        # EC58 0224: r1_r0 = d[r2++=36]. Measured on an FM-1: the access
+        # uses the incoming base and the stride charges it afterwards.
         guest = self.prepare()
-        guest.literal(2, INSPECTION - 36)
+        guest.literal(2, INSPECTION)
         guest.emit(0xec58, 0x0224)
         state = guest_state(self.directory, guest)
         self.assertEqual(state["registers"][0], 0x11111111)
         self.assertEqual(state["registers"][1], 0x22222222)
-        self.assertEqual(state["registers"][2], INSPECTION)
+        self.assertEqual(state["registers"][2], INSPECTION + 36)
 
     def test_post_index_load_with_zero_stride(self):
         # Vendor EC58 00F0: r1_r0 = d[r15++=0].
