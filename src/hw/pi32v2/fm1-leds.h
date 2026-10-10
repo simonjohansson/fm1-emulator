@@ -8,7 +8,7 @@
 /* The panel LEDs share the key matrix: an LED lights while its column is
  * selected on the 595 chain (output low) and its row's LED line is high.
  * Firmware dims an LED by shortening that overlap, so the model integrates
- * the overlap of each LED over short windows of guest time and publishes the
+ * the overlap of each LED over 64 ms windows of guest time and publishes the
  * fraction of the column's selected time it was on. */
 typedef struct FM1PocLEDs {
     uint16_t selected;

@@ -3,7 +3,9 @@
 #include "qemu/timer.h"
 #include "fm1-leds.h"
 
-#define WINDOW_NS (16 * SCALE_MS)
+/* Long enough to average the firmware's frame-to-frame dimming jitter, as
+ * the eye does, and still follow a button press within a few frames. */
+#define WINDOW_NS (64 * SCALE_MS)
 
 static FM1PocLEDs *board_leds;
 

@@ -53,7 +53,7 @@ static void fm1_text(NSString *text, NSRect rect, CGFloat size, NSColor *color)
 /* LED brightness is the fraction of the time its column was selected that
  * its line was driven; the eye is roughly logarithmic, so a dim glow of a few
  * percent reads as clearly on and a full-duty LED as full. */
-static double fm1_led_brightness(uint8_t level)
+static double fm1_led_brightness(float level)
 {
     return pow(MIN(level / 242., 1.), .4);
 }
@@ -78,7 +78,7 @@ static void fm1_led_draw(NSRect rect, double brightness, double red, double gree
     NSTimeInterval pressedAt;
     /* Matrix LEDs: [0] the contact's own, [1] PLAY's extra green one. */
     unsigned ledColumn[2], ledRow[2], ledCount;
-    uint8_t ledLevel[2];
+    float ledLevel[2];   /* smoothed, 0 to 255 */
 }
 - (id)initWithFrame:(NSRect)rect contact:(QKeyCode)code caption:(NSString *)text piano:(bool)isPiano;
 - (void)releaseContact;
@@ -121,12 +121,15 @@ static void fm1_led_draw(NSRect rect, double brightness, double red, double gree
 {
     bool changed = false;
     for (unsigned i = 0; i < ledCount; i++) {
-        uint8_t level = levels[ledColumn[i]][ledRow[i] - 1];
-        /* Redraw only when the drawn brightness moves by a visible step. */
-        if ((int)(fm1_led_brightness(level) * 24) != (int)(fm1_led_brightness(ledLevel[i]) * 24)) {
+        float target = levels[ledColumn[i]][ledRow[i] - 1];
+        float before = ledLevel[i];
+        /* Ease towards the firmware's level, like the eye averaging its
+         * frame-to-frame dimming jitter; redraw only on a visible step. */
+        ledLevel[i] += (target - before) * .5f;
+        if (fabsf(target - ledLevel[i]) < 1) { ledLevel[i] = target; }
+        if ((int)(fm1_led_brightness(ledLevel[i]) * 24) != (int)(fm1_led_brightness(before) * 24)) {
             changed = true;
         }
-        ledLevel[i] = level;
     }
     if (changed) { [self setNeedsDisplay:YES]; }
 }

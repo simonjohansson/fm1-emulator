@@ -59,7 +59,7 @@ The panel LEDs share the key matrix. An LED lights while its column is
 selected on the 595 chain (output low) and the LED line of its matrix row is
 driven high: PA9, PA10, PH6 and PH9 for rows 1 to 4. PLAY's extra green LED
 sits at column 8, row 1, where no key does. Firmware dims an LED by shortening
-that overlap, so `fm1-leds.c` integrates it in guest time over 16 ms windows
+that overlap, so `fm1-leds.c` integrates it in guest time over 64 ms windows
 and publishes the fraction of the column's selected time the LED was on (0 to
 255; fully lit reads about 250, Felucca's dim glow about 8). The panel draws
 the levels (white, REC red, PLAY also green) and snapshots record them as
