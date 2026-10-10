@@ -31,17 +31,22 @@ Random button testing accepts any application image:
 mise run stress /path/to/firmware.fwsc --seed 123
 ```
 
-It waits for Felucca's first completed UI draw, then shuffles all 41 panel buttons
-and piano keys for 30 **host** seconds or until the first failure. Holds default
-to 80 ms and released gaps to at least 20 ms, enforced in both host and guest
-time. The final hold finishes before releasing the button. For other firmware,
-set `--ready-memory ADDRESS:WORD[,WORD...]` or `--ready-console REGEX` to its
-actual boot-ready signal; all supplied conditions must match before clicking.
-The 30-second bootguard check is later than startup; request it explicitly with
-`--ready-memory 0x01c7c08c:0x42475244,0,0` if needed. Use `--seconds` to
-change duration. Captures in `.cache/tests/stress/` include the seed, every
-attempted input, serial output, failure PC/reason and existing emulator fault
-captures. This checks faults and CPU progress; it does not prove UI correctness.
+It boots the firmware unpaced on both cores for 20 guest seconds, then sends a
+seeded random sequence of taps (every button and piano key) and encoder detents
+in either direction for 60 **guest** seconds: 5 ms holds, gaps and quadrature
+phases by default (`--hold-ms`, `--gap-ms`, `--phase-ms`, `--seconds`,
+`--boot-seconds`). It passes if the emulator does not fault, the display stays
+on and keeps updating, audio DMA keeps completing and a key held afterwards
+still sounds. Captures in `.cache/tests/stress/` hold the seed, every action
+(`inputs.jsonl`), snapshots and any fault capture; the same seed replays the
+same run.
+
+The panel smoke test steps through every preset with a note and pages through
+every button, checking each step on screen and in the audio:
+
+```sh
+mise exec python@3.13.15 -- python tools/panel_smoke.py /path/to/firmware.fwsc
+```
 
 To also check a local update package against an independently saved raw image:
 
