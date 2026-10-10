@@ -181,6 +181,16 @@ uint64_t HELPER(pi32v2_divu64)(uint64_t dividend, uint32_t divisor)
     return divisor ? dividend / divisor : 0;
 }
 
+/* Measured on an FM-1 (E1F6 1200): truncates toward zero, divides by zero
+ * to 0, and INT64_MIN / -1 wraps to INT64_MIN. */
+uint64_t HELPER(pi32v2_divs64)(uint64_t dividend, uint32_t divisor)
+{
+    int64_t a = dividend, b = (int32_t)divisor;
+    if (!b) { return 0; }
+    if (a == INT64_MIN && b == -1) { return dividend; }
+    return a / b;
+}
+
 uint32_t HELPER(pi32v2_call_return)(CPUPi32v2State *env, uint32_t next)
 {
     /* Close a final selected CALL before its callee starts another block.

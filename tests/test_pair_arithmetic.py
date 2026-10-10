@@ -42,6 +42,39 @@ class PairArithmeticTests(unittest.TestCase):
                                  [quotient & 0xffffffff, quotient >> 32])
                 self.assertEqual(state["specials"][5], FLAGS)
 
+    def test_signed_multiply_accumulate_matches_hardware(self):
+        # Felucca's rD+1_rD += rA * rB (s), captured on an FM-1 with PSR flags
+        # preset to 0xf: only C changes, the 64-bit carry out.
+        M = (1 << 64) - 1
+        cases = [(0, -1, 1, M, False), ((1 << 63) - 1, 1, 1, 1 << 63, False),
+                 (M, 1, 1, 0, True), (5, -2, 3, M, False),
+                 (0, -(1 << 31), -(1 << 31), 1 << 62, False),
+                 (1 << 63, -1, 1, (1 << 63) - 1, True), (1, -1, -1, 2, False)]
+        for accumulator, left, right, result, carry in cases:
+            with self.subTest(accumulator=accumulator, left=left, right=right):
+                # r11_r10 += r6 * r14 (s): x = 0xbe60 | signed bit 12
+                state = self.run_form(0x8000000f, {10: accumulator & 0xffffffff,
+                                                   11: accumulator >> 32,
+                                                   6: left & 0xffffffff, 14: right & 0xffffffff},
+                                      0xe1fc, 0xbe60)
+                self.assertEqual(state["registers"][10:12],
+                                 [result & 0xffffffff, result >> 32])
+                self.assertEqual(state["specials"][5], 0x8000000d | (2 if carry else 0))
+
+    def test_signed_divide_matches_hardware(self):
+        # Felucca's r1_r0 = r1_r0 / r2 (s), captured on an FM-1: truncation
+        # toward zero, zero divisor gives 0, INT64_MIN / -1 wraps.
+        M = (1 << 64) - 1
+        cases = [(-7, 2, -3), (7, -2, -3), (-7, -2, 3), (7, 0, 0),
+                 (1000000000000, 3, 333333333333), (-1000000000000, 7, -142857142857),
+                 (-(1 << 63), -1, -(1 << 63))]
+        for dividend, divisor, quotient in cases:
+            with self.subTest(dividend=dividend, divisor=divisor):
+                state = self.run_form(FLAGS, {0: dividend & 0xffffffff, 1: (dividend & M) >> 32,
+                                              2: divisor & 0xffffffff}, 0xe1f6, 0x1200)
+                self.assertEqual(state["registers"][0:2],
+                                 [quotient & 0xffffffff, (quotient & M) >> 32])
+
     def test_multiply_accumulate_sets_only_carry(self):
         cases = [(0x200000001, 3, 4, 0x20000000d, False),
                  (0xffffffffffffffff, 1, 1, 0, True),

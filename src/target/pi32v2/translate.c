@@ -592,26 +592,37 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         next = here + 4;
     } else if (op == 0xe1f6) {
         uint16_t x = fetch(d, here + 2);
-        unsigned pair = x >> 12, source = (x >> 4) & 15;
-        /* rD+1_rD = rS+1_rS / rT (u): a full 64-bit quotient. Measured on an
-         * FM-1, division by zero gives 0. Only the unsigned form occurs. */
-        if ((x & 15) || (pair & 1) || (source & 1)) { goto illegal; }
+        unsigned pair = (x >> 13) * 2, source = (x >> 4) & 15;
+        /* rD+1_rD = rS+1_rS / rT: a full 64-bit quotient, signed when x bit
+         * 12 is set (vendor E1F6 1200 is r1_r0 = r1_r0 / r2 (s)). Measured
+         * on an FM-1: division by zero gives 0 in both forms. */
+        if ((x & 15) || (source & 1)) { goto illegal; }
         TCGv_i64 value = tcg_temp_new_i64();
         tcg_gen_concat_i32_i64(value, read_gpr(d, source), read_gpr(d, source + 1));
-        gen_helper_pi32v2_divu64(value, value, read_gpr(d, (x >> 8) & 15));
+        if (x & 0x1000) {
+            gen_helper_pi32v2_divs64(value, value, read_gpr(d, (x >> 8) & 15));
+        } else {
+            gen_helper_pi32v2_divu64(value, value, read_gpr(d, (x >> 8) & 15));
+        }
         tcg_gen_extr_i64_i32(gpr[pair], gpr[pair + 1], value);
         next = here + 4;
     } else if (op == 0xe1fc) {
         uint16_t x = fetch(d, here + 2);
-        unsigned pair = x >> 12;
-        /* rD+1_rD += rA * rB (u). Measured on an FM-1: C is the 64-bit carry
-         * out; V, Z and N are unchanged. Only the unsigned form occurs. */
-        if ((x & 15) || (pair & 1)) { goto illegal; }
+        unsigned pair = (x >> 13) * 2;
+        /* rD+1_rD += rA * rB, the product signed when x bit 12 is set (vendor
+         * E1FC 7300 is r7_r6 += r0 * r3 (s)). Measured on an FM-1 for both:
+         * C is the carry out of the 64-bit addition; V, Z and N unchanged. */
+        if (x & 15) { goto illegal; }
         TCGv_i64 sum = tcg_temp_new_i64(), product = tcg_temp_new_i64();
         TCGv_i64 left = tcg_temp_new_i64(), right = tcg_temp_new_i64();
         TCGv_i32 carry = tcg_temp_new_i32();
-        tcg_gen_extu_i32_i64(left, read_gpr(d, (x >> 4) & 15));
-        tcg_gen_extu_i32_i64(right, read_gpr(d, (x >> 8) & 15));
+        if (x & 0x1000) {
+            tcg_gen_ext_i32_i64(left, read_gpr(d, (x >> 4) & 15));
+            tcg_gen_ext_i32_i64(right, read_gpr(d, (x >> 8) & 15));
+        } else {
+            tcg_gen_extu_i32_i64(left, read_gpr(d, (x >> 4) & 15));
+            tcg_gen_extu_i32_i64(right, read_gpr(d, (x >> 8) & 15));
+        }
         tcg_gen_mul_i64(product, left, right);
         tcg_gen_concat_i32_i64(left, read_gpr(d, pair), read_gpr(d, pair + 1));
         tcg_gen_add_i64(sum, left, product);
@@ -1713,7 +1724,7 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     }
     if (op == 0xe1f6) {
         uint16_t x = fetch(d, here + 2);
-        return (x & 15) || (x & 0x1010) ? -1 : 3u << (x >> 12);
+        return (x & 15) || (x & 0x10) ? -1 : 3u << ((x >> 13) * 2);
     }
     if (op == 0xe1f8) {
         uint16_t x = fetch(d, here + 2);

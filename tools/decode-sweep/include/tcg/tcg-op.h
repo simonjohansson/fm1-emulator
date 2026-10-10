@@ -98,4 +98,5 @@ TCGv_i32 sweep_const(uint32_t value);
 typedef struct SweepOp TCGOp;
 #define tcg_last_op() ((TCGOp *)0)
 #define tcg_remove_ops_after(...) ((void)0)
+#define tcg_gen_ext_i32_i64(...) ((void)0)
 #endif
