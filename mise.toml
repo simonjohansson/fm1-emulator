@@ -32,3 +32,7 @@ description = "Cross-build the headless emulator for WebAssembly (Emscripten)"
 tools = { clang = "23.1.2", "asdf:mise-plugins/mise-emsdk" = "4.0.10" }
 env = { CC = "clang" }
 run = "python tools/build_wasm.py"
+
+[tasks.serve_web]
+description = "Serve the WebAssembly emulator page locally (build it with build_wasm first)"
+run = "python tools/serve_web.py"

@@ -42,12 +42,12 @@ DIST = WASM / "dist"
 COMPILE = "-O3 -pthread -DWASM_BIGINT -sMEMORY64=1"
 LINK = f"-sWASM_BIGINT -sASYNCIFY=1 -sMEMORY64=1 -L{PREFIX / 'lib'}"
 # QEMU's configs/meson/emscripten.txt link arguments, plus ENV so the page can
-# pass the FM1_POC_* test variables. Meson replaces rather than merges lists, so
+# pass the FM1_POC_* test variables and HEAPU8 so it can read the LCD framebuffer. Meson replaces rather than merges lists, so
 # they are restated whole.
 QEMU_LINK_ARGS = ["-pthread", "-sASYNCIFY=1", "-sPROXY_TO_PTHREAD=1", "-sFORCE_FILESYSTEM",
                   "-sALLOW_TABLE_GROWTH", "-sTOTAL_MEMORY=2GB", "-sWASM_BIGINT", "-sEXPORT_ES6=1",
                   "-sASYNCIFY_IMPORTS=ffi_call_js",
-                  "-sEXPORTED_RUNTIME_METHODS=addFunction,removeFunction,TTY,FS,ENV"]
+                  "-sEXPORTED_RUNTIME_METHODS=addFunction,removeFunction,TTY,FS,ENV,HEAPU8"]
 
 
 def unpack(name, archive):

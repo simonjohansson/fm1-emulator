@@ -333,6 +333,10 @@ static const MemoryRegionOps spi_ops = {
     .impl = {.min_access_size = 4, .max_access_size = 4},
 };
 
+#ifdef __EMSCRIPTEN__
+void fm1_web_lcd_register(FM1PocLCD *lcd);
+#endif
+
 void fm1_lcd_init(FM1PocLCD *lcd, Object *owner, Pi32v2CPU *cpu,
                   void (*update_irq)(void *opaque), void *opaque)
 {
@@ -346,6 +350,9 @@ void fm1_lcd_init(FM1PocLCD *lcd, Object *owner, Pi32v2CPU *cpu,
     /* This private panel is machine state rather than a qdev device. */
     lcd->console = qemu_graphic_console_create(NULL, 0, &lcd_graphic_ops, lcd);
     qemu_console_resize(lcd->console, FM1_LCD_WIDTH, FM1_LCD_HEIGHT);
+#ifdef __EMSCRIPTEN__
+    fm1_web_lcd_register(lcd);
+#endif
 }
 
 void fm1_lcd_set_pins(FM1PocLCD *lcd, uint32_t pc_out,
@@ -374,3 +381,30 @@ uint32_t fm1_lcd_rgb(const FM1PocLCD *lcd, unsigned x, unsigned y)
     return (((red << 3) | (red >> 2)) << 16) |
            (((green << 2) | (green >> 4)) << 8) | (blue << 3) | (blue >> 2);
 }
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+/* The browser page paints the panel from this: RGBA, 240 by 240, or NULL while
+ * the panel is dark or no board exists. The page reads it while the guest runs
+ * on another thread, so a frame can tear; it is a picture, not state. */
+static FM1PocLCD *web_lcd;
+static uint8_t web_frame[FM1_LCD_WIDTH * FM1_LCD_HEIGHT * 4];
+
+EMSCRIPTEN_KEEPALIVE uint8_t *fm1_web_lcd_frame(void)
+{
+    if (!web_lcd || !fm1_lcd_visible(web_lcd)) {
+        return NULL;
+    }
+    for (unsigned y = 0; y < FM1_LCD_HEIGHT; y++) {
+        for (unsigned x = 0; x < FM1_LCD_WIDTH; x++) {
+            uint32_t rgb = fm1_lcd_rgb(web_lcd, x, y);
+            uint8_t *out = &web_frame[(y * FM1_LCD_WIDTH + x) * 4];
+            out[0] = rgb >> 16; out[1] = rgb >> 8; out[2] = rgb; out[3] = 255;
+        }
+    }
+    return web_frame;
+}
+
+void fm1_web_lcd_register(FM1PocLCD *lcd) { web_lcd = lcd; }
+#endif

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FM-1 Emulator</title>
+<script src="coi-serviceworker.js"></script>
+<style>
+  :root {
+    --bg: #17181b; --panel: #202226; --line: #34373d; --text: #e8e9ec; --dim: #9a9ea8;
+    --accent: #7fd1a0; --warn: #f0b36a; --error: #f08a8a;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f3f3f1; --panel: #fff; --line: #d8d9d6; --text: #1d1e20; --dim: #62666e;
+            --accent: #1d7a48; --warn: #9a5b00; --error: #b3261e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p { margin: 0 0 12px; color: var(--dim); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 16px; margin-top: 16px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  #drop { flex: 1 1 280px; border: 2px dashed var(--line); border-radius: 10px; padding: 18px;
+          text-align: center; color: var(--dim); cursor: pointer; }
+  #drop.over { border-color: var(--accent); color: var(--text); }
+  #drop strong { color: var(--text); }
+  button { font: inherit; padding: 9px 18px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--accent); color: #0d1a12; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.secondary { background: transparent; color: var(--text); }
+  #status { font-variant-numeric: tabular-nums; }
+  #notice { margin-top: 12px; color: var(--warn); }
+  #notice.error { color: var(--error); }
+  .stage { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 640px) { .stage { grid-template-columns: 1fr; } }
+  canvas { width: 240px; height: 240px; background: #000; border-radius: 6px; image-rendering: pixelated;
+           max-width: 100%; }
+  pre { margin: 0; height: 240px; overflow: auto; background: #0e0f11; color: #cfd2d8; border-radius: 6px;
+        padding: 10px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+  footer { margin-top: 24px; font-size: 13px; color: var(--dim); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>FM-1 Emulator</h1>
+  <p>Boots an FM-1 firmware package headless, in your browser. The file stays on your computer.</p>
+
+  <div class="card">
+    <div class="row">
+      <label id="drop" for="file"><strong id="drop-label">Choose a firmware</strong> or drop it here<br>
+        <small>.fwsc, .ufw or raw .bin</small></label>
+      <input id="file" type="file" accept=".fwsc,.ufw,.bin" hidden>
+      <button id="boot" disabled>Boot</button>
+      <button id="stop" class="secondary" disabled>Stop</button>
+    </div>
+    <div id="notice" hidden></div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content: space-between; margin-bottom: 12px">
+      <strong>Guest</strong><span id="status" role="status">Idle</span>
+    </div>
+    <div class="stage">
+      <canvas id="lcd" width="240" height="240" aria-label="Display"></canvas>
+      <pre id="console" aria-label="Console" aria-live="off"></pre>
+    </div>
+    <p style="margin: 12px 0 0">It is an interpreter, so it runs far slower than the real instrument:
+       expect minutes to reach the home screen.</p>
+  </div>
+
+  <footer>
+    Built from <a href="https://github.com/simonjohansson/fm1-emulator">the emulator's source</a>
+    (GPL-2.0-or-later, on QEMU). Firmware is not included.
+  </footer>
+</main>
+<script type="module" src="main.js"></script>
+</body>
+</html>

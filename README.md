@@ -67,6 +67,20 @@ The panel draws the button and key LEDs as the firmware drives them,
 including the dim glow, REC's red and PLAY's green. The stock FM-1 Wi-Fi radio is modeled as inert hardware. Other firmware
 compatibility is limited. Linux and Windows are deferred.
 
+## Browser (experimental)
+
+A headless build runs in the browser: choose a firmware file, press Boot, and the
+page shows the display and the console. It is an interpreter, so it runs about
+thirty times slower than real time (the Felucca splash screen takes under a
+minute, the home screen several), and there are no buttons, LEDs or sound yet.
+It needs 64-bit WebAssembly, so current Chrome or Firefox; the firmware never
+leaves your computer.
+
+```sh
+mise run build_wasm    # emsdk and clang come from mise; needs `mise run build` once first
+mise run serve_web     # http://localhost:8080
+```
+
 See [development](docs/development.md) for tests and
 [architecture](docs/architecture.md) for the model. Licensing and source
 provenance are described in [LICENSES.md](LICENSES.md).
