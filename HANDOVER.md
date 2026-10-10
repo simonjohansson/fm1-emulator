@@ -40,31 +40,29 @@ points no longer follow host kicks (mostly reproducible). Idle loops that
 call and store are fast-forwarded (helper_pi32v2_idle_loop, TB flag
 PI32V2_TB_WATCH); stock runs ~4x real time headless.
 
-## Open problem being debugged
+## Fixed: stock UI froze after preset changes (f1239a6)
 
-Stock UI task dies after repeated preset changes: LCD commands and MIDI
-stop, buttons do nothing, audio keeps rendering. Deterministic per
-configuration:
+Lost FreeRTOS wakeup: core 0's switch IRQ (soft 127, level 0) was
+overtaken by TIMER1/ALNK (levels 1/3) that piled up while round-robin ran
+core 1's slice inside core 0's critical section. The rr loop now keeps a
+vCPU (up to 16 passes x 1024 instructions, timers still running) while its
+IRQs are masked or its own software IRQ is pending
+(tcg_rr_hold_slice, src/target/pi32v2/cpu.c hold_slice).
+FM1_POC_TRACE_PCS=HEX,... prints registers at chosen PCs (how it was found).
 
-- `tools/panel_smoke.py ~/Downloads/FM-1.fwsc --presets 40`
-- both parallel time and idle fast-forward on: dies around preset 5-6;
-- parallel off (`FM1_DBG_NO_PAR=1`, uncommitted getenv in the
-  icount_set_parallel hook): dies at preset 34 (DS GUITAR1);
-- parallel and idle fast-forward off: 40 presets fine, dies later.
-- Uncommitted experiment: idle fast-forward stops two iterations before the
-  slice end (so stock's TIMER5 reset really happens); then dies at preset 17.
-
-So the bug is timing/interleaving sensitive, probably a cross-core race in
-the model (LOCKSET/TESTSET, software IRQs 120-127, IRQ masking) or a
-timing assumption, not the preset data. Core 0 ends up idle with only ISRs
-running (tick ISR at 0x0205b6d8, TIMER1 ISR walking the RTOS timer list at
-0x02002254); core 1 renders. Next: find which task blocks and on what.
+Hardware facts measured this session (probe firmware console):
+prip (IRQ priority: higher level first, ties lower source first,
+higher level nests into a lower handler - nesting NOT modelled yet),
+spi0p (SPI0 0.69 us/byte, as modelled), sdivp/smacp (signed 64-bit divide
+and MAC, now implemented), trigp, denp (subnormals), ifp (IFF blocks).
 
 ## Not yet done (user requests)
 
-- Make `tools/panel_smoke.py` pass for all three firmwares.
-- Extend the random button stress script (docs/development.md, captures in
-  .cache/tests/stress/) to turn encoders too, 60 s per run, ~5 ms between
-  actions, firmware passed as an argument.
+- Done: `tools/panel_smoke.py FIRMWARE` passes on all three firmwares
+  (HOME pressed from HOME shows no change; harmless).
+- Done: `tests/stress.py FIRMWARE` scripted random buttons+encoders,
+  60 guest s, 5 ms; passes on all three (seeds 1-3).
+- Next: run more stress seeds; model IRQ nesting (measured); check
+  SAVE/SEQ/SEL/REC behaviour; interleaving still not fully deterministic.
 - Unverified: SAVE, SEQ, SEL, PLAY/STOP, REC contacts; stock with no USB
   host (no serial backend) plays no notes; stock audio level is low.
