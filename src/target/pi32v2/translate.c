@@ -22,7 +22,6 @@ static TCGv_i64 instructions;
 static uint32_t instruction_end(PiDisasContext *d, uint32_t here);
 static unsigned operation_size(uint16_t op);
 static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op);
-static bool discarded_load(uint16_t tail);
 
 void pi32v2_translate_init(void)
 {
@@ -776,24 +775,6 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         tcg_gen_mov_i32(pc, dest); tcg_gen_lookup_and_goto_ptr();
         db->is_jmp = DISAS_NORETURN;
         next = here + 4;
-    } else if ((op & 0xfff0) == 0xeb20) {
-        uint16_t bitmap = fetch(d, here + 2);
-        if (!bitmap) { goto illegal; }
-        /* Vendor traversal and independent probes store ascending selected
-         * registers at the incoming base. The primary has no GPR writeback,
-         * but its predecrement memory direction conflicts with this evidence. */
-        translator_io_start(db);
-        TCGv_i32 addr = tcg_temp_new_i32();
-        tcg_gen_mov_i32(addr, read_gpr(d, op & 15));
-        for (unsigned reg = 0; reg < 16; reg++) {
-            if (bitmap & (1u << reg)) {
-                /* Earlier stores remain visible if a later word access fails.
-                 * This sequential partial-fault order is model policy only. */
-                store(d, read_gpr(d, reg), addr, MO_LEUL | MO_ALIGN);
-                tcg_gen_addi_i32(addr, addr, 4);
-            }
-        }
-        next = here + 4;
     } else if ((op & 0xffc0) == 0xea40) {
         uint16_t x = fetch(d, here + 2);
         TCGv_i32 addr = tcg_temp_new_i32();
@@ -1100,21 +1081,52 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         if (kind == 3) { store(d, read_gpr(d, dest), addr, MO_LEUL | MO_ALIGN); }
         else { load(d, gpr[dest], addr, MO_LEUL | MO_ALIGN); }
         next = here + 4;
-    } else if (op == 0xec5c) {
+    } else if ((op & 0xfff8) == 0xec58) {
+        /* Doubleword post-index and register-sum forms over one signed
+         * 11-bit immediate shared with the offset family above. The
+         * opcode's bit 3 makes the immediate a post-index stride; with
+         * the extension's bit 1 set the operands become a register sum,
+         * written back before the access only when the opcode's bit 2 is
+         * also set. Vendor EC58 0233 is d[r3+r2] = r1_r0 without
+         * writeback, EC58 00F0 is r1_r0 = d[r15++=0], EC5C 8012 is
+         * r9_r8 = d[++r1=r0]. The sum scales its index by eight when the
+         * kind's bit 3 is set, which the pre-index opcode does not accept
+         * (vendor EC5C 0A00 has no decoding). */
         uint16_t x = fetch(d, here + 2);
         unsigned base = (x >> 4) & 15, reg = x >> 12, kind = x & 15;
-        /* Doubleword ECDC: vendor EC5C 8012 is r9_r8 = d[++r1=r0]. Kind 2
-         * loads, 3 stores the even/odd pair at the unscaled incoming sum. */
-        if ((kind != 2 && kind != 3) || (reg & 1) || base == reg || base == reg + 1) {
-            goto illegal;
-        }
+        if (reg & 1) { goto illegal; }
         TCGv_i32 addr = tcg_temp_new_i32();
-        tcg_gen_add_i32(addr, read_gpr(d, base), read_gpr(d, (x >> 8) & 15));
-        tcg_gen_mov_i32(gpr[base], addr);
-        for (unsigned i = 0; i < 2; i++) {
-            if (kind == 3) { store(d, read_gpr(d, reg + i), addr, MO_LEUL | MO_ALIGN); }
-            else { load(d, gpr[reg + i], addr, MO_LEUL | MO_ALIGN); }
+        if (x & 2) {
+            if ((kind & 12) == 4 || (kind & 12) == 12 || ((kind & 8) && (op & 4))) {
+                goto illegal;
+            }
+            tcg_gen_shli_i32(addr, read_gpr(d, (x >> 8) & 15), kind & 8 ? 3 : 0);
+            tcg_gen_add_i32(addr, addr, read_gpr(d, base));
+            if (op & 4) {
+                /* Writeback happens before the access; an unresolved
+                 * source or destination alias with the base would make
+                 * that order observable, so keep it rejected. */
+                if (base == reg || base == reg + 1) { goto illegal; }
+                tcg_gen_mov_i32(gpr[base], addr);
+            }
+            for (unsigned i = 0; i < 2; i++) {
+                if (kind & 1) { store(d, read_gpr(d, reg + i), addr, MO_LEUL | MO_ALIGN); }
+                else { load(d, gpr[reg + i], addr, MO_LEUL | MO_ALIGN); }
+                tcg_gen_addi_i32(addr, addr, 4);
+            }
+        } else {
+            int32_t offset = sext(op & 7, 3) * 256 + ((x >> 8) & 15) * 16 + ((x >> 2) & 3) * 4;
+            /* A post-index load with a base/destination alias would make
+             * the writeback order observable; keep that rejected, as for
+             * the word form. */
+            if (!(x & 1) && (base == reg || base == reg + 1)) { goto illegal; }
+            tcg_gen_addi_i32(addr, read_gpr(d, base), offset);
+            if (x & 1) { store(d, read_gpr(d, reg), addr, MO_LEUL | MO_ALIGN); }
+            else { load(d, gpr[reg], addr, MO_LEUL | MO_ALIGN); }
             tcg_gen_addi_i32(addr, addr, 4);
+            if (x & 1) { store(d, read_gpr(d, reg + 1), addr, MO_LEUL | MO_ALIGN); }
+            else { load(d, gpr[reg + 1], addr, MO_LEUL | MO_ALIGN); }
+            tcg_gen_addi_i32(gpr[base], read_gpr(d, base), offset);
         }
         next = here + 4;
     } else if (op == 0xeddc) {
@@ -1310,20 +1322,42 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
             for (int i = 0; i < 16; i++) { if (mask & (1 << i)) { pop(d, gpr[i]); } }
         }
         next = here + 4;
-    } else if ((op & 0xfff0) == 0xeb00) {
+    } else if ((op & 0xff00) == 0xeb00 && !((op >> 4) & 8)) {
+        /* Multiple-register load/store over a bitmap; the lowest set
+         * register sits at the lowest address. A single + or - walks the
+         * block without writeback (measured: EB04 0104 reads r2 then r8
+         * from consecutive words and leaves r4 intact; SLEIGH's cursor and
+         * Felucca's later r4-relative accesses agree), a double ++ or --
+         * charges the register count to the base. A minus block sits below
+         * the incoming base. Vendor EB02 0006 loads the base register among
+         * the set: every word is addressed from the incoming base before
+         * later loads overwrite it, and a store captures the incoming
+         * register file, so the writeback lands before a masked base's own
+         * load and after the stores. */
         uint16_t mask = fetch(d, here + 2);
-        unsigned base = op & 15;
-        if (!mask || (mask & (1u << base))) { goto illegal; }
-        /* EB04 0104 reads r2 then r8 from consecutive words. SLEIGH's
-         * cursor and Felucca's later r4-relative accesses leave r4 intact. */
-        TCGv_i32 addr = tcg_temp_new_i32();
+        unsigned base = op & 15, mode = (op >> 4) & 7;
+        bool saving = mode & 2, below = mode & 4, writeback = mode & 1;
+        unsigned count = __builtin_popcount(mask);
+        if (!count) { goto illegal; }
+        if (saving) { translator_io_start(db); }
+        int32_t span = (int32_t)count * 4;
+        TCGv_i32 addr = tcg_temp_new_i32(), final = tcg_temp_new_i32();
         tcg_gen_mov_i32(addr, read_gpr(d, base));
-        for (unsigned i = 0; i < 16; i++) {
-            if (mask & (1u << i)) {
-                load(d, gpr[i], addr, MO_LEUL | MO_ALIGN);
+        if (below) { tcg_gen_addi_i32(addr, addr, -span); }
+        tcg_gen_mov_i32(final, addr);
+        if (!below) { tcg_gen_addi_i32(final, final, span); }
+        /* The writeback lands before a masked base's own load, so the
+         * loaded value wins, and after the stores, which capture the
+         * incoming register file. */
+        if (writeback && !saving) { tcg_gen_mov_i32(gpr[base], final); }
+        for (unsigned reg = 0; reg < 16; reg++) {
+            if (mask & (1u << reg)) {
+                if (saving) { store(d, read_gpr(d, reg), addr, MO_LEUL | MO_ALIGN); }
+                else { load(d, gpr[reg], addr, MO_LEUL | MO_ALIGN); }
                 tcg_gen_addi_i32(addr, addr, 4);
             }
         }
+        if (writeback && saving) { tcg_gen_mov_i32(gpr[base], final); }
         next = here + 4;
     } else if (op == 0x0400) {
         TCGv_i32 dest = tcg_temp_new_i32();
@@ -1665,22 +1699,15 @@ illegal:
     db->is_jmp = DISAS_NORETURN;
     return next;
 }
-/* A tail offset load (6000 family, no writeback) whose destination the head
- * also writes is a discarded read: the head's value remains. Stock FM-1
- * firmware passes "sys" to clk_get from F100 A06D / 6000 (r0 = r10 + 109 ||
- * r0 = [r0+0]). The tail is translated first, so the head's write holds.
- * Other overlapping writes stay rejected. */
-static bool discarded_load(uint16_t tail)
-{
-    return (tail & 0xe080) == 0x6000;
-}
 static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
 {
     if ((op & 0xff88) == 0x1a00 || (op & 0xff88) == 0x1a80) { return 1u << (op & 7); }
     if ((op & 0xe008) == 0x4008) { return op & 128 ? 0 : 1u << (op & 7); }
     if (op >= 0x0500 && op < 0x0800) {
         unsigned data = op & 7, base = (op >> 4) & 7;
-        if (!(op & 128) && data == base) { return -1; }
+        /* An aliased post-index load keeps its serial rejection, but a
+         * pair's tail runs first on the incoming registers, so the access
+         * at the incoming base is defined. */
         return (1u << base) | (op & 128 ? 0 : 1u << data);
     }
     if ((op & 0xfff8) == 0xecd8 && (fetch(d, here + 2) & 3) < 2) {
@@ -1719,17 +1746,20 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     if ((op & 0xe0d0) == 0x2000) { return 1u << (op & 15); }
     if ((op & 0xe0d0) == 0x2080) { return 0; }
     if (op == 0xe060) { return 1u << (fetch(d, here + 2) >> 12); }
+    if (op == 0xe064) {
+        uint16_t x = fetch(d, here + 2);
+        unsigned special = (x >> 8) & 15;
+        if (special == 15 || ((x & 255) != 0 && (x & 255) != 128)) { return -1; }
+        /* Writing a special register leaves the GPR file untouched. */
+        return x & 128 ? 0 : 1u << (x >> 12);
+    }
     if (op == 0xe1f0) {
         uint16_t x = fetch(d, here + 2);
         return x & 15 ? -1 : 1u << (x >> 12);
     }
-    if (op == 0xe1f4 || op == 0xe435) {
+    if (op == 0xe1f4 || op == 0xe434 || op == 0xe435) {
         uint16_t x = fetch(d, here + 2);
         return (x & 15) <= 1 ? 1u << (x >> 12) : -1;
-    }
-    if (op == 0xe434) {
-        uint16_t x = fetch(d, here + 2);
-        return (x & 15) == 1 ? 1u << (x >> 12) : -1;
     }
     if (op == 0xe194) {
         uint16_t x = fetch(d, here + 2);
@@ -1860,15 +1890,18 @@ static void translate_insn(DisasContextBase *db, CPUState *cs)
     bool parallel = op >> 13 == 6 || (op & 0xf800) == 0xf000;
     if (parallel) {
         /* Either half may touch MMIO. Ending the TB here lets QEMU enable
-         * I/O before both effects, so replay cannot repeat a register update. */
+         * I/O before both effects, so replay cannot repeat a register update.
+         * The tail runs first on the incoming registers and the head's write
+         * lands last (the vendor's delayslot model; measured on an FM-1 with
+         * F100 A06D / 6000, where the head's value remains), so overlapping
+         * writes resolve in the head's favour. */
         translator_io_start(db);
         uint16_t head = op >> 13 == 6 ? op & 0x1fff : op & ~0x1000;
         uint32_t tail_pc = here + operation_size(head);
         uint16_t tail = fetch(d, tail_pc);
         int head_writes = parallel_writes(d, here, head);
         int tail_writes = parallel_writes(d, tail_pc, tail);
-        if (head_writes < 0 || tail_writes < 0 ||
-            ((head_writes & tail_writes) && !discarded_load(tail))) {
+        if (head_writes < 0 || tail_writes < 0) {
             gen_helper_pi32v2_illegal(tcg_env, tcg_constant_i32(op));
             db->is_jmp = DISAS_NORETURN;
         } else {

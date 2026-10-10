@@ -42,15 +42,19 @@ class ParallelByteDecrementTests(unittest.TestCase):
         self.assertEqual(state["registers"][3], 100)
         self.assertEqual(state["instructions"], guest.instructions - 1)
 
-    def test_overlapping_destination_is_rejected_before_memory_effects(self):
+    def test_overlapping_tail_runs_on_incoming_registers(self):
+        # Head r0 *= r1 overlaps the tail's base writeback (r0). The tail
+        # runs first on the incoming registers, so its byte load still
+        # reads through the unmapped incoming base before the head's
+        # write lands.
         guest = Guest()
         guest.literal(0, 0xdead0000)
         guest.literal(1, 12)
         guest.emit(0xd810, 0x0709)
         result = run_guest(self.directory, guest)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unsupported instruction 0xd810", result.stderr)
-        self.assertNotIn("unmapped access", result.stderr)
+        self.assertIn("unmapped access at 0xdead0000", result.stderr)
+        self.assertNotIn("unsupported instruction", result.stderr)
         self.assertIn("after 2 instructions", result.stderr)
 
 
