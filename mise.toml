@@ -12,3 +12,7 @@ run = "python -m unittest discover -s tests -p 'test_*.py' -v"
 [tasks.stress]
 description = "Boot firmware and randomly press every panel button for 30 seconds"
 run = "python tests/stress.py"
+
+[tasks.panel_smoke]
+description = "Run headless firmware preset and panel button smoke tests"
+run = "python tools/panel_smoke.py"

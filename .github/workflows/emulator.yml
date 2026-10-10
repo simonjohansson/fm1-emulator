@@ -29,3 +29,38 @@ jobs:
           name: fm1-emulator-macos-arm64
           path: .cache/fm1-emulator-macos-arm64.tar.gz
           if-no-files-found: error
+
+  firmware:
+    name: Firmware (${{ matrix.name }})
+    needs: macos
+    runs-on: macos-26
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Felucca 1.5
+            url: https://github.com/hugelton/Felucca/releases/download/v1.5/felucca-1.5.fwsc
+          - name: FM-1
+            url: https://yms-file-store.oss-cn-hongkong.aliyuncs.com/software/firmware/FM-1.fwsc
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: python
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: fm1-emulator-macos-arm64
+          path: .cache
+      - name: Extract binary
+        run: tar -xzf .cache/fm1-emulator-macos-arm64.tar.gz emulator
+      - name: Download firmware
+        env:
+          FIRMWARE_URL: ${{ matrix.url }}
+        run: curl --fail --location --retry 3 --output .cache/firmware.fwsc "$FIRMWARE_URL"
+      - name: Stress
+        id: stress
+        run: mise run stress .cache/firmware.fwsc
+      - name: Panel smoke
+        if: ${{ !cancelled() && steps.stress.outcome != 'skipped' }}
+        run: mise run panel_smoke .cache/firmware.fwsc
