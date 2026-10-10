@@ -5,9 +5,9 @@
     mise run build_wasm
 
 The result is .cache/wasm/dist/qemu-system-pi32v2.{js,wasm}: QEMU's TCG
-interpreter (TCI) running the pi32v2 machine in a 64-bit WebAssembly module
-(QEMU 11.1's only Emscripten host is wasm64, so it needs a browser with
-memory64: Chrome, Firefox). The compilers (emsdk, zig) come from mise; the
+interpreter (TCI) running the pi32v2 machine. QEMU 11.1's only Emscripten host
+is wasm64; its 32-bit address limit lowers the module to 32-bit memory, so it
+runs in Chrome, Firefox and Safari. The compilers (emsdk, zig) come from mise; the
 libraries QEMU links (zlib, libffi, pixman, GLib) are compiled for WebAssembly
 here from pinned sources, as QEMU's tests/docker/dockerfiles/emsdk-wasm64-cross.docker
 does. It reuses the native build's pinned QEMU source, Python environment and
@@ -123,17 +123,38 @@ def build_dependencies(env):
         build.run(["meson", "install", "-C", "_build"], sources["glib"], env, "wasm-glib-build.log")
 
 
+def host_compiler():
+    """The build machine's clang: the first on PATH outside the Emscripten SDK.
+
+    emsdk ships a clang of its own that cannot link macOS programs, and both are
+    on PATH in the mise task, in no fixed order. QEMU's configure ignores CC for
+    the build machine, so it is passed explicitly."""
+    sdk = Path(shutil.which("emcc")).resolve().parents[2]
+    path = os.pathsep.join(entry for entry in os.environ["PATH"].split(os.pathsep)
+                           if not Path(entry).resolve().is_relative_to(sdk))
+    compiler = shutil.which("clang", path=path)
+    if not compiler:
+        raise SystemExit("no build-machine clang on PATH: run this as `mise run build_wasm`")
+    return compiler
+
+
 def build_qemu(env, reconfigure):
     source = CACHE / f"qemu-{build.QEMU}"
+    if reconfigure:
+        # Meson loses the build machine's compiler when this cross build is
+        # reconfigured in place, so start again from an empty directory.
+        shutil.rmtree(BUILD, ignore_errors=True)
     BUILD.mkdir(parents=True, exist_ok=True)
-    if reconfigure or not (BUILD / "build.ninja").exists():
+    if not (BUILD / "build.ninja").exists():
         build.run(["emconfigure", source / "configure", "--target-list=pi32v2-softmmu",
                    f"--python={CACHE / 'python/bin/python'}", "--without-default-features",
                    "--enable-tcg", "--disable-fdt", "--disable-docs", "--disable-user", "--disable-tools",
                    "--disable-guest-agent", "--disable-slirp", "--disable-capstone",
                    "--static", "--cpu=wasm64", "--enable-tcg-interpreter",
-                   # configure ignores CC for the build machine and would use cc.
-                   f"--host-cc={env.get('CC', 'cc')}"],
+                   # Lower the module to 32-bit memory (Emscripten's MEMORY64=2), which
+                   # Safari can run as well; it is no slower than 64-bit memory.
+                   "--wasm64-32bit-address-limit",
+                   f"--host-cc={host_compiler()}"],
                   BUILD, env, "wasm-configure.log")
     build.run([BUILD / "pyvenv/bin/meson", "configure", ".", "-Dc_link_args=" + " ".join(QEMU_LINK_ARGS)],
               BUILD, env, "wasm-link-args.log")

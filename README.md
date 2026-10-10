@@ -73,8 +73,8 @@ A headless build runs in the browser: choose a firmware file, press Boot, and th
 page shows the display and the console, with its speed against real time. It is
 an interpreter: on an Apple M3 Pro it runs at roughly 0.05x real time, so Felucca
 reaches its home screen after about 30 seconds. There are no buttons, LEDs or
-sound yet. It needs 64-bit WebAssembly, so current Chrome or Firefox;
-the firmware never leaves your computer.
+sound yet. It runs in current Chrome, Firefox and Safari; the firmware never
+leaves your computer.
 
 ```sh
 mise run build_wasm    # emsdk and clang come from mise

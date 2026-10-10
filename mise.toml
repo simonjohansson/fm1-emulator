@@ -27,12 +27,11 @@ description = "Cross-build the headless emulator for WebAssembly (Emscripten)"
 # The native build fetches the pinned QEMU source and build tools this reuses.
 depends = ["build"]
 # Both compilers are task-scoped: each puts its own clang on PATH, which would
-# shadow Apple's for the native build. clang is the host C compiler Meson and
-# QEMU's configure need for build-machine tools (listed first so it wins on PATH).
-# emsdk is the WebAssembly compiler; the asdf plugin brings its own Python, where
-# the vfox one needs the system's, too old on macOS.
+# shadow Apple's for the native build. clang is the build machine's C compiler,
+# which Meson and QEMU's configure need for build-time tools; the script tells it
+# apart from emsdk's own. emsdk is the WebAssembly compiler; the asdf plugin
+# brings its own Python, where the vfox one needs the system's, too old on macOS.
 tools = { clang = "23.1.2", "asdf:mise-plugins/mise-emsdk" = "4.0.10" }
-env = { CC = "clang" }
 run = "python tools/build_wasm.py"
 
 [tasks.serve_web]

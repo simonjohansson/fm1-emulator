@@ -11,9 +11,6 @@ let started = 0;
 let module = null;
 let timers = [];
 
-// 64-bit WebAssembly memory: QEMU's Emscripten host is wasm64.
-const hasMemory64 = WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 3, 1, 4, 0]));
-
 function notify(text, kind = '') {
   els.notice.hidden = !text;
   els.notice.textContent = text;
@@ -78,10 +75,6 @@ function paint() {
 }
 
 async function boot() {
-  if (!hasMemory64) {
-    notify('This browser has no 64-bit WebAssembly. Use a current Chrome or Firefox.', 'error');
-    return;
-  }
   if (!self.crossOriginIsolated) {
     notify('Not cross-origin isolated, so threads are unavailable. Reload the page once; if that does not help, serve it with COOP and COEP headers.', 'error');
     return;
@@ -119,4 +112,3 @@ async function boot() {
 }
 
 els.boot.addEventListener('click', boot);
-if (!hasMemory64) notify('This browser has no 64-bit WebAssembly. Use a current Chrome or Firefox.', 'error');
