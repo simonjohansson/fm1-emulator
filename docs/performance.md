@@ -110,6 +110,7 @@ anchor changes.
 | `util/async.c` | An AioContext with no virtual-clock timer ignores virtual-clock notifications |
 | `accel/tcg/tcg-accel-ops-rr.c` | Icount slices are split among runnable vCPUs only, and idle vCPUs are skipped |
 | `accel/tcg/cpu-exec.c` | icount's "guest is late" warnings carry the host wall-clock time and guest time |
+| `accel/tcg/icount-common.c` | With align on, a guest that goes idle while late warps by up to its lateness at once instead of sleeping |
 
 The earlier `physmem.c` subpage-read hook was retired once no subpages
 remained; integration restores the upstream text in trees it had patched.
