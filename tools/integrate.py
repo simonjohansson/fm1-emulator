@@ -394,6 +394,51 @@ def main():
         if content.count(anchor) != 1:
             raise SystemExit("pinned icount shift anchor differs")
         content = content.replace(anchor, hook + anchor)
+    # With align on, a guest that goes idle while late warps by up to its
+    # lateness at once instead of sleeping, so the host latency of every
+    # halt and wake-up through the main loop is made up rather than piling
+    # up as lateness. A guest that runs ahead is still slowed as before.
+    for before, after in [
+        ('#include "system/cpu-timers-internal.h"\n',
+         '#include "system/cpu-timers-internal.h"\n'
+         '#include "internal-common.h"\n'),
+        ("            seqlock_write_lock(&timers_state.vm_clock_seqlock,\n"
+         "                               &timers_state.vm_clock_lock);\n"
+         "            if (timers_state.vm_clock_warp_start == -1\n",
+         "            seqlock_write_lock(&timers_state.vm_clock_seqlock,\n"
+         "                               &timers_state.vm_clock_lock);\n"
+         "            if (icount_align_option) {\n"
+         "                /*\n"
+         "                 * align only slows down a guest that runs ahead of real\n"
+         "                 * time. A guest that is late does not sleep through its\n"
+         "                 * idle time, it warps by up to the lateness at once, so the\n"
+         "                 * host latency of every halt and wake-up through the main\n"
+         "                 * loop is made up instead of piling up as lateness.\n"
+         "                 */\n"
+         "                int64_t late = clock - icount_get_locked();\n"
+         "                /* A pending warp will credit the time since it started. */\n"
+         "                if (timers_state.vm_clock_warp_start != -1) {\n"
+         "                    late -= clock - timers_state.vm_clock_warp_start;\n"
+         "                }\n"
+         "                if (late > 0) {\n"
+         "                    int64_t skip = MIN(late, deadline);\n"
+         "                    qatomic_set(&timers_state.qemu_icount_bias,\n"
+         "                                timers_state.qemu_icount_bias + skip);\n"
+         "                    deadline -= skip;\n"
+         "                }\n"
+         "            }\n"
+         "            if (deadline == 0) {\n"
+         "                seqlock_write_unlock(&timers_state.vm_clock_seqlock,\n"
+         "                                     &timers_state.vm_clock_lock);\n"
+         "                qemu_clock_notify(QEMU_CLOCK_VIRTUAL);\n"
+         "                return;\n"
+         "            }\n"
+         "            if (timers_state.vm_clock_warp_start == -1\n"),
+    ]:
+        if after not in content:
+            if content.count(before) != 1:
+                raise SystemExit("pinned icount idle warp anchor differs")
+            content = content.replace(before, after)
     write_changed(common, content)
     header = SOURCE / "include/exec/icount.h"
     content = header.read_text()
